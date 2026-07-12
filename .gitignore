@@ -29,6 +29,14 @@ kubeconfig*
 /tmp/
 /log/
 /storage/
+**/tmp/*
+!**/tmp/.keep
+!**/tmp/pids/
+!**/tmp/pids/.keep
+**/log/*
+!**/log/.keep
+**/storage/*
+!**/storage/.keep
 /backups/
 *.log
 *.pid
@@ -48,6 +56,8 @@ coverage/
 /apps/control-plane/public/assets/
 /apps/control-plane/public/packs/
 /apps/control-plane/node_modules/
+/apps/control-plane/app/assets/builds/*
+!/apps/control-plane/app/assets/builds/.keep
 /apps/control-plane/config/master.key
 /apps/control-plane/config/credentials/*.key
 

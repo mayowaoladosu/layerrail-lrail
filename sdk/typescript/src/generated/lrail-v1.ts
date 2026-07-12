@@ -169,6 +169,52 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v1/projects/{project_id}/source_uploads": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Project resource ID. */
+        project_id: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Authorize a direct source upload
+     * @description Creates an expiring, organization-scoped upload session and returns one presigned URL for each bounded part.
+     */
+    post: operations["createSourceUpload"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/source_uploads/{source_upload_id}/finalize": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description Source upload session resource ID. */
+        source_upload_id: components["schemas"]["ResourceId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    /**
+     * Finalize an uploaded source archive
+     * @description Recomputes part and archive digests in the isolated source gateway and records an immutable source snapshot.
+     */
+    post: operations["finalizeSourceUpload"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v1/projects/{project_id}/environments": {
     parameters: {
       query?: never;
@@ -737,6 +783,80 @@ export interface components {
         template?: components["schemas"]["Slug"];
       };
     };
+    SourceUploadCreate: {
+      source_upload: {
+        expected_archive_bytes: number;
+        expected_archive_sha256: string;
+        expected_parts: number;
+        /** @default  */
+        root_directory: string;
+        /** @default 0 */
+        excluded_count: number;
+      };
+    };
+    SourceUploadPart: {
+      number: number;
+      size: number;
+      sha256: string;
+    };
+    SourceUploadFinalize: {
+      source_upload: {
+        parts: components["schemas"]["SourceUploadPart"][];
+      };
+    };
+    SourceUploadSession: {
+      id: components["schemas"]["ResourceId"];
+      /** @constant */
+      type: "source_upload_session";
+      /** @enum {unknown} */
+      state:
+        | "authorized"
+        | "uploading"
+        | "finalizing"
+        | "complete"
+        | "failed"
+        | "expired"
+        | "canceled";
+      project_id: components["schemas"]["ResourceId"];
+      expected_archive_bytes: number;
+      expected_archive_sha256: string;
+      expected_parts: number;
+      /** Format: date-time */
+      expires_at: string;
+      snapshot_sha256?: string | null;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      updated_at: string;
+    };
+    SourceUploadAuthorization: {
+      data: components["schemas"]["SourceUploadSession"];
+      parts: {
+        number: number;
+        /** Format: uri */
+        url: string;
+        /** Format: date-time */
+        expires_at: string;
+      }[];
+    };
+    SourceSnapshot: {
+      id: components["schemas"]["ResourceId"];
+      organization_id: components["schemas"]["ResourceId"];
+      project_id: components["schemas"]["ResourceId"];
+      /** @enum {unknown} */
+      kind: "local" | "git" | "promoted" | "migration";
+      repository?: string | null;
+      commit_sha?: string | null;
+      digest: string;
+      object_ref: string;
+      size_bytes: number;
+      /** Format: date-time */
+      retention_until: string;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      updated_at: string;
+    };
     PromotionCreate: {
       environment_id: components["schemas"]["ResourceId"];
       /** @enum {string} */
@@ -1246,6 +1366,85 @@ export interface operations {
       409: components["responses"]["Conflict"];
       422: components["responses"]["PreconditionFailed"];
       429: components["responses"]["RateLimited"];
+    };
+  };
+  createSourceUpload: {
+    parameters: {
+      query?: never;
+      header: {
+        /** @description Caller-generated key scoped by organization, principal, method, and normalized route. */
+        "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+      };
+      path: {
+        /** @description Project resource ID. */
+        project_id: components["parameters"]["ProjectId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["SourceUploadCreate"];
+      };
+    };
+    responses: {
+      /** @description Direct source upload authorized. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["SourceUploadAuthorization"];
+        };
+      };
+      400: components["responses"]["InvalidArgument"];
+      401: components["responses"]["Unauthenticated"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      409: components["responses"]["Conflict"];
+      422: components["responses"]["PreconditionFailed"];
+      429: components["responses"]["RateLimited"];
+      503: components["responses"]["Unavailable"];
+    };
+  };
+  finalizeSourceUpload: {
+    parameters: {
+      query?: never;
+      header: {
+        /** @description Caller-generated key scoped by organization, principal, method, and normalized route. */
+        "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+      };
+      path: {
+        /** @description Source upload session resource ID. */
+        source_upload_id: components["schemas"]["ResourceId"];
+      };
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["SourceUploadFinalize"];
+      };
+    };
+    responses: {
+      /** @description Source snapshot finalized. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            data: components["schemas"]["SourceUploadSession"];
+            snapshot: components["schemas"]["SourceSnapshot"];
+          };
+        };
+      };
+      400: components["responses"]["InvalidArgument"];
+      401: components["responses"]["Unauthenticated"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      409: components["responses"]["Conflict"];
+      422: components["responses"]["PreconditionFailed"];
+      429: components["responses"]["RateLimited"];
+      503: components["responses"]["Unavailable"];
     };
   };
   listEnvironments: {

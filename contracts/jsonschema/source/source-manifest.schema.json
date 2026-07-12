@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.lrail.dev/source/source-manifest.schema.json",
+  "title": "Lrail immutable source manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "policy_version",
+    "root_directory",
+    "entries",
+    "included_count",
+    "included_bytes",
+    "excluded_count",
+    "warnings",
+    "scan"
+  ],
+  "properties": {
+    "version": { "const": 1 },
+    "policy_version": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9.-]{1,63}$"
+    },
+    "root_directory": {
+      "type": "string",
+      "maxLength": 512
+    },
+    "entries": {
+      "type": "array",
+      "maxItems": 50000,
+      "items": { "$ref": "#/$defs/entry" }
+    },
+    "included_count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 50000
+    },
+    "included_bytes": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 2147483648
+    },
+    "excluded_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "warnings": {
+      "type": "array",
+      "maxItems": 128,
+      "items": { "type": "string", "maxLength": 512 }
+    },
+    "scan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "findings"],
+      "properties": {
+        "status": { "enum": ["passed", "blocked"] },
+        "findings": {
+          "type": "array",
+          "maxItems": 128,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["kind", "path"],
+            "properties": {
+              "kind": { "type": "string", "maxLength": 64 },
+              "path": { "type": "string", "maxLength": 512 }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "type", "mode", "size", "sha256"],
+      "properties": {
+        "path": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^(?!/)(?!.*(?:^|/)\\.\\.(?:/|$))(?!.*\\\\)[^\\u0000]+$"
+        },
+        "type": { "const": "file" },
+        "mode": { "enum": [420, 493] },
+        "size": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 134217728
+        },
+        "sha256": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$"
+        }
+      }
+    }
+  }
+}

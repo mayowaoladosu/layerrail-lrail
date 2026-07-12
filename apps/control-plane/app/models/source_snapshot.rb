@@ -9,5 +9,6 @@ class SourceSnapshot < ApplicationRecord
   has_many :builds, dependent: :restrict_with_error
 
   validates :kind, :digest, :object_ref, :retention_until, presence: true
+  validates :digest, uniqueness: { scope: %i[organization_id project_id] }
   validates :size_bytes, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
 end

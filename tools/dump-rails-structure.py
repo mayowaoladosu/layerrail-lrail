@@ -52,6 +52,28 @@ def main() -> None:
     if not container:
         raise SystemExit("Compose PostgreSQL is not running")
 
+    expected_versions = migration_versions()
+    applied_output = run(
+        "docker",
+        "exec",
+        container,
+        "psql",
+        "--username",
+        DATABASE_USER,
+        "--dbname",
+        DATABASE,
+        "--tuples-only",
+        "--no-align",
+        "--command",
+        "SELECT version FROM schema_migrations ORDER BY version",
+    )
+    applied_versions = [line.strip() for line in applied_output.splitlines() if line.strip()]
+    if applied_versions != expected_versions:
+        raise SystemExit(
+            "database migrations do not match files: "
+            f"applied={applied_versions}, expected={expected_versions}"
+        )
+
     raw = run(
         "docker",
         "exec",
@@ -74,7 +96,7 @@ def main() -> None:
         ]
     )
     OUTPUT.write_text(f"{content}\n", encoding="utf-8", newline="\n")
-    print(f"Wrote {OUTPUT.relative_to(ROOT)} with {len(migration_versions())} migration versions")
+    print(f"Wrote {OUTPUT.relative_to(ROOT)} with {len(expected_versions)} migration versions")
 
 
 if __name__ == "__main__":

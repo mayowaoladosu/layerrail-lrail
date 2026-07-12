@@ -8,6 +8,8 @@ class ApplicationController < ActionController::Base
   before_action :assign_request_context
 
   rescue_from ActiveRecord::RecordNotFound, with: :render_not_found
+  rescue_from ActiveRecord::RecordInvalid, with: :render_validation_failed
+  rescue_from ActionController::ParameterMissing, with: :render_parameter_missing
   rescue_from Authorization::Denied, with: :render_forbidden
   rescue_from Idempotency::Mismatch, with: :render_idempotency_conflict
 
@@ -35,6 +37,20 @@ class ApplicationController < ActionController::Base
 
   def render_forbidden(error)
     render_error(status: :forbidden, code: error.reason, message: "This account cannot perform that action.")
+  end
+
+  def render_validation_failed(error)
+    details = error.record.errors.map { |validation| { field: validation.attribute, reason: validation.type } }
+    render_error(status: :unprocessable_content, code: "validation_failed", message: "The request failed validation.", details:)
+  end
+
+  def render_parameter_missing(error)
+    render_error(
+      status: :bad_request,
+      code: "invalid_argument",
+      message: "A required request field is missing.",
+      details: [ { field: error.param, reason: "required" } ],
+    )
   end
 
   def render_idempotency_conflict

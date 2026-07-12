@@ -17,18 +17,19 @@ module Authorization
     "admin" => %w[
       organization.read organization.update membership.read membership.invite
       project.* environment.* service.* deployment.* release.* domain.* addon.*
-      telemetry.* operation.read webhook.* schedule.*
+      source.* telemetry.* operation.read webhook.* schedule.*
     ],
     "developer" => %w[
       organization.read project.read project.create environment.read service.read service.update
       deployment.read deployment.create deployment.cancel release.read telemetry.read operation.read
+      source.upload.create source.upload.finalize source.snapshot.read
     ],
     "operator" => %w[
       organization.read project.read environment.read service.read deployment.read deployment.cancel
-      release.read release.pause release.rollback telemetry.read operation.read addon.read addon.backup
+      release.read release.pause release.rollback source.snapshot.read telemetry.read operation.read addon.read addon.backup
     ],
     "billing" => %w[organization.read usage.read invoice.read billing.update],
-    "auditor" => %w[organization.read project.read environment.read service.read deployment.read release.read domain.read addon.read telemetry.read audit.read usage.read]
+    "auditor" => %w[organization.read project.read environment.read service.read deployment.read release.read domain.read addon.read source.snapshot.read telemetry.read audit.read usage.read]
   }.freeze
 
   def self.decision(account:, organization:, action:, resource: nil)

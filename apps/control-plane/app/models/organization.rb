@@ -19,6 +19,8 @@ class Organization < ApplicationRecord
   has_many :audit_events, dependent: :restrict_with_error
   has_many :usage_ledger, class_name: "UsageLedger", dependent: :restrict_with_error
   has_many :webhooks, dependent: :destroy
+  has_many :source_upload_sessions, dependent: :destroy
+  has_many :source_snapshots, dependent: :restrict_with_error
 
   normalizes :slug, with: ->(value) { value.to_s.strip.downcase }
 

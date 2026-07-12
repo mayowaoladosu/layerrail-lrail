@@ -18,7 +18,7 @@ module Console
         notice: "Project created. Connect a source to start the first deployment."
     rescue ActiveRecord::RecordInvalid => error
       @project = error.record
-      render :new, status: :unprocessable_entity
+      render :new, status: :unprocessable_content
     end
 
     def show

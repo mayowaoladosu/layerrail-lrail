@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "policy_version": "source-v1",
+  "root_directory": "",
+  "entries": [
+    {
+      "path": "../stolen.env",
+      "type": "file",
+      "mode": 511,
+      "size": 1,
+      "sha256": "sha256:not-a-digest"
+    }
+  ],
+  "included_count": 1,
+  "included_bytes": 1,
+  "excluded_count": 0,
+  "warnings": [],
+  "scan": {
+    "status": "passed",
+    "findings": []
+  }
+}

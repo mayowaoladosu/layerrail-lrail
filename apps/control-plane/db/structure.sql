@@ -268,6 +268,32 @@ $$;
 
 
 --
+-- Name: lrail_expire_source_upload_sessions(integer); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.lrail_expire_source_upload_sessions(requested_limit integer) RETURNS SETOF text
+    LANGUAGE sql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    SET row_security TO 'off'
+    AS $$
+  WITH candidates AS (
+    SELECT id
+    FROM source_upload_sessions
+    WHERE state IN ('authorized', 'uploading', 'failed')
+      AND expires_at <= clock_timestamp()
+    ORDER BY expires_at, id
+    FOR UPDATE SKIP LOCKED
+    LIMIT GREATEST(1, LEAST(COALESCE(requested_limit, 1), 500))
+  )
+  UPDATE source_upload_sessions AS session
+  SET state = 'expired', updated_at = clock_timestamp()
+  FROM candidates
+  WHERE session.id = candidates.id
+  RETURNING session.public_id;
+$$;
+
+
+--
 -- Name: lrail_finish_email(bigint, text, text, text, text, text, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -2442,6 +2468,68 @@ ALTER SEQUENCE public.source_snapshots_id_seq OWNED BY public.source_snapshots.i
 
 
 --
+-- Name: source_upload_sessions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.source_upload_sessions (
+    id bigint NOT NULL,
+    public_id character varying(64) NOT NULL,
+    organization_id bigint NOT NULL,
+    project_id bigint NOT NULL,
+    created_by_account_id bigint NOT NULL,
+    source_snapshot_id bigint,
+    state character varying(32) DEFAULT 'authorized'::character varying NOT NULL,
+    expected_archive_bytes bigint NOT NULL,
+    expected_archive_sha256 character varying(71) NOT NULL,
+    expected_parts integer NOT NULL,
+    root_directory character varying(512) DEFAULT ''::character varying NOT NULL,
+    excluded_count integer DEFAULT 0 NOT NULL,
+    uploaded_parts jsonb DEFAULT '[]'::jsonb NOT NULL,
+    finalize_attempts integer DEFAULT 0 NOT NULL,
+    snapshot_sha256 character varying(71),
+    manifest_sha256 character varying(71),
+    archive_sha256 character varying(71),
+    manifest_ref character varying,
+    archive_ref character varying,
+    signing_key_id character varying(128),
+    last_error text,
+    expires_at timestamp(6) without time zone NOT NULL,
+    finalized_at timestamp(6) without time zone,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT source_upload_sessions_archive_digest CHECK (((expected_archive_sha256)::text ~ '^sha256:[0-9a-f]{64}$'::text)),
+    CONSTRAINT source_upload_sessions_bytes CHECK (((expected_archive_bytes >= 1) AND (expected_archive_bytes <= 1073741824))),
+    CONSTRAINT source_upload_sessions_excluded CHECK ((excluded_count >= 0)),
+    CONSTRAINT source_upload_sessions_part_capacity CHECK ((expected_archive_bytes <= ((expected_parts)::bigint * 16777216))),
+    CONSTRAINT source_upload_sessions_parts CHECK (((expected_parts >= 1) AND (expected_parts <= 256))),
+    CONSTRAINT source_upload_sessions_public_id_format CHECK (((public_id)::text ~ '^upl_[0-9a-f-]{36}$'::text)),
+    CONSTRAINT source_upload_sessions_state CHECK (((state)::text = ANY ((ARRAY['authorized'::character varying, 'uploading'::character varying, 'finalizing'::character varying, 'complete'::character varying, 'failed'::character varying, 'expired'::character varying, 'canceled'::character varying])::text[]))),
+    CONSTRAINT source_upload_sessions_uploaded_parts CHECK ((jsonb_typeof(uploaded_parts) = 'array'::text))
+);
+
+ALTER TABLE ONLY public.source_upload_sessions FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: source_upload_sessions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.source_upload_sessions_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: source_upload_sessions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.source_upload_sessions_id_seq OWNED BY public.source_upload_sessions.id;
+
+
+--
 -- Name: usage_ledger; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2966,6 +3054,13 @@ ALTER TABLE ONLY public.source_snapshots ALTER COLUMN id SET DEFAULT nextval('pu
 
 
 --
+-- Name: source_upload_sessions id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.source_upload_sessions ALTER COLUMN id SET DEFAULT nextval('public.source_upload_sessions_id_seq'::regclass);
+
+
+--
 -- Name: usage_ledger id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -3431,6 +3526,14 @@ ALTER TABLE ONLY public.source_connections
 
 ALTER TABLE ONLY public.source_snapshots
     ADD CONSTRAINT source_snapshots_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: source_upload_sessions source_upload_sessions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.source_upload_sessions
+    ADD CONSTRAINT source_upload_sessions_pkey PRIMARY KEY (id);
 
 
 --
@@ -4572,13 +4675,6 @@ CREATE UNIQUE INDEX index_source_connections_on_public_id ON public.source_conne
 
 
 --
--- Name: index_source_snapshots_on_digest; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE UNIQUE INDEX index_source_snapshots_on_digest ON public.source_snapshots USING btree (digest);
-
-
---
 -- Name: index_source_snapshots_on_organization_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4604,6 +4700,48 @@ CREATE UNIQUE INDEX index_source_snapshots_on_public_id ON public.source_snapsho
 --
 
 CREATE INDEX index_source_snapshots_on_source_connection_id ON public.source_snapshots USING btree (source_connection_id);
+
+
+--
+-- Name: index_source_upload_sessions_on_created_by_account_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_source_upload_sessions_on_created_by_account_id ON public.source_upload_sessions USING btree (created_by_account_id);
+
+
+--
+-- Name: index_source_upload_sessions_on_organization_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_source_upload_sessions_on_organization_id ON public.source_upload_sessions USING btree (organization_id);
+
+
+--
+-- Name: index_source_upload_sessions_on_project_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_source_upload_sessions_on_project_id ON public.source_upload_sessions USING btree (project_id);
+
+
+--
+-- Name: index_source_upload_sessions_on_public_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_source_upload_sessions_on_public_id ON public.source_upload_sessions USING btree (public_id);
+
+
+--
+-- Name: index_source_upload_sessions_on_source_snapshot_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_source_upload_sessions_on_source_snapshot_id ON public.source_upload_sessions USING btree (source_snapshot_id);
+
+
+--
+-- Name: index_source_upload_sessions_on_state_and_expires_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_source_upload_sessions_on_state_and_expires_at ON public.source_upload_sessions USING btree (state, expires_at);
 
 
 --
@@ -4709,6 +4847,13 @@ CREATE UNIQUE INDEX service_routes_unique_match ON public.service_routes USING b
 --
 
 CREATE UNIQUE INDEX source_connections_provider_identity ON public.source_connections USING btree (organization_id, provider, installation_external_id);
+
+
+--
+-- Name: source_snapshots_project_digest; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX source_snapshots_project_digest ON public.source_snapshots USING btree (organization_id, project_id, digest);
 
 
 --
@@ -4862,6 +5007,14 @@ ALTER TABLE ONLY public.account_login_change_keys
 
 ALTER TABLE ONLY public.edge_route_versions
     ADD CONSTRAINT fk_rails_1f967ccb7d FOREIGN KEY (organization_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: source_upload_sessions fk_rails_21e1d6ee50; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.source_upload_sessions
+    ADD CONSTRAINT fk_rails_21e1d6ee50 FOREIGN KEY (created_by_account_id) REFERENCES public.accounts(id);
 
 
 --
@@ -5201,6 +5354,14 @@ ALTER TABLE ONLY public.addon_backups
 
 
 --
+-- Name: source_upload_sessions fk_rails_8a782632a8; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.source_upload_sessions
+    ADD CONSTRAINT fk_rails_8a782632a8 FOREIGN KEY (organization_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+
+
+--
 -- Name: rollout_steps fk_rails_8b481d114e; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5238,6 +5399,14 @@ ALTER TABLE ONLY public.organizations
 
 ALTER TABLE ONLY public.attachments
     ADD CONSTRAINT fk_rails_915a09a714 FOREIGN KEY (environment_id) REFERENCES public.environments(id) ON DELETE CASCADE;
+
+
+--
+-- Name: source_upload_sessions fk_rails_9291f88907; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.source_upload_sessions
+    ADD CONSTRAINT fk_rails_9291f88907 FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
 
 
 --
@@ -5566,6 +5735,14 @@ ALTER TABLE ONLY public.deployment_transitions
 
 ALTER TABLE ONLY public.api_keys
     ADD CONSTRAINT fk_rails_f4470e16d5 FOREIGN KEY (account_id) REFERENCES public.accounts(id);
+
+
+--
+-- Name: source_upload_sessions fk_rails_fb9d65f726; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.source_upload_sessions
+    ADD CONSTRAINT fk_rails_fb9d65f726 FOREIGN KEY (source_snapshot_id) REFERENCES public.source_snapshots(id);
 
 
 --
@@ -6060,6 +6237,19 @@ CREATE POLICY source_snapshots_tenant_policy ON public.source_snapshots USING ((
 
 
 --
+-- Name: source_upload_sessions; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.source_upload_sessions ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: source_upload_sessions source_upload_sessions_tenant_policy; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY source_upload_sessions_tenant_policy ON public.source_upload_sessions USING ((((organization_id)::text = current_setting('lrail.organization_id'::text, true)) AND public.lrail_account_has_membership(organization_id))) WITH CHECK ((((organization_id)::text = current_setting('lrail.organization_id'::text, true)) AND public.lrail_account_has_membership(organization_id)));
+
+
+--
 -- Name: usage_ledger; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -6122,7 +6312,8 @@ INSERT INTO "schema_migrations" (version) VALUES
 ('20260712204510'),
 ('20260712204511'),
 ('20260712204512'),
-('20260712221000')
+('20260712221000'),
+('20260712233000')
 ON CONFLICT DO NOTHING;
 
 -- LRAIL_RUNTIME_GRANTS_BEGIN
@@ -6139,6 +6330,7 @@ REVOKE ALL ON FUNCTION lrail_finish_outbox(bigint, text, boolean, text, timestam
 REVOKE ALL ON FUNCTION lrail_claim_email(text, integer) FROM PUBLIC;
 REVOKE ALL ON FUNCTION lrail_finish_email(bigint, text, text, text, text, text, timestamptz) FROM PUBLIC;
 REVOKE ALL ON FUNCTION lrail_apply_email_provider_event(text, text, text, text, timestamptz) FROM PUBLIC;
+REVOKE ALL ON FUNCTION lrail_expire_source_upload_sessions(integer) FROM PUBLIC;
 
 DO $runtime_grants$
 BEGIN
@@ -6172,6 +6364,7 @@ BEGIN
     GRANT EXECUTE ON FUNCTION lrail_finish_outbox(bigint, text, boolean, text, timestamptz, boolean) TO lrail_worker;
     GRANT EXECUTE ON FUNCTION lrail_claim_email(text, integer) TO lrail_worker;
     GRANT EXECUTE ON FUNCTION lrail_finish_email(bigint, text, text, text, text, text, timestamptz) TO lrail_worker;
+    GRANT EXECUTE ON FUNCTION lrail_expire_source_upload_sessions(integer) TO lrail_worker;
   END IF;
 END
 $runtime_grants$;

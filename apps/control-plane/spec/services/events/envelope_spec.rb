@@ -43,4 +43,10 @@ RSpec.describe Events::Envelope do
       end
     end.to raise_error(Events::NoSecrets::ForbiddenKey)
   end
+
+  it "allows resource session identifiers that do not contain session material" do
+    expect do
+      Events::NoSecrets.validate!(upload_session_id: "upl_019b01da-7e31-7000-8000-000000000001")
+    end.not_to raise_error
+  end
 end

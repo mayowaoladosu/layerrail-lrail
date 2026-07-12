@@ -18,6 +18,7 @@ const schemaFiles = [
   "jsonschema/regional/target-bundle.schema.json",
   "jsonschema/build/build-ir.schema.json",
   "jsonschema/manifest/lrail.schema.json",
+  "jsonschema/source/source-manifest.schema.json",
 ];
 
 const ajv = new Ajv2020({ allErrors: true, strict: true });
@@ -42,6 +43,8 @@ const fixtureContracts: Record<string, string> = {
   event: "https://contracts.lrail.dev/events/domain-event.schema.json",
   manifest: "https://contracts.lrail.dev/manifest/lrail.schema.json",
   operation: "https://contracts.lrail.dev/common/operation.schema.json",
+  "source-manifest":
+    "https://contracts.lrail.dev/source/source-manifest.schema.json",
   "target-bundle":
     "https://contracts.lrail.dev/regional/target-bundle.schema.json",
 };
@@ -49,7 +52,7 @@ const fixtureContracts: Record<string, string> = {
 let fixtureCount = 0;
 for (const file of readdirSync(resolve(contracts, "fixtures")).sort()) {
   const match =
-    /^(build-ir|detector|event|manifest|operation|target-bundle)\.(valid|invalid)\.json$/.exec(
+    /^(build-ir|detector|event|manifest|operation|source-manifest|target-bundle)\.(valid|invalid)\.json$/.exec(
       file,
     );
   if (!match) continue;
@@ -106,8 +109,8 @@ for (const [path, pathItem] of Object.entries(openapi.paths)) {
   }
 }
 
-if (fixtureCount !== 12)
-  throw new Error(`expected 12 contract fixtures, validated ${fixtureCount}`);
+if (fixtureCount !== 14)
+  throw new Error(`expected 14 contract fixtures, validated ${fixtureCount}`);
 if (operationCount < 20)
   throw new Error(
     `expected at least 20 public operations, found ${operationCount}`,

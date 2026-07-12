@@ -8,6 +8,7 @@ import subprocess
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 STRUCTURE = ROOT / "apps" / "control-plane" / "db" / "structure.sql"
+MIGRATIONS = ROOT / "apps" / "control-plane" / "db" / "migrate"
 DATABASE = "lrail_structure_verify"
 ADMIN = "lrail_local"
 
@@ -68,7 +69,8 @@ def main() -> None:
             """,
         ).stdout.strip()
         function_count, policy_count, trigger_count, migration_count = map(int, counts.split("|"))
-        if function_count < 7 or policy_count < 30 or trigger_count < 4 or migration_count != 5:
+        expected_migrations = len(list(MIGRATIONS.glob("*.rb")))
+        if function_count < 7 or policy_count < 30 or trigger_count < 4 or migration_count != expected_migrations:
             raise SystemExit(f"unexpected restored object counts: {counts}")
 
         worker_function = psql(
@@ -97,6 +99,18 @@ def main() -> None:
         )
         if web_metadata_read.returncode == 0 or "permission denied" not in web_metadata_read.stderr:
             raise SystemExit("restored web role unexpectedly read migration metadata")
+
+        source_expiry_grants = psql(
+            container,
+            DATABASE,
+            """
+            SELECT
+              has_function_privilege('lrail_worker', 'lrail_expire_source_upload_sessions(integer)', 'EXECUTE'),
+              has_function_privilege('lrail_web', 'lrail_expire_source_upload_sessions(integer)', 'EXECUTE');
+            """,
+        ).stdout.strip()
+        if source_expiry_grants != "t|f":
+            raise SystemExit(f"unexpected restored source expiry grants: {source_expiry_grants}")
 
         print(
             "Verified SQL restore: "

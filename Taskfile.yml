@@ -11,6 +11,7 @@ vars:
   CONTROL_WORKERS_TEST_IMAGE: lrail-control-workers:test
   CONTROL_WORKERS_IMAGE: lrail-control-workers:local
   DETECTOR: services/detector
+  SOURCE_GATEWAY_IMAGE: lrail-source-gateway:local
 
 tasks:
   default:
@@ -87,11 +88,19 @@ tasks:
   test:integration:
     desc: Run tests against local dependencies
     cmds:
-      - docker compose up -d --wait postgres temporal nats valkey minio mailpit
+      - docker compose up -d --build --wait postgres temporal nats valkey minio mailpit source-gateway
       - task: rails:db:prepare
       - task: rails:test:integration
+      - task: source:test:integration
       - task: control-workers:test:integration
       - task: db:verify
+
+  source:test:integration:
+    internal: true
+    env:
+      LRAIL_SOURCE_INTEGRATION: "1"
+    cmds:
+      - go test ./services/source-plane/integration -v
 
   control-workers:test:integration:
     internal: true
@@ -107,6 +116,7 @@ tasks:
     dir: "{{.CONTROL_PLANE}}"
     env:
       LRAIL_NATS_INTEGRATION: "1"
+      LRAIL_SOURCE_INTEGRATION: "1"
     cmds:
       - bundle exec rspec spec/integration
 
@@ -142,10 +152,25 @@ tasks:
 
   rails:db:prepare:
     internal: true
+    cmds:
+      - task: rails:db:migrate:development
+      - task: rails:db:migrate:test
+
+  rails:db:migrate:development:
+    internal: true
     dir: "{{.CONTROL_PLANE}}"
     cmds:
-      - bundle exec rails db:prepare
+      - bundle exec rails db:create db:migrate
     env:
+      LRAIL_DATABASE_USER: lrail_local
+
+  rails:db:migrate:test:
+    internal: true
+    dir: "{{.CONTROL_PLANE}}"
+    cmds:
+      - bundle exec rails db:create db:migrate
+    env:
+      RAILS_ENV: test
       LRAIL_DATABASE_USER: lrail_local
 
   e2e:
@@ -181,9 +206,11 @@ tasks:
       - buf generate
       - corepack pnpm contracts:generate
       - uv run --project "{{.DETECTOR}}" python "{{.DETECTOR}}/tools/generate_schema.py"
+      - corepack pnpm exec prettier --write sdk/typescript/src/generated/lrail-v1.ts contracts/jsonschema/detector/detection-result.schema.json
 
   package:
     desc: Build candidate artifacts from locked inputs
     cmds:
       - docker build --target runtime -t "{{.CONTROL_WORKERS_IMAGE}}" "{{.CONTROL_WORKERS}}"
+      - docker build -f services/source-plane/Dockerfile -t "{{.SOURCE_GATEWAY_IMAGE}}" .
       - docker buildx bake --file platform/build/docker-bake.hcl

@@ -3,7 +3,7 @@ require "securerandom"
 class PlatformId
   PREFIXES = %w[
     acct org mbr inv prj env svc src snp bld rev dep rel op dom crt rte add att bkp
-    rst sch wh whd key evt tgt edg cell pop use sec var vol job run pol inc ses tok
+    rst sch wh whd key evt tgt edg cell pop use sec var vol job run pol inc ses tok upl
   ].freeze
   PATTERN = /\A(?<prefix>[a-z]{2,5})_(?<uuid>[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12})\z/
 

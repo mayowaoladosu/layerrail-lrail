@@ -32,7 +32,7 @@ module Api
         render json: { data:, page: { next_cursor:, limit: } }
       end
 
-      def idempotent(payload:)
+      def idempotent(payload:, expires_in: 24.hours)
         result = Idempotency::Execute.call(
           key: request.headers["Idempotency-Key"],
           principal: current_account,
@@ -40,6 +40,7 @@ module Api
           http_method: request.method,
           route: request.path,
           payload:,
+          expires_in:,
         ) { yield }
         response.set_header("Idempotency-Replayed", "true") if result.replayed
         render json: result.body, status: result.status

@@ -68,4 +68,33 @@ RSpec.describe "worker database boundaries" do
 
     expect(intent.reload).to have_attributes(state: "delivered", provider_message_id: "fake-boundary")
   end
+
+  it "expires abandoned source sessions through the worker function" do
+    account = create_account
+    organization = create_organization(account:)
+    project = within_organization(account, organization) do
+      Projects::Create.call(account:, organization:, attributes: { name: "Expiry", slug: "expiry" }).project
+    end
+    session = within_organization(account, organization) do
+      SourceUploadSession.create!(
+        organization:,
+        project:,
+        created_by_account: account,
+        expected_archive_bytes: 1,
+        expected_archive_sha256: "sha256:#{"a" * 64}",
+        expected_parts: 1,
+        expires_at: 1.minute.from_now,
+      ).tap { |value| value.update_columns(expires_at: 1.second.ago) }
+    end
+    connection = ApplicationRecord.connection
+
+    ApplicationRecord.transaction(requires_new: true) do
+      connection.execute("SET LOCAL ROLE lrail_worker")
+      expired = connection.select_values("SELECT * FROM lrail_expire_source_upload_sessions(10)")
+      expect(expired).to include(session.public_id)
+      connection.execute("RESET ROLE")
+    end
+
+    expect(session.reload.state).to eq("expired")
+  end
 end

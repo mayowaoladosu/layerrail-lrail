@@ -56,6 +56,16 @@ namespace :lrail do
     ensure
       consumer&.close
     end
+
+    desc "Expire one bounded batch of abandoned source upload sessions"
+    task source_expiry_once: :environment do
+      WorkerDatabase.connect!
+      limit = Integer(ENV.fetch("BATCH_SIZE", 100)).clamp(1, 500)
+      expired = ApplicationRecord.connection.select_values(
+        "SELECT * FROM lrail_expire_source_upload_sessions(#{limit})",
+      )
+      puts JSON.generate(expired: expired.length)
+    end
   end
 end
 

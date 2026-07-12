@@ -114,6 +114,70 @@ services:
       retries: 30
       start_period: 10s
 
+  minio-init:
+    image: minio/mc:RELEASE.2025-07-21T05-28-08Z@sha256:fb8f773eac8ef9d6da0486d5dec2f42f219358bcb8de579d1623d518c9ebd4cc
+    restart: "no"
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - control
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: ["/bin/sh", "-c"]
+    volumes:
+      - ./platform/local/minio/source-gateway-policy.json:/config/source-gateway-policy.json:ro
+    command:
+      - >-
+        mc alias set local http://minio:9000 lrail_local local-only-not-a-secret &&
+        mc mb --ignore-existing local/lrail-source &&
+        mc mb --ignore-existing local/lrail-control-private &&
+        mc version enable local/lrail-source &&
+        (mc ilm rule remove --all --force local/lrail-source >/dev/null 2>&1 || true) &&
+        mc ilm rule add --expire-days 1 --noncurrent-expire-days 1 --prefix uploads/ local/lrail-source &&
+        (mc admin user add local lrail_source_gateway source-gateway-local-only-not-a-secret >/dev/null 2>&1 || mc admin user enable local lrail_source_gateway) &&
+        mc admin policy create local lrail-source-gateway /config/source-gateway-policy.json &&
+        mc admin policy attach local lrail-source-gateway --user lrail_source_gateway
+
+  source-gateway:
+    <<: *service-defaults
+    image: lrail-source-gateway:local
+    build:
+      context: .
+      dockerfile: services/source-plane/Dockerfile
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
+    environment:
+      # These deterministic values are development-only and have no authority outside this Compose network.
+      LRAIL_SOURCE_S3_INTERNAL_ENDPOINT: minio:9000
+      LRAIL_SOURCE_S3_PUBLIC_ENDPOINT: 127.0.0.1:59000
+      LRAIL_SOURCE_S3_INTERNAL_TLS: "false"
+      LRAIL_SOURCE_S3_PUBLIC_TLS: "false"
+      LRAIL_SOURCE_S3_ACCESS_KEY: lrail_source_gateway
+      LRAIL_SOURCE_S3_SECRET_KEY: source-gateway-local-only-not-a-secret
+      LRAIL_SOURCE_S3_BUCKET: lrail-source
+      LRAIL_SOURCE_S3_REGION: us-east-1
+      LRAIL_SOURCE_SCRATCH_DIR: /scratch
+      LRAIL_SOURCE_GRANT_KEY: __79_Pv6-fj39vX08_Lx8O_u7ezr6uno5-bl5OPi4eA
+      LRAIL_SOURCE_SIGNING_PRIVATE_KEY: AQIDBAUGBwgJCgsMDQ4PEBESExQVFhcYGRobHB0eHyB5tVYuj-ZU-UB4sRLoqYunkB-FOuaVvtfg45ELrQSWZA
+      LRAIL_SOURCE_SIGNING_KEY_ID: source-finalizer-local-v1
+      LRAIL_SOURCE_MAX_FINALIZERS: "2"
+    ports:
+      - "127.0.0.1:58080:8080"
+    read_only: true
+    tmpfs:
+      - /scratch:rw,noexec,nosuid,nodev,size=2304m,uid=65532,gid=65532,mode=0700
+      - /tmp:rw,noexec,nosuid,nodev,size=16m,uid=65532,gid=65532,mode=0700
+    cap_drop:
+      - ALL
+    healthcheck:
+      test: ["CMD", "/source-gateway", "healthcheck"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+
   mailpit:
     <<: *service-defaults
     image: axllent/mailpit:v1.30.4@sha256:5a49a77c5bdbe7c5474450b4f46348d09949df3695257729c93a30369382d4f6

@@ -1,7 +1,7 @@
 module Events
   class NoSecrets
     ForbiddenKey = Class.new(StandardError)
-    FORBIDDEN_KEY = /(authorization|cookie|credential|password|private.?key|secret|session|token)/i
+    FORBIDDEN_KEY = /(?:\A|_)(?:authorization|cookie|credential|password|private.?key|secret|token)(?:_|\z)|\Asession\z/i
 
     def self.validate!(value, path = "data")
       case value

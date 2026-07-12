@@ -53,11 +53,11 @@ def main() -> int:
             "-c",
             "/etc/nats/nats.conf",
         )
-        run("docker", "compose", "up", "-d", "--wait")
+        run("docker", "compose", "up", "-d", "--build", "--wait")
 
         container_ids = run("docker", "compose", "ps", "-q", capture=True).split()
-        if len(container_ids) != 6:
-            raise RuntimeError(f"expected 6 local dependency containers, found {len(container_ids)}")
+        if len(container_ids) != 7:
+            raise RuntimeError(f"expected 7 local dependency containers, found {len(container_ids)}")
         for container_id in container_ids:
             inspection = json.loads(run("docker", "inspect", container_id, capture=True))[0]
             name = inspection["Name"].lstrip("/")
@@ -67,12 +67,13 @@ def main() -> int:
                 raise RuntimeError(f"{name} is {state['Status']}/{health}")
             print(f"✓ {name}: healthy")
 
-        for port in (55432, 57233, 54222, 56379, 59000, 51025):
+        for port in (55432, 57233, 54222, 56379, 59000, 51025, 58080):
             probe_socket("127.0.0.1", port)
         for url in (
             "http://127.0.0.1:58222/healthz",
             "http://127.0.0.1:59000/minio/health/live",
             "http://127.0.0.1:58025/livez",
+            "http://127.0.0.1:58080/ready",
         ):
             probe_http(url)
         print("Local dependency cold-start and protocol probes passed.")

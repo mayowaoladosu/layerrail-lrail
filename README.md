@@ -38,6 +38,8 @@ The Rails app exposes independent process entrypoints for `lrail:workers:outbox`
 
 The official Temporal Ruby SDK does not support Windows, so `apps/control-workers` is intentionally built and tested as a separate non-root Linux image from an immutable Ruby base. Its real-service test proves business-key duplicate start, worker shutdown and replay on a new worker, explicit completion, bounded activity retry policy, and cancellation. `task check`, `task test`, and `task test:integration` are the required local gates.
 
+Local source upload is also operational end to end. Rails authorizes an expiring bounded session, clients upload parts directly to the versioned MinIO bucket, and the non-root Go source gateway streams a hostile tar.gz through path/type/size/ratio/credential controls. It stores content-addressed archive and manifest objects, persists a signed replay receipt, deletes temporary parts, and returns an Ed25519 result that Rails verifies before creating the immutable snapshot. No source byte traverses Rails memory.
+
 ## Status
 
 Construction follows dependency-ordered, acceptance-gated vertical slices. A compile or attractive dashboard is not completion; executable positive, negative, recovery, and cleanup evidence is required for each supported capability.

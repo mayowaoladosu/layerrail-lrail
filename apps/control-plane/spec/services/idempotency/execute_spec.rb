@@ -49,4 +49,38 @@ RSpec.describe Idempotency::Execute do
       end.to raise_error(Idempotency::Mismatch)
     end
   end
+
+  it "replaces an expired record and honors a bounded custom lifetime" do
+    account = create_account
+    organization = create_organization(account:)
+    executions = 0
+
+    within_organization(account, organization) do
+      arguments = {
+        key: "test-idempotency-key-expiry",
+        principal: account,
+        organization:,
+        http_method: "POST",
+        route: "/v1/source_uploads",
+        payload: { digest: "sha256:#{"a" * 64}" },
+        expires_in: 15.minutes
+      }
+      described_class.call(**arguments) do
+        executions += 1
+        [ 201, { generation: executions } ]
+      end
+      record = IdempotencyKey.find_by!(organization:)
+      expect(record.expires_at).to be_within(5.seconds).of(15.minutes.from_now)
+      record.update_columns(expires_at: 1.second.ago)
+
+      replacement = described_class.call(**arguments) do
+        executions += 1
+        [ 201, { generation: executions } ]
+      end
+
+      expect(replacement.replayed).to be(false)
+      expect(replacement.body).to eq(generation: 2)
+      expect(executions).to eq(2)
+    end
+  end
 end

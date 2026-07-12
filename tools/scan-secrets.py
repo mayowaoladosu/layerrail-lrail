@@ -25,6 +25,14 @@ ALLOWED_SUBSTRINGS = (
     "example.invalid",
 )
 
+# These files contain inert marker strings used to prove the source scanner
+# rejects private-key material. No key body or usable credential is present.
+MARKER_CORPUS_FILES = {
+    Path("services/source-plane/internal/sourcearchive/finalizer_test.go"),
+    Path("services/source-plane/internal/sourcearchive/scanner.go"),
+    Path("services/source-plane/internal/sourcearchive/scanner_test.go"),
+}
+
 
 def candidate_paths() -> list[Path]:
     result = subprocess.run(
@@ -50,12 +58,15 @@ def main() -> int:
         except UnicodeDecodeError:
             continue
         scanned += 1
+        relative_path = path.relative_to(ROOT)
         for line_number, line in enumerate(text.splitlines(), 1):
             if any(allowed in line for allowed in ALLOWED_SUBSTRINGS):
                 continue
             for label, pattern in PATTERNS.items():
+                if label == "private key material" and relative_path in MARKER_CORPUS_FILES:
+                    continue
                 if pattern.search(line):
-                    findings.append(f"{path.relative_to(ROOT)}:{line_number}: {label}")
+                    findings.append(f"{relative_path}:{line_number}: {label}")
 
     if findings:
         print("Potential secrets detected:")

@@ -68,6 +68,20 @@ class ApiResource
       }
     end
 
+    def source_snapshot(value)
+      base(value).merge(
+        organization_id: value.organization.public_id,
+        project_id: value.project.public_id,
+        kind: value.kind,
+        repository: value.repository,
+        commit_sha: value.commit_sha,
+        digest: value.digest,
+        object_ref: value.object_ref,
+        size_bytes: value.size_bytes,
+        retention_until: timestamp(value.retention_until),
+      )
+    end
+
     def domain(value)
       base(value).merge(
         organization_id: value.organization.public_id,

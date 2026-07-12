@@ -23,6 +23,7 @@ Rails.application.routes.draw do
           resources :projects, only: %i[index create]
         end
         resources :projects, only: %i[show destroy] do
+          resources :source_uploads, only: :create
           resources :environments, only: :index
           resources :services, only: :index
           resources :deployments, only: %i[index create]
@@ -31,6 +32,7 @@ Rails.application.routes.draw do
         end
         resources :deployments, only: %i[show destroy]
         resources :operations, only: :show
+        post "source_uploads/:id/finalize", to: "source_uploads#finalize", as: :finalize_source_upload
       end
     end
 

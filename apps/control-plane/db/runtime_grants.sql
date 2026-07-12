@@ -10,6 +10,7 @@ REVOKE ALL ON FUNCTION lrail_finish_outbox(bigint, text, boolean, text, timestam
 REVOKE ALL ON FUNCTION lrail_claim_email(text, integer) FROM PUBLIC;
 REVOKE ALL ON FUNCTION lrail_finish_email(bigint, text, text, text, text, text, timestamptz) FROM PUBLIC;
 REVOKE ALL ON FUNCTION lrail_apply_email_provider_event(text, text, text, text, timestamptz) FROM PUBLIC;
+REVOKE ALL ON FUNCTION lrail_expire_source_upload_sessions(integer) FROM PUBLIC;
 
 DO $runtime_grants$
 BEGIN
@@ -43,6 +44,7 @@ BEGIN
     GRANT EXECUTE ON FUNCTION lrail_finish_outbox(bigint, text, boolean, text, timestamptz, boolean) TO lrail_worker;
     GRANT EXECUTE ON FUNCTION lrail_claim_email(text, integer) TO lrail_worker;
     GRANT EXECUTE ON FUNCTION lrail_finish_email(bigint, text, text, text, text, text, timestamptz) TO lrail_worker;
+    GRANT EXECUTE ON FUNCTION lrail_expire_source_upload_sessions(integer) TO lrail_worker;
   END IF;
 END
 $runtime_grants$;

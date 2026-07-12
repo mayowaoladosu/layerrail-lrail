@@ -12,6 +12,10 @@ Rails.application.configure do
     LRAIL_EMAIL_FROM
     RESEND_API_KEY
     RESEND_WEBHOOK_SECRET
+    LRAIL_SOURCE_GATEWAY_URL
+    LRAIL_SOURCE_GRANT_KEY
+    LRAIL_SOURCE_SIGNING_PUBLIC_KEYS
+    LRAIL_SOURCE_OBJECT_PREFIX
   ]
   missing_environment = required_environment.select { |name| ENV[name].blank? }
   raise KeyError, "missing required production environment: #{missing_environment.join(", ")}" if missing_environment.any?

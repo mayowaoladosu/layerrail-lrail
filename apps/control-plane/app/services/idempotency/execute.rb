@@ -2,11 +2,11 @@ module Idempotency
   class Execute
     Result = Data.define(:status, :body, :replayed)
 
-    def self.call(key:, principal:, organization:, http_method:, route:, payload:)
+    def self.call(key:, principal:, organization:, http_method:, route:, payload:, expires_in: 24.hours)
       raise ArgumentError, "Idempotency-Key must contain 16 to 128 safe characters" unless key.to_s.match?(/\A[A-Za-z0-9._:-]{16,128}\z/)
 
       key_digest = Digest::SHA256.hexdigest(key)
-      request_fingerprint = Digest::SHA256.hexdigest(canonical_json(payload))
+      request_fingerprint = Digest::SHA256.hexdigest(CanonicalJson.dump(payload))
       scope = {
         organization:,
         principal_public_id: principal.public_id,
@@ -17,11 +17,15 @@ module Idempotency
 
       IdempotencyKey.transaction do
         record = IdempotencyKey.lock.find_by(scope)
+        if record && record.expires_at <= Time.current
+          record.destroy!
+          record = nil
+        end
         if record
           raise Mismatch, "idempotency key was used with different input" unless ActiveSupport::SecurityUtils.secure_compare(record.request_fingerprint, request_fingerprint)
           return Result.new(record.response_status, record.response_body, true) if record.response_status
         else
-          record = create_record!(scope, request_fingerprint)
+          record = create_record!(scope, request_fingerprint, expires_in:)
         end
 
         status, body = yield
@@ -32,25 +36,16 @@ module Idempotency
       retry
     end
 
-    def self.create_record!(scope, request_fingerprint)
+    def self.create_record!(scope, request_fingerprint, expires_in:)
+      raise ArgumentError, "idempotency expiry must be between one minute and one day" unless expires_in.between?(1.minute, 24.hours)
+
       IdempotencyKey.create!(
         **scope,
         request_fingerprint:,
-        expires_at: 24.hours.from_now,
+        expires_at: Time.current + expires_in,
       )
     end
 
-    def self.canonical_json(value)
-      case value
-      when Hash
-        "{#{value.stringify_keys.sort.map { |key, item| "#{key.to_json}:#{canonical_json(item)}" }.join(",")}}"
-      when Array
-        "[#{value.map { |item| canonical_json(item) }.join(",")}]"
-      else
-        value.to_json
-      end
-    end
-
-    private_class_method :create_record!, :canonical_json
+    private_class_method :create_record!
   end
 end

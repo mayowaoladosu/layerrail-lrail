@@ -367,6 +367,98 @@ paths:
           $ref: "#/components/responses/PreconditionFailed"
         "429":
           $ref: "#/components/responses/RateLimited"
+  /v1/projects/{project_id}/source_uploads:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    post:
+      tags: [Projects]
+      operationId: createSourceUpload
+      summary: Authorize a direct source upload
+      description: Creates an expiring, organization-scoped upload session and returns one presigned URL for each bounded part.
+      x-lrail-action: source.upload.create
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SourceUploadCreate"
+      responses:
+        "201":
+          description: Direct source upload authorized.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SourceUploadAuthorization"
+        "400":
+          $ref: "#/components/responses/InvalidArgument"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/PreconditionFailed"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /v1/source_uploads/{source_upload_id}/finalize:
+    parameters:
+      - name: source_upload_id
+        in: path
+        required: true
+        description: Source upload session resource ID.
+        schema:
+          $ref: "#/components/schemas/ResourceId"
+    post:
+      tags: [Projects]
+      operationId: finalizeSourceUpload
+      summary: Finalize an uploaded source archive
+      description: Recomputes part and archive digests in the isolated source gateway and records an immutable source snapshot.
+      x-lrail-action: source.upload.finalize
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SourceUploadFinalize"
+      responses:
+        "200":
+          description: Source snapshot finalized.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [data, snapshot]
+                properties:
+                  data:
+                    $ref: "#/components/schemas/SourceUploadSession"
+                  snapshot:
+                    $ref: "#/components/schemas/SourceSnapshot"
+        "400":
+          $ref: "#/components/responses/InvalidArgument"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/PreconditionFailed"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "503":
+          $ref: "#/components/responses/Unavailable"
   /v1/projects/{project_id}/environments:
     parameters:
       - $ref: "#/components/parameters/ProjectId"
@@ -1764,6 +1856,155 @@ components:
               maxLength: 512
             template:
               $ref: "#/components/schemas/Slug"
+    SourceUploadCreate:
+      type: object
+      additionalProperties: false
+      required: [source_upload]
+      properties:
+        source_upload:
+          type: object
+          additionalProperties: false
+          required: [expected_archive_bytes, expected_archive_sha256, expected_parts]
+          properties:
+            expected_archive_bytes:
+              type: integer
+              minimum: 1
+              maximum: 1073741824
+            expected_archive_sha256:
+              type: string
+              pattern: "^sha256:[0-9a-f]{64}$"
+            expected_parts:
+              type: integer
+              minimum: 1
+              maximum: 256
+            root_directory:
+              type: string
+              maxLength: 512
+              default: ""
+            excluded_count:
+              type: integer
+              minimum: 0
+              default: 0
+    SourceUploadPart:
+      type: object
+      additionalProperties: false
+      required: [number, size, sha256]
+      properties:
+        number:
+          type: integer
+          minimum: 1
+          maximum: 256
+        size:
+          type: integer
+          minimum: 1
+          maximum: 16777216
+        sha256:
+          type: string
+          pattern: "^sha256:[0-9a-f]{64}$"
+    SourceUploadFinalize:
+      type: object
+      additionalProperties: false
+      required: [source_upload]
+      properties:
+        source_upload:
+          type: object
+          additionalProperties: false
+          required: [parts]
+          properties:
+            parts:
+              type: array
+              minItems: 1
+              maxItems: 256
+              items:
+                $ref: "#/components/schemas/SourceUploadPart"
+    SourceUploadSession:
+      type: object
+      additionalProperties: false
+      required: [id, type, state, project_id, expected_archive_bytes, expected_archive_sha256, expected_parts, expires_at, created_at, updated_at]
+      properties:
+        id:
+          $ref: "#/components/schemas/ResourceId"
+        type:
+          const: source_upload_session
+        state:
+          enum: [authorized, uploading, finalizing, complete, failed, expired, canceled]
+        project_id:
+          $ref: "#/components/schemas/ResourceId"
+        expected_archive_bytes:
+          type: integer
+        expected_archive_sha256:
+          type: string
+        expected_parts:
+          type: integer
+        expires_at:
+          type: string
+          format: date-time
+        snapshot_sha256:
+          type: [string, "null"]
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    SourceUploadAuthorization:
+      type: object
+      additionalProperties: false
+      required: [data, parts]
+      properties:
+        data:
+          $ref: "#/components/schemas/SourceUploadSession"
+        parts:
+          type: array
+          minItems: 1
+          maxItems: 256
+          items:
+            type: object
+            additionalProperties: false
+            required: [number, url, expires_at]
+            properties:
+              number:
+                type: integer
+              url:
+                type: string
+                format: uri
+              expires_at:
+                type: string
+                format: date-time
+    SourceSnapshot:
+      type: object
+      additionalProperties: false
+      required: [id, organization_id, project_id, kind, digest, object_ref, size_bytes, retention_until, created_at, updated_at]
+      properties:
+        id:
+          $ref: "#/components/schemas/ResourceId"
+        organization_id:
+          $ref: "#/components/schemas/ResourceId"
+        project_id:
+          $ref: "#/components/schemas/ResourceId"
+        kind:
+          enum: [local, git, promoted, migration]
+        repository:
+          type: [string, "null"]
+        commit_sha:
+          type: [string, "null"]
+        digest:
+          type: string
+          pattern: "^sha256:[0-9a-f]{64}$"
+        object_ref:
+          type: string
+        size_bytes:
+          type: integer
+          minimum: 0
+        retention_until:
+          type: string
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
     PromotionCreate:
       type: object
       additionalProperties: false
@@ -1785,7 +2026,7 @@ components:
         data: {}
     ResourceId:
       type: string
-      pattern: "^(acct|org|mbr|inv|prj|env|svc|src|snp|bld|rev|dep|rel|op|dom|crt|rte|add|att|bkp|rst|sch|wh|whd|key|evt|tgt|edg|cell|pop|use|sec|var|vol|job|run|pol|inc|ses|tok)_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+      pattern: "^(acct|org|mbr|inv|prj|env|svc|src|snp|bld|rev|dep|rel|op|dom|crt|rte|add|att|bkp|rst|sch|wh|whd|key|evt|tgt|edg|cell|pop|use|sec|var|vol|job|run|pol|inc|ses|tok|upl)_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
       example: prj_019b01da-7e31-7000-8000-000000000001
     Service:
       type: object

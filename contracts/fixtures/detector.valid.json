@@ -1,0 +1,38 @@
+{
+  "schema_version": "detector.lrail.dev/v1",
+  "snapshot_root": ".",
+  "services": [
+    {
+      "name": "web",
+      "root": ".",
+      "language": "ruby",
+      "framework": "Rails",
+      "build_method": "auto",
+      "install_command": ["bundle", "install", "--deployment"],
+      "build_command": ["bin/rails", "assets:precompile"],
+      "processes": [
+        {
+          "name": "web",
+          "kind": "web",
+          "command": ["bundle", "exec", "rails", "server"],
+          "port": 3000,
+          "health_path": "/up"
+        }
+      ],
+      "confidence": 0.98,
+      "evidence": [
+        {
+          "kind": "dependency",
+          "path": "Gemfile",
+          "detail": "Gemfile declares Rails",
+          "weight": 0.98
+        }
+      ],
+      "unsupported_features": [],
+      "files_considered": ["Gemfile"],
+      "ambiguous": false
+    }
+  ],
+  "warnings": [],
+  "blocked": false
+}

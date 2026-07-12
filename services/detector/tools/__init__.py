@@ -1,0 +1,1 @@
+"""Detector contract generation tools."""

@@ -1,0 +1,251 @@
+{
+  "$defs": {
+    "Evidence": {
+      "additionalProperties": false,
+      "description": "One bounded fact supporting a proposal.",
+      "properties": {
+        "detail": {
+          "maxLength": 512,
+          "title": "Detail",
+          "type": "string"
+        },
+        "kind": {
+          "enum": [
+            "manifest",
+            "dependency",
+            "script",
+            "file",
+            "docker",
+            "workspace"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "path": {
+          "maxLength": 1024,
+          "title": "Path",
+          "type": "string"
+        },
+        "weight": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Weight",
+          "type": "number"
+        }
+      },
+      "required": ["kind", "path", "detail", "weight"],
+      "title": "Evidence",
+      "type": "object"
+    },
+    "ProcessProposal": {
+      "additionalProperties": false,
+      "description": "One process group inferred without executing source.",
+      "properties": {
+        "command": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 64,
+          "title": "Command",
+          "type": "array"
+        },
+        "health_path": {
+          "anyOf": [
+            {
+              "maxLength": 512,
+              "pattern": "^/",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Health Path"
+        },
+        "kind": {
+          "enum": [
+            "web",
+            "worker",
+            "private_service",
+            "release",
+            "job",
+            "static"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "pattern": "^[a-z][a-z0-9-]{0,62}$",
+          "title": "Name",
+          "type": "string"
+        },
+        "port": {
+          "anyOf": [
+            {
+              "maximum": 65535,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Port"
+        }
+      },
+      "required": ["name", "kind", "command"],
+      "title": "ProcessProposal",
+      "type": "object"
+    },
+    "ServiceProposal": {
+      "additionalProperties": false,
+      "description": "Explainable build and runtime proposal for one service root.",
+      "properties": {
+        "ambiguous": {
+          "title": "Ambiguous",
+          "type": "boolean"
+        },
+        "build_command": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 64,
+          "title": "Build Command",
+          "type": "array"
+        },
+        "build_method": {
+          "enum": ["auto", "dockerfile", "starlark"],
+          "title": "Build Method",
+          "type": "string"
+        },
+        "confidence": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "evidence": {
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          },
+          "maxItems": 128,
+          "minItems": 1,
+          "title": "Evidence",
+          "type": "array"
+        },
+        "files_considered": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 512,
+          "minItems": 1,
+          "title": "Files Considered",
+          "type": "array"
+        },
+        "framework": {
+          "maxLength": 64,
+          "title": "Framework",
+          "type": "string"
+        },
+        "install_command": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 64,
+          "title": "Install Command",
+          "type": "array"
+        },
+        "language": {
+          "enum": ["ruby", "node", "python", "go", "static", "docker"],
+          "title": "Language",
+          "type": "string"
+        },
+        "name": {
+          "pattern": "^[a-z][a-z0-9-]{0,62}$",
+          "title": "Name",
+          "type": "string"
+        },
+        "processes": {
+          "items": {
+            "$ref": "#/$defs/ProcessProposal"
+          },
+          "maxItems": 32,
+          "minItems": 1,
+          "title": "Processes",
+          "type": "array"
+        },
+        "root": {
+          "maxLength": 1024,
+          "title": "Root",
+          "type": "string"
+        },
+        "unsupported_features": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 64,
+          "title": "Unsupported Features",
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "root",
+        "language",
+        "framework",
+        "build_method",
+        "install_command",
+        "build_command",
+        "processes",
+        "confidence",
+        "evidence",
+        "unsupported_features",
+        "files_considered",
+        "ambiguous"
+      ],
+      "title": "ServiceProposal",
+      "type": "object"
+    }
+  },
+  "$id": "https://contracts.lrail.dev/detector/detection-result.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Top-level stable detector response.",
+  "properties": {
+    "blocked": {
+      "title": "Blocked",
+      "type": "boolean"
+    },
+    "schema_version": {
+      "const": "detector.lrail.dev/v1",
+      "default": "detector.lrail.dev/v1",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "services": {
+      "items": {
+        "$ref": "#/$defs/ServiceProposal"
+      },
+      "maxItems": 64,
+      "title": "Services",
+      "type": "array"
+    },
+    "snapshot_root": {
+      "title": "Snapshot Root",
+      "type": "string"
+    },
+    "warnings": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 128,
+      "title": "Warnings",
+      "type": "array"
+    }
+  },
+  "required": ["snapshot_root", "services", "warnings", "blocked"],
+  "title": "DetectionResult",
+  "type": "object"
+}

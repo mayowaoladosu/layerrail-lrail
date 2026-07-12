@@ -106,6 +106,7 @@ tasks:
     cmds:
       - buf generate
       - corepack pnpm contracts:generate
+      - uv run --project "{{.DETECTOR}}" python "{{.DETECTOR}}/tools/generate_schema.py"
 
   package:
     desc: Build candidate artifacts from locked inputs

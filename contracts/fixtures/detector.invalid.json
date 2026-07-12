@@ -1,0 +1,23 @@
+{
+  "schema_version": "latest",
+  "snapshot_root": ".",
+  "services": [
+    {
+      "name": "INVALID NAME",
+      "root": ".",
+      "language": "shell",
+      "framework": "unknown",
+      "build_method": "execute",
+      "install_command": "curl installer",
+      "build_command": [],
+      "processes": [],
+      "confidence": 2,
+      "evidence": [],
+      "unsupported_features": [],
+      "files_considered": [],
+      "ambiguous": false
+    }
+  ],
+  "warnings": [],
+  "blocked": false
+}

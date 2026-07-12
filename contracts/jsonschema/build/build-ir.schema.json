@@ -1,0 +1,116 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.lrail.dev/build/build-ir.schema.json",
+  "title": "Deterministic Lrail Build IR v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "ir_version",
+    "compiler_version",
+    "source_snapshot",
+    "target_platform",
+    "network_profile",
+    "nodes",
+    "outputs"
+  ],
+  "properties": {
+    "ir_version": { "const": 1 },
+    "compiler_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "source_snapshot": { "$ref": "#/$defs/digest" },
+    "target_platform": { "enum": ["linux/amd64", "linux/arm64"] },
+    "network_profile": { "enum": ["none", "packages", "allowlist", "private"] },
+    "allowed_hosts": {
+      "type": "array",
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": { "type": "string", "format": "hostname" }
+    },
+    "nodes": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1024,
+      "items": { "$ref": "#/$defs/node" }
+    },
+    "outputs": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": { "$ref": "#/$defs/output" }
+    }
+  },
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "node": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "op", "inputs", "attributes"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^n[1-9][0-9]{0,4}$" },
+        "op": {
+          "enum": [
+            "source",
+            "image",
+            "run",
+            "copy",
+            "cache",
+            "secret",
+            "artifact",
+            "static_site"
+          ]
+        },
+        "inputs": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": { "type": "string", "pattern": "^n[1-9][0-9]{0,4}$" }
+        },
+        "attributes": {
+          "type": "object",
+          "maxProperties": 64,
+          "propertyNames": { "pattern": "^[a-z][a-z0-9_]{0,63}$" },
+          "additionalProperties": {
+            "oneOf": [
+              { "type": "string", "maxLength": 4096 },
+              { "type": "integer" },
+              { "type": "boolean" },
+              {
+                "type": "array",
+                "maxItems": 128,
+                "items": { "type": "string", "maxLength": 4096 }
+              }
+            ]
+          }
+        }
+      }
+    },
+    "output": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "kind", "state", "entrypoint", "command", "ports"],
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,62}$" },
+        "kind": { "enum": ["oci_image", "static_bundle", "artifact"] },
+        "state": { "type": "string", "pattern": "^n[1-9][0-9]{0,4}$" },
+        "entrypoint": {
+          "type": "array",
+          "maxItems": 32,
+          "items": { "type": "string", "maxLength": 4096 }
+        },
+        "command": {
+          "type": "array",
+          "maxItems": 64,
+          "items": { "type": "string", "maxLength": 4096 }
+        },
+        "ports": {
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": { "type": "integer", "minimum": 1, "maximum": 65535 }
+        }
+      }
+    }
+  }
+}

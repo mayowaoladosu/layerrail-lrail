@@ -1,0 +1,25 @@
+extends:
+  - recommended
+
+apis:
+  lrail@v1:
+    root: contracts/openapi/lrail-v1.yaml
+    x-openapi-ts:
+      output: sdk/typescript/src/generated/lrail-v1.ts
+
+rules:
+  operation-operationId: error
+  operation-summary: error
+  operation-description: warn
+  operation-4xx-response: error
+  no-ambiguous-paths: error
+  no-identical-paths: error
+  no-invalid-media-type-examples: error
+  no-server-example.com: error
+  security-defined: error
+  spec-strict-refs: error
+  tags-alphabetical: off
+
+resolve:
+  http:
+    headers: []

@@ -1,0 +1,14 @@
+{
+  "event_id": "event-1",
+  "event_type": "ReleaseStarted",
+  "schema_version": 2,
+  "occurred_at": "yesterday",
+  "producer": "Control Worker",
+  "organization_id": "foreign",
+  "resource": { "type": "release", "id": "missing", "version": 0 },
+  "actor": { "type": "root", "id": "admin" },
+  "correlation_id": "none",
+  "causation_id": null,
+  "traceparent": null,
+  "data": {}
+}

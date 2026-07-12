@@ -1,0 +1,10 @@
+{
+  "id": "operation-1",
+  "state": "maybe",
+  "stage": "",
+  "progress": { "completed": -1, "total": -2 },
+  "resource": { "type": "deployment", "id": "foreign" },
+  "conditions": [],
+  "created_at": "now",
+  "updated_at": "later"
+}

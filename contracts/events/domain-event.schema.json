@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.lrail.dev/events/domain-event.schema.json",
+  "title": "Lrail domain event v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "event_id",
+    "event_type",
+    "schema_version",
+    "occurred_at",
+    "producer",
+    "organization_id",
+    "resource",
+    "actor",
+    "correlation_id",
+    "causation_id",
+    "traceparent",
+    "data"
+  ],
+  "properties": {
+    "event_id": {
+      "$ref": "https://contracts.lrail.dev/common/resource-id.schema.json"
+    },
+    "event_type": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9_]*(\\.[a-z][a-z0-9_]*)+$"
+    },
+    "schema_version": { "const": 1 },
+    "occurred_at": { "type": "string", "format": "date-time" },
+    "producer": { "type": "string", "pattern": "^[a-z][a-z0-9-]{1,63}$" },
+    "organization_id": {
+      "$ref": "https://contracts.lrail.dev/common/resource-id.schema.json"
+    },
+    "resource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id", "version"],
+      "properties": {
+        "type": { "type": "string", "pattern": "^[a-z][a-z0-9_]{1,63}$" },
+        "id": {
+          "$ref": "https://contracts.lrail.dev/common/resource-id.schema.json"
+        },
+        "version": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "actor": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id"],
+      "properties": {
+        "type": {
+          "enum": ["account", "service_principal", "system", "operator"]
+        },
+        "id": { "type": ["string", "null"], "maxLength": 128 }
+      }
+    },
+    "correlation_id": { "type": "string", "pattern": "^req_[0-9a-f]{32}$" },
+    "causation_id": { "type": ["string", "null"], "maxLength": 128 },
+    "traceparent": {
+      "type": ["string", "null"],
+      "pattern": "^(00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2})?$"
+    },
+    "data": { "type": "object", "maxProperties": 128 }
+  }
+}

@@ -43,7 +43,8 @@ tasks:
       - uv run --project "{{.DETECTOR}}" ruff check "{{.DETECTOR}}"
       - uv run --project "{{.DETECTOR}}" mypy "{{.DETECTOR}}/src"
       - go test ./...
-      - python tools/validate_contracts.py
+      - corepack pnpm contracts:lint
+      - python tools/validate-compose.py
 
   test:
     desc: Run all hermetic package tests
@@ -68,10 +69,21 @@ tasks:
     cmds:
       - docker compose up -d --wait
 
+  lab:verify:
+    desc: Validate configuration, cold start dependencies, and probe protocols
+    cmds:
+      - python tools/verify-local-stack.py
+
   lab:down:
     desc: Stop the local profile without deleting named data
     cmds:
       - docker compose down
+
+  db:prepare:
+    desc: Create and migrate local control-plane databases
+    cmds:
+      - cmd: bundle exec rails db:prepare
+        dir: "{{.CONTROL_PLANE}}"
 
   e2e:
     desc: Run browser, API, and CLI golden journeys
@@ -93,7 +105,7 @@ tasks:
     desc: Generate all contracts and verify deterministic output
     cmds:
       - buf generate
-      - python tools/generate_contract_fixtures.py
+      - corepack pnpm contracts:generate
 
   package:
     desc: Build candidate artifacts from locked inputs

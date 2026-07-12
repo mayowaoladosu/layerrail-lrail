@@ -1,0 +1,32 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.lrail.dev/common/condition.schema.json",
+  "title": "Observed condition",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "type",
+    "status",
+    "reason",
+    "message",
+    "observed_generation",
+    "last_transition_time",
+    "related_resource_ids"
+  ],
+  "properties": {
+    "type": { "type": "string", "pattern": "^[A-Z][A-Za-z0-9]{1,63}$" },
+    "status": { "enum": ["True", "False", "Unknown"] },
+    "reason": { "type": "string", "pattern": "^[A-Z][A-Za-z0-9]{1,63}$" },
+    "message": { "type": "string", "maxLength": 1024 },
+    "observed_generation": { "type": "integer", "minimum": 0 },
+    "last_transition_time": { "type": "string", "format": "date-time" },
+    "related_resource_ids": {
+      "type": "array",
+      "maxItems": 32,
+      "uniqueItems": true,
+      "items": {
+        "$ref": "https://contracts.lrail.dev/common/resource-id.schema.json"
+      }
+    }
+  }
+}

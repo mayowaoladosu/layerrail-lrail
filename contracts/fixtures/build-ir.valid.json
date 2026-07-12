@@ -1,0 +1,46 @@
+{
+  "ir_version": 1,
+  "compiler_version": "0.1.0",
+  "source_snapshot": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "target_platform": "linux/amd64",
+  "network_profile": "packages",
+  "allowed_hosts": [],
+  "nodes": [
+    {
+      "id": "n1",
+      "op": "source",
+      "inputs": [],
+      "attributes": { "path": ".", "exclude": [".git/**"] }
+    },
+    {
+      "id": "n2",
+      "op": "image",
+      "inputs": [],
+      "attributes": {
+        "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    },
+    {
+      "id": "n3",
+      "op": "run",
+      "inputs": ["n2"],
+      "attributes": { "argv": ["bundle", "install"], "network": "packages" }
+    },
+    {
+      "id": "n4",
+      "op": "copy",
+      "inputs": ["n1", "n3"],
+      "attributes": { "destination": "/workspace", "owner": "10001:10001" }
+    }
+  ],
+  "outputs": [
+    {
+      "name": "api",
+      "kind": "oci_image",
+      "state": "n4",
+      "entrypoint": ["bin/rails"],
+      "command": ["server"],
+      "ports": [3000]
+    }
+  ]
+}

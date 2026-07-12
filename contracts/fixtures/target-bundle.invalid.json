@@ -1,0 +1,21 @@
+{
+  "api_version": "regional.lrail.dev/v2",
+  "bundle_id": "bundle-1",
+  "cell_id": "cell-any",
+  "organization_id": "org-any",
+  "project_id": "project-any",
+  "environment_id": "environment-any",
+  "generation": 0,
+  "previous_generation": null,
+  "issued_at": "now",
+  "expires_at": "never",
+  "policy_digest": "latest",
+  "services": [],
+  "routes": [],
+  "secret_refs": [],
+  "volumes": [],
+  "addon_bindings": [],
+  "schedules": [],
+  "artifacts": [],
+  "signature": { "key_id": "root", "algorithm": "none", "value": "unsigned" }
+}

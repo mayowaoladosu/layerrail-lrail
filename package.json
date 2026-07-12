@@ -13,6 +13,20 @@
     "check": "pnpm -r --if-present check",
     "test": "pnpm -r --if-present test",
     "build": "pnpm -r --if-present build",
-    "format:check": "pnpm -r --if-present format:check"
+    "format:check": "prettier --check .",
+    "contracts:lint": "redocly lint contracts/openapi/lrail-v1.yaml && tsx tools/validate-contracts.ts",
+    "contracts:generate": "openapi-typescript"
+  },
+  "devDependencies": {
+    "@redocly/cli": "2.38.0",
+    "@types/node": "26.1.1",
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
+    "openapi-typescript": "7.13.0",
+    "prettier": "3.9.5",
+    "tsx": "4.23.0",
+    "typescript": "5.9.3",
+    "vitest": "4.1.10",
+    "yaml": "2.9.0"
   }
 }

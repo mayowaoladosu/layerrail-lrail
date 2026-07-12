@@ -1,0 +1,9 @@
+{
+  "ir_version": 1,
+  "compiler_version": "latest",
+  "source_snapshot": "mutable-source",
+  "target_platform": "windows/amd64",
+  "network_profile": "internet",
+  "nodes": [],
+  "outputs": []
+}

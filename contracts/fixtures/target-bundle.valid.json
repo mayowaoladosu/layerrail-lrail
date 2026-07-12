@@ -1,0 +1,63 @@
+{
+  "api_version": "regional.lrail.dev/v1",
+  "bundle_id": "tgt_019b01da-7e31-7000-8000-000000000040",
+  "cell_id": "cell_019b01da-7e31-7000-8000-000000000041",
+  "organization_id": "org_019b01da-7e31-7000-8000-000000000001",
+  "project_id": "prj_019b01da-7e31-7000-8000-000000000002",
+  "environment_id": "env_019b01da-7e31-7000-8000-000000000003",
+  "generation": 1,
+  "previous_generation": null,
+  "issued_at": "2026-07-12T18:00:00.000Z",
+  "expires_at": "2026-07-12T19:00:00.000Z",
+  "policy_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "services": [
+    {
+      "id": "svc_019b01da-7e31-7000-8000-000000000004",
+      "revision_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "config_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "processes": [
+        {
+          "name": "web",
+          "kind": "web",
+          "command": ["bin/rails", "server"],
+          "port": 3000,
+          "runtime_class": "sandbox",
+          "resources": {
+            "cpu_millis": 500,
+            "memory_bytes": 536870912,
+            "ephemeral_storage_bytes": 1073741824
+          },
+          "replicas": { "minimum": 2, "maximum": 10 }
+        }
+      ]
+    }
+  ],
+  "routes": [
+    {
+      "id": "rte_019b01da-7e31-7000-8000-000000000042",
+      "service_id": "svc_019b01da-7e31-7000-8000-000000000004",
+      "hostname": "checkout.lrail.dev",
+      "path_prefix": "/",
+      "protocol": "https"
+    }
+  ],
+  "secret_refs": [],
+  "volumes": [],
+  "addon_bindings": [],
+  "schedules": [],
+  "artifacts": [
+    {
+      "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "platform": "linux/amd64",
+      "signature_ref": "oci://registry.lrail.dev/evidence/signature",
+      "provenance_ref": "oci://registry.lrail.dev/evidence/provenance",
+      "sbom_ref": "oci://registry.lrail.dev/evidence/sbom",
+      "policy_ref": "oci://registry.lrail.dev/evidence/policy"
+    }
+  ],
+  "signature": {
+    "key_id": "global-target-1",
+    "algorithm": "ed25519",
+    "value": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+  }
+}

@@ -1,0 +1,25 @@
+{
+  "id": "op_019b01da-7e31-7000-8000-000000000030",
+  "state": "running",
+  "stage": "building",
+  "waiting_reason": null,
+  "progress": { "completed": 5, "total": 11 },
+  "resource": {
+    "type": "deployment",
+    "id": "dep_019b01da-7e31-7000-8000-000000000005"
+  },
+  "conditions": [
+    {
+      "type": "ArtifactPublished",
+      "status": "False",
+      "reason": "BuildSolving",
+      "message": "The isolated build is solving its declared graph.",
+      "observed_generation": 1,
+      "last_transition_time": "2026-07-12T18:00:00.000Z",
+      "related_resource_ids": ["bld_019b01da-7e31-7000-8000-000000000006"]
+    }
+  ],
+  "error": null,
+  "created_at": "2026-07-12T17:59:00.000Z",
+  "updated_at": "2026-07-12T18:00:00.000Z"
+}

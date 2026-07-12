@@ -1,0 +1,1904 @@
+openapi: 3.1.0
+info:
+  title: Lrail Public API
+  version: 1.0.0
+  summary: Versioned control-plane API for Lrail resources and operations.
+  description: >-
+    The authoritative automation interface for organizations, projects, services,
+    immutable deployments, releases, domains, data services, telemetry, and
+    asynchronous operations. Customer resources are always organization scoped.
+  license:
+    name: Proprietary
+    identifier: LicenseRef-Proprietary
+servers:
+  - url: https://api.lrail.dev
+    description: Production
+tags:
+  - name: Health
+    description: Process liveness and admission readiness.
+  - name: Identity
+    description: Authenticated account and membership context.
+  - name: Organizations
+    description: Tenant boundaries, memberships, policy, and ownership.
+  - name: Projects
+    description: Projects, environments, services, and manifests.
+  - name: Delivery
+    description: Immutable deployments, revisions, releases, promotion, and rollback.
+  - name: Edge
+    description: Domains, ownership, certificates, routes, and edge policy.
+  - name: Data
+    description: Managed add-ons, attachments, backups, restores, and credentials.
+  - name: Telemetry
+    description: Tenant-scoped logs, metrics, traces, alerts, and usage.
+  - name: Operations
+    description: Durable progress for asynchronous commands.
+security:
+  - bearerAuth: []
+  - apiKeyAuth: []
+paths:
+  /live:
+    get:
+      tags: [Health]
+      operationId: getLiveness
+      summary: Check process liveness
+      description: Reports whether the process can serve an HTTP response.
+      security: []
+      responses:
+        "200":
+          description: Process is live.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+        "400":
+          $ref: "#/components/responses/InvalidArgument"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /ready:
+    get:
+      tags: [Health]
+      operationId: getReadiness
+      summary: Check admission readiness
+      description: Reports whether mandatory dependencies allow new work.
+      security: []
+      responses:
+        "200":
+          description: Process is ready for new work.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+        "400":
+          $ref: "#/components/responses/InvalidArgument"
+        "503":
+          $ref: "#/components/responses/Unavailable"
+  /v1/me:
+    get:
+      tags: [Identity]
+      operationId: getCurrentPrincipal
+      summary: Get the authenticated principal
+      description: Returns the current account and its organization memberships.
+      x-lrail-action: identity.me.read
+      responses:
+        "200":
+          description: Current principal.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: "#/components/schemas/Principal"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /v1/organizations:
+    get:
+      tags: [Organizations]
+      operationId: listOrganizations
+      summary: List organizations
+      description: Lists organizations visible to the authenticated principal.
+      x-lrail-action: organization.list
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+      responses:
+        "200":
+          description: Organization page.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/Organization"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+    post:
+      tags: [Organizations]
+      operationId: createOrganization
+      summary: Create an organization
+      description: Creates an organization and an owner membership atomically.
+      x-lrail-action: organization.create
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrganizationCreate"
+      responses:
+        "201":
+          description: Organization created.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ResourceEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/Organization"
+        "400":
+          $ref: "#/components/responses/InvalidArgument"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /v1/organizations/{organization_id}:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+    get:
+      tags: [Organizations]
+      operationId: getOrganization
+      summary: Get an organization
+      description: Returns one organization inside the authenticated membership scope.
+      x-lrail-action: organization.read
+      responses:
+        "200":
+          description: Organization.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ResourceEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/Organization"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+    patch:
+      tags: [Organizations]
+      operationId: updateOrganization
+      summary: Update an organization
+      description: Updates mutable organization metadata under optimistic locking.
+      x-lrail-action: organization.update
+      parameters:
+        - $ref: "#/components/parameters/IfMatch"
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/OrganizationUpdate"
+      responses:
+        "200":
+          description: Updated organization.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ResourceEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/Organization"
+        "400":
+          $ref: "#/components/responses/InvalidArgument"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /v1/organizations/{organization_id}/projects:
+    parameters:
+      - $ref: "#/components/parameters/OrganizationId"
+    get:
+      tags: [Projects]
+      operationId: listProjects
+      summary: List projects
+      description: Lists projects owned by one organization.
+      x-lrail-action: project.list
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+        - name: status
+          in: query
+          description: Filter by projected project health.
+          schema:
+            type: string
+            enum: [healthy, degraded, deploying, paused]
+      responses:
+        "200":
+          description: Project page.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/Project"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+    post:
+      tags: [Projects]
+      operationId: createProject
+      summary: Create a project
+      description: Creates a project and starts its durable provisioning operation.
+      x-lrail-action: project.create
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProjectCreate"
+      responses:
+        "202":
+          description: Project command accepted.
+          headers:
+            Location:
+              $ref: "#/components/headers/OperationLocation"
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, operation]
+                properties:
+                  data:
+                    $ref: "#/components/schemas/Project"
+                  operation:
+                    $ref: "#/components/schemas/Operation"
+        "400":
+          $ref: "#/components/responses/InvalidArgument"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/PreconditionFailed"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /v1/projects/{project_id}:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Projects]
+      operationId: getProject
+      summary: Get a project
+      description: Returns one project with its current environment health projection.
+      x-lrail-action: project.read
+      responses:
+        "200":
+          description: Project.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ResourceEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/Project"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+    delete:
+      tags: [Projects]
+      operationId: deleteProject
+      summary: Request project deletion
+      description: Starts a retention-aware dependency inventory and deletion workflow.
+      x-lrail-action: project.delete
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+        - $ref: "#/components/parameters/IfMatch"
+      responses:
+        "202":
+          $ref: "#/components/responses/OperationAccepted"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/PreconditionFailed"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /v1/projects/{project_id}/environments:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Projects]
+      operationId: listEnvironments
+      summary: List project environments
+      description: Lists promotion and configuration boundaries for a project.
+      x-lrail-action: environment.list
+      responses:
+        "200":
+          description: Environments.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Environment"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /v1/projects/{project_id}/services:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Projects]
+      operationId: listServices
+      summary: List project services
+      description: Lists deployable services and their current release conditions.
+      x-lrail-action: service.list
+      parameters:
+        - name: environment_id
+          in: query
+          description: Restrict projected status to one environment.
+          schema:
+            $ref: "#/components/schemas/ResourceId"
+      responses:
+        "200":
+          description: Services.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Service"
+        "400":
+          $ref: "#/components/responses/InvalidArgument"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /v1/projects/{project_id}/deployments:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Delivery]
+      operationId: listDeployments
+      summary: List project deployments
+      description: Lists immutable deployment attempts in stable reverse chronological order.
+      x-lrail-action: deployment.list
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+        - $ref: "#/components/parameters/Cursor"
+        - name: environment_id
+          in: query
+          description: Restrict deployments to one environment.
+          schema:
+            $ref: "#/components/schemas/ResourceId"
+        - name: state
+          in: query
+          description: Restrict deployments to one lifecycle state.
+          schema:
+            $ref: "#/components/schemas/DeploymentState"
+      responses:
+        "200":
+          description: Deployment page.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/Deployment"
+        "400":
+          $ref: "#/components/responses/InvalidArgument"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+    post:
+      tags: [Delivery]
+      operationId: createDeployment
+      summary: Create a deployment
+      description: Accepts an exact Git source or finalized local source snapshot for deployment.
+      x-lrail-action: deployment.create
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DeploymentCreate"
+            examples:
+              git:
+                summary: Deploy an exact Git commit
+                value:
+                  source:
+                    kind: git
+                    connection_id: src_019b01da-7e31-7000-8000-000000000011
+                    repository: owner/repository
+                    commit: 4f8c36f52fa74a42a904a36d0d18b65c6dc237f7
+                  environment_id: env_019b01da-7e31-7000-8000-000000000003
+                  manifest_revision: 12
+                  reason: Deploy checkout fix
+      responses:
+        "202":
+          description: Deployment accepted.
+          headers:
+            Location:
+              $ref: "#/components/headers/OperationLocation"
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, operation]
+                properties:
+                  data:
+                    $ref: "#/components/schemas/Deployment"
+                  operation:
+                    $ref: "#/components/schemas/Operation"
+        "400":
+          $ref: "#/components/responses/InvalidArgument"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/PreconditionFailed"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /v1/deployments/{deployment_id}:
+    parameters:
+      - $ref: "#/components/parameters/DeploymentId"
+    get:
+      tags: [Delivery]
+      operationId: getDeployment
+      summary: Get a deployment
+      description: Returns the deployment attempt, immutable source, evidence, and current operation.
+      x-lrail-action: deployment.read
+      responses:
+        "200":
+          description: Deployment.
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ResourceEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/Deployment"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+    delete:
+      tags: [Delivery]
+      operationId: cancelDeployment
+      summary: Cancel a deployment
+      description: Signals cancellation and leaves durable cleanup owned by the workflow.
+      x-lrail-action: deployment.cancel
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "202":
+          $ref: "#/components/responses/OperationAccepted"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /v1/deployments/{deployment_id}/promote:
+    parameters:
+      - $ref: "#/components/parameters/DeploymentId"
+    post:
+      tags: [Delivery]
+      operationId: promoteDeployment
+      summary: Promote a verified deployment
+      description: Creates a release from an immutable revision without rebuilding source.
+      x-lrail-action: release.promote
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PromotionCreate"
+      responses:
+        "202":
+          $ref: "#/components/responses/OperationAccepted"
+        "400":
+          $ref: "#/components/responses/InvalidArgument"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/PreconditionFailed"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /v1/releases/{release_id}/rollback:
+    parameters:
+      - $ref: "#/components/parameters/ReleaseId"
+    post:
+      tags: [Delivery]
+      operationId: rollbackRelease
+      summary: Roll back a release
+      description: Creates a new release event pointing to a previously verified revision.
+      x-lrail-action: release.rollback
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [reason]
+              properties:
+                reason:
+                  type: string
+                  minLength: 3
+                  maxLength: 512
+      responses:
+        "202":
+          $ref: "#/components/responses/OperationAccepted"
+        "400":
+          $ref: "#/components/responses/InvalidArgument"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/PreconditionFailed"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /v1/projects/{project_id}/domains:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Edge]
+      operationId: listDomains
+      summary: List project domains
+      description: Lists ownership, DNS, certificate, and edge publication state.
+      x-lrail-action: domain.list
+      responses:
+        "200":
+          description: Domains.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Domain"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+    post:
+      tags: [Edge]
+      operationId: createDomain
+      summary: Attach a domain
+      description: Creates a domain ownership challenge before any route can receive traffic.
+      x-lrail-action: domain.create
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/DomainCreate"
+      responses:
+        "202":
+          $ref: "#/components/responses/OperationAccepted"
+        "400":
+          $ref: "#/components/responses/InvalidArgument"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/PreconditionFailed"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /v1/projects/{project_id}/addons:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Data]
+      operationId: listAddons
+      summary: List project add-ons
+      description: Lists managed data services and normalized lifecycle conditions.
+      x-lrail-action: addon.list
+      responses:
+        "200":
+          description: Add-ons.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Addon"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+    post:
+      tags: [Data]
+      operationId: createAddon
+      summary: Provision a managed add-on
+      description: Starts capacity reservation, operator provisioning, credential, and initial-backup workflow.
+      x-lrail-action: addon.create
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AddonCreate"
+      responses:
+        "202":
+          $ref: "#/components/responses/OperationAccepted"
+        "400":
+          $ref: "#/components/responses/InvalidArgument"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/PreconditionFailed"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /v1/projects/{project_id}/telemetry/logs:
+    parameters:
+      - $ref: "#/components/parameters/ProjectId"
+    get:
+      tags: [Telemetry]
+      operationId: queryLogs
+      summary: Query project logs
+      description: Queries tenant-scoped logs through the authorized query broker.
+      x-lrail-action: telemetry.logs.read
+      parameters:
+        - name: environment_id
+          in: query
+          required: true
+          description: Environment boundary for the query.
+          schema:
+            $ref: "#/components/schemas/ResourceId"
+        - name: service_id
+          in: query
+          description: Optional service filter.
+          schema:
+            $ref: "#/components/schemas/ResourceId"
+        - name: start
+          in: query
+          required: true
+          description: Inclusive RFC 3339 start time.
+          schema:
+            type: string
+            format: date-time
+        - name: end
+          in: query
+          required: true
+          description: Exclusive RFC 3339 end time.
+          schema:
+            type: string
+            format: date-time
+        - name: query
+          in: query
+          description: Bounded text query interpreted by the broker.
+          schema:
+            type: string
+            maxLength: 2048
+      responses:
+        "200":
+          description: Authorized log records.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data, completeness]
+                properties:
+                  data:
+                    type: array
+                    maxItems: 1000
+                    items:
+                      $ref: "#/components/schemas/LogRecord"
+                  completeness:
+                    $ref: "#/components/schemas/Completeness"
+        "400":
+          $ref: "#/components/responses/InvalidArgument"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /v1/operations/{operation_id}:
+    parameters:
+      - $ref: "#/components/parameters/OperationId"
+    get:
+      tags: [Operations]
+      operationId: getOperation
+      summary: Get an asynchronous operation
+      description: Returns durable progress, conditions, waiting reason, and safe failure information.
+      x-lrail-action: operation.read
+      responses:
+        "200":
+          description: Operation.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: "#/components/schemas/Operation"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque
+      description: Short-lived audience-bound OAuth access token.
+    apiKeyAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: lrail_api_key
+      description: Scoped API key whose secret is shown once and stored only as a hash.
+  headers:
+    ETag:
+      description: Strong resource version tag for optimistic updates.
+      schema:
+        type: string
+        pattern: '^"[0-9]+"$'
+    OperationLocation:
+      description: Canonical URL of the accepted asynchronous operation.
+      schema:
+        type: string
+        format: uri-reference
+  parameters:
+    Cursor:
+      name: cursor
+      in: query
+      description: Opaque query-bound continuation cursor.
+      schema:
+        type: string
+        maxLength: 2048
+    DeploymentId:
+      name: deployment_id
+      in: path
+      required: true
+      description: Deployment resource ID.
+      schema:
+        $ref: "#/components/schemas/ResourceId"
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      description: Caller-generated key scoped by organization, principal, method, and normalized route.
+      schema:
+        type: string
+        minLength: 16
+        maxLength: 128
+        pattern: "^[A-Za-z0-9._:-]+$"
+    IfMatch:
+      name: If-Match
+      in: header
+      required: true
+      description: Strong ETag returned by the last resource read.
+      schema:
+        type: string
+        pattern: '^"[0-9]+"$'
+    Limit:
+      name: limit
+      in: query
+      description: Maximum resources in one page.
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 100
+        default: 50
+    OperationId:
+      name: operation_id
+      in: path
+      required: true
+      description: Operation resource ID.
+      schema:
+        $ref: "#/components/schemas/ResourceId"
+    OrganizationId:
+      name: organization_id
+      in: path
+      required: true
+      description: Organization resource ID.
+      schema:
+        $ref: "#/components/schemas/ResourceId"
+    ProjectId:
+      name: project_id
+      in: path
+      required: true
+      description: Project resource ID.
+      schema:
+        $ref: "#/components/schemas/ResourceId"
+    ReleaseId:
+      name: release_id
+      in: path
+      required: true
+      description: Release resource ID.
+      schema:
+        $ref: "#/components/schemas/ResourceId"
+  responses:
+    Conflict:
+      description: Current state, optimistic version, or idempotency input conflicts.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    Forbidden:
+      description: Authenticated principal lacks the named action, scope, or policy grant.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    InvalidArgument:
+      description: Request shape or value is invalid and is not retryable unchanged.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    NotFound:
+      description: Resource does not exist or is outside the authenticated organization scope.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    OperationAccepted:
+      description: Durable operation accepted.
+      headers:
+        Location:
+          $ref: "#/components/headers/OperationLocation"
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [data]
+            properties:
+              data:
+                $ref: "#/components/schemas/Operation"
+    PreconditionFailed:
+      description: A named ownership, policy, MFA, backup, generation, or entitlement precondition failed.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    RateLimited:
+      description: Principal, organization, route, or safety limit exceeded.
+      headers:
+        Retry-After:
+          description: Seconds until the caller may retry.
+          schema:
+            type: integer
+            minimum: 1
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    Unauthenticated:
+      description: Authentication is missing, invalid, expired, or not audience bound.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+    Unavailable:
+      description: Mandatory dependency is unavailable; serving paths may retain last known good state.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+  schemas:
+    Addon:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          id,
+          organization_id,
+          project_id,
+          environment_id,
+          name,
+          engine,
+          state,
+          region,
+          deletion_protection,
+          conditions,
+          created_at,
+          updated_at,
+        ]
+      properties:
+        id:
+          $ref: "#/components/schemas/ResourceId"
+        organization_id:
+          $ref: "#/components/schemas/ResourceId"
+        project_id:
+          $ref: "#/components/schemas/ResourceId"
+        environment_id:
+          $ref: "#/components/schemas/ResourceId"
+        name:
+          $ref: "#/components/schemas/Slug"
+        engine:
+          type: string
+          enum:
+            [
+              postgresql,
+              mysql,
+              mariadb,
+              valkey,
+              mongodb,
+              opensearch,
+              clickhouse,
+              rabbitmq,
+            ]
+        state:
+          type: string
+          enum:
+            [
+              requested,
+              provisioning,
+              configuring,
+              available,
+              attached,
+              backing_up,
+              restoring,
+              resizing,
+              deletion_pending,
+              final_backup,
+              deleting,
+              deleted,
+              failed,
+            ]
+        region:
+          $ref: "#/components/schemas/Slug"
+        deletion_protection:
+          type: boolean
+        conditions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Condition"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    AddonCreate:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          environment_id,
+          name,
+          engine,
+          version_channel,
+          topology,
+          size_profile,
+          storage_profile,
+          region,
+          backup_policy,
+          deletion_protection,
+        ]
+      properties:
+        environment_id:
+          $ref: "#/components/schemas/ResourceId"
+        name:
+          $ref: "#/components/schemas/Slug"
+        engine:
+          type: string
+          enum:
+            [
+              postgresql,
+              mysql,
+              mariadb,
+              valkey,
+              mongodb,
+              opensearch,
+              clickhouse,
+              rabbitmq,
+            ]
+        version_channel:
+          type: string
+          maxLength: 64
+        topology:
+          type: string
+          enum: [single, replicated, high_availability, clustered]
+        size_profile:
+          $ref: "#/components/schemas/Slug"
+        storage_profile:
+          $ref: "#/components/schemas/Slug"
+        region:
+          $ref: "#/components/schemas/Slug"
+        backup_policy:
+          type: string
+          enum: [none, daily, hourly, continuous]
+        deletion_protection:
+          type: boolean
+          default: true
+    Completeness:
+      type: object
+      additionalProperties: false
+      required: [complete, sampled, dropped_records, watermark]
+      properties:
+        complete:
+          type: boolean
+        sampled:
+          type: boolean
+        dropped_records:
+          type: integer
+          minimum: 0
+        watermark:
+          type: string
+          format: date-time
+    Condition:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          type,
+          status,
+          reason,
+          message,
+          observed_generation,
+          last_transition_time,
+          related_resource_ids,
+        ]
+      properties:
+        type:
+          type: string
+          pattern: "^[A-Z][A-Za-z0-9]{1,63}$"
+        status:
+          type: string
+          enum: ["True", "False", Unknown]
+        reason:
+          type: string
+          pattern: "^[A-Z][A-Za-z0-9]{1,63}$"
+        message:
+          type: string
+          maxLength: 1024
+        observed_generation:
+          type: integer
+          minimum: 0
+        last_transition_time:
+          type: string
+          format: date-time
+        related_resource_ids:
+          type: array
+          maxItems: 32
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/ResourceId"
+    Deployment:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          id,
+          organization_id,
+          project_id,
+          environment_id,
+          state,
+          source,
+          manifest_revision,
+          operation_id,
+          revision_id,
+          created_at,
+          updated_at,
+        ]
+      properties:
+        id:
+          $ref: "#/components/schemas/ResourceId"
+        organization_id:
+          $ref: "#/components/schemas/ResourceId"
+        project_id:
+          $ref: "#/components/schemas/ResourceId"
+        environment_id:
+          $ref: "#/components/schemas/ResourceId"
+        state:
+          $ref: "#/components/schemas/DeploymentState"
+        source:
+          $ref: "#/components/schemas/DeploymentSource"
+        manifest_revision:
+          type: integer
+          minimum: 1
+        operation_id:
+          $ref: "#/components/schemas/ResourceId"
+        revision_id:
+          oneOf:
+            - $ref: "#/components/schemas/ResourceId"
+            - type: "null"
+        revision_digest:
+          oneOf:
+            - $ref: "#/components/schemas/Sha256Digest"
+            - type: "null"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    DeploymentCreate:
+      type: object
+      additionalProperties: false
+      required: [source, environment_id, manifest_revision, reason]
+      properties:
+        source:
+          $ref: "#/components/schemas/DeploymentSource"
+        environment_id:
+          $ref: "#/components/schemas/ResourceId"
+        manifest_revision:
+          type: integer
+          minimum: 1
+        reason:
+          type: string
+          minLength: 3
+          maxLength: 512
+    DeploymentSource:
+      oneOf:
+        - type: object
+          title: Git source
+          additionalProperties: false
+          required: [kind, connection_id, repository, commit]
+          properties:
+            kind:
+              const: git
+            connection_id:
+              $ref: "#/components/schemas/ResourceId"
+            repository:
+              type: string
+              pattern: "^[^/\\s]+/[^/\\s]+$"
+              maxLength: 512
+            commit:
+              type: string
+              pattern: "^[0-9a-f]{40,64}$"
+        - type: object
+          title: Finalized local source
+          additionalProperties: false
+          required: [kind, source_snapshot_id]
+          properties:
+            kind:
+              const: local
+            source_snapshot_id:
+              $ref: "#/components/schemas/ResourceId"
+      discriminator:
+        propertyName: kind
+    DeploymentState:
+      type: string
+      enum:
+        [
+          created,
+          sourcing,
+          detecting,
+          queued,
+          building,
+          scanning,
+          publishing,
+          scheduling,
+          starting,
+          verifying,
+          ready,
+          promoted,
+          canceling,
+          canceled,
+          failed,
+          retrying,
+        ]
+    Domain:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          id,
+          organization_id,
+          project_id,
+          environment_id,
+          hostname,
+          mode,
+          state,
+          conditions,
+          created_at,
+          updated_at,
+        ]
+      properties:
+        id:
+          $ref: "#/components/schemas/ResourceId"
+        organization_id:
+          $ref: "#/components/schemas/ResourceId"
+        project_id:
+          $ref: "#/components/schemas/ResourceId"
+        environment_id:
+          $ref: "#/components/schemas/ResourceId"
+        hostname:
+          type: string
+          format: hostname
+          maxLength: 253
+        mode:
+          type: string
+          enum: [external_dns, delegated_zone, registered, platform_subdomain]
+        state:
+          type: string
+          enum:
+            [
+              requested,
+              challenge_pending,
+              verified,
+              dns_pending,
+              certificate_pending,
+              active,
+              renewing,
+              suspended,
+              revalidating,
+              expired,
+              detaching,
+              released,
+            ]
+        conditions:
+          type: array
+          items:
+            $ref: "#/components/schemas/Condition"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    DomainCreate:
+      type: object
+      additionalProperties: false
+      required: [environment_id, service_id, hostname, mode]
+      properties:
+        environment_id:
+          $ref: "#/components/schemas/ResourceId"
+        service_id:
+          $ref: "#/components/schemas/ResourceId"
+        hostname:
+          type: string
+          format: hostname
+          maxLength: 253
+        mode:
+          type: string
+          enum: [external_dns, delegated_zone, registered, platform_subdomain]
+    Environment:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          id,
+          organization_id,
+          project_id,
+          name,
+          protected,
+          generation,
+          health,
+          created_at,
+          updated_at,
+        ]
+      properties:
+        id:
+          $ref: "#/components/schemas/ResourceId"
+        organization_id:
+          $ref: "#/components/schemas/ResourceId"
+        project_id:
+          $ref: "#/components/schemas/ResourceId"
+        name:
+          $ref: "#/components/schemas/Slug"
+        protected:
+          type: boolean
+        generation:
+          type: integer
+          minimum: 1
+        health:
+          type: string
+          enum: [healthy, degraded, deploying, paused, unknown]
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    ErrorEnvelope:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: object
+          additionalProperties: false
+          required: [code, message, request_id, details]
+          properties:
+            code:
+              type: string
+              pattern: "^[a-z][a-z0-9_]{1,63}$"
+            message:
+              type: string
+              minLength: 1
+              maxLength: 512
+            request_id:
+              type: string
+              pattern: "^req_[0-9a-f]{32}$"
+            details:
+              type: array
+              maxItems: 64
+              items:
+                type: object
+                additionalProperties: false
+                required: [field, reason]
+                properties:
+                  field:
+                    type: string
+                    maxLength: 128
+                  reason:
+                    type: string
+                    pattern: "^[a-z][a-z0-9_]{1,63}$"
+    Health:
+      type: object
+      additionalProperties: false
+      required: [status, version]
+      properties:
+        status:
+          type: string
+          enum: [live, ready]
+        version:
+          type: string
+          maxLength: 128
+    ListEnvelope:
+      type: object
+      required: [data, page]
+      properties:
+        data:
+          type: array
+          items: {}
+        page:
+          $ref: "#/components/schemas/Page"
+    LogRecord:
+      type: object
+      additionalProperties: false
+      required: [timestamp, level, message, attributes, resource]
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        trace_id:
+          type: [string, "null"]
+          pattern: "^[0-9a-f]{32}$"
+        span_id:
+          type: [string, "null"]
+          pattern: "^[0-9a-f]{16}$"
+        level:
+          type: string
+          enum: [trace, debug, info, warn, error, fatal]
+        message:
+          type: string
+          maxLength: 65536
+        attributes:
+          type: object
+          maxProperties: 128
+        resource:
+          type: object
+          additionalProperties: false
+          required:
+            [organization_id, project_id, environment_id, service_id, region]
+          properties:
+            organization_id:
+              $ref: "#/components/schemas/ResourceId"
+            project_id:
+              $ref: "#/components/schemas/ResourceId"
+            environment_id:
+              $ref: "#/components/schemas/ResourceId"
+            service_id:
+              $ref: "#/components/schemas/ResourceId"
+            region:
+              $ref: "#/components/schemas/Slug"
+    Operation:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          id,
+          state,
+          stage,
+          progress,
+          resource,
+          conditions,
+          created_at,
+          updated_at,
+        ]
+      properties:
+        id:
+          $ref: "#/components/schemas/ResourceId"
+        state:
+          type: string
+          enum:
+            [
+              accepted,
+              running,
+              waiting,
+              retrying,
+              succeeded,
+              failed,
+              canceling,
+              canceled,
+            ]
+        stage:
+          type: string
+          pattern: "^[a-z][a-z0-9_]{1,63}$"
+        waiting_reason:
+          type: [string, "null"]
+          maxLength: 512
+        progress:
+          type: object
+          additionalProperties: false
+          required: [completed, total]
+          properties:
+            completed:
+              type: integer
+              minimum: 0
+            total:
+              type: integer
+              minimum: 0
+        resource:
+          type: object
+          additionalProperties: false
+          required: [type, id]
+          properties:
+            type:
+              type: string
+              pattern: "^[a-z][a-z0-9_]{1,63}$"
+            id:
+              $ref: "#/components/schemas/ResourceId"
+        conditions:
+          type: array
+          maxItems: 64
+          items:
+            $ref: "#/components/schemas/Condition"
+        error:
+          oneOf:
+            - type: "null"
+            - $ref: "#/components/schemas/ErrorEnvelope/properties/error"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    Organization:
+      type: object
+      additionalProperties: false
+      required:
+        [id, slug, name, plan, personal, version, created_at, updated_at]
+      properties:
+        id:
+          $ref: "#/components/schemas/ResourceId"
+        slug:
+          $ref: "#/components/schemas/Slug"
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        plan:
+          type: string
+          enum: [free, pro, enterprise]
+        personal:
+          type: boolean
+        version:
+          type: integer
+          minimum: 1
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    OrganizationCreate:
+      type: object
+      additionalProperties: false
+      required: [slug, name, plan]
+      properties:
+        slug:
+          $ref: "#/components/schemas/Slug"
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        plan:
+          type: string
+          enum: [free, pro]
+    OrganizationUpdate:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      properties:
+        slug:
+          $ref: "#/components/schemas/Slug"
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+    Page:
+      type: object
+      additionalProperties: false
+      required: [next_cursor, limit]
+      properties:
+        next_cursor:
+          type: [string, "null"]
+          maxLength: 2048
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+    Principal:
+      type: object
+      additionalProperties: false
+      required: [id, email, display_name, memberships]
+      properties:
+        id:
+          $ref: "#/components/schemas/ResourceId"
+        email:
+          type: string
+          format: email
+          maxLength: 320
+        display_name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        memberships:
+          type: array
+          maxItems: 100
+          items:
+            type: object
+            additionalProperties: false
+            required: [organization_id, role]
+            properties:
+              organization_id:
+                $ref: "#/components/schemas/ResourceId"
+              role:
+                type: string
+                enum: [owner, admin, developer, operator, billing, auditor]
+    Project:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          id,
+          organization_id,
+          slug,
+          name,
+          status,
+          version,
+          created_at,
+          updated_at,
+        ]
+      properties:
+        id:
+          $ref: "#/components/schemas/ResourceId"
+        organization_id:
+          $ref: "#/components/schemas/ResourceId"
+        slug:
+          $ref: "#/components/schemas/Slug"
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        description:
+          type: [string, "null"]
+          maxLength: 500
+        status:
+          type: string
+          enum: [healthy, degraded, deploying, paused]
+        version:
+          type: integer
+          minimum: 1
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    ProjectCreate:
+      type: object
+      additionalProperties: false
+      required: [slug, name]
+      properties:
+        slug:
+          $ref: "#/components/schemas/Slug"
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        description:
+          type: string
+          maxLength: 500
+        source:
+          type: object
+          additionalProperties: false
+          required: [kind]
+          properties:
+            kind:
+              type: string
+              enum: [git, local, template]
+            connection_id:
+              $ref: "#/components/schemas/ResourceId"
+            repository:
+              type: string
+              maxLength: 512
+            template:
+              $ref: "#/components/schemas/Slug"
+    PromotionCreate:
+      type: object
+      additionalProperties: false
+      required: [environment_id, rollout_policy, reason]
+      properties:
+        environment_id:
+          $ref: "#/components/schemas/ResourceId"
+        rollout_policy:
+          type: string
+          enum: [default_canary, immediate, manual]
+        reason:
+          type: string
+          minLength: 3
+          maxLength: 512
+    ResourceEnvelope:
+      type: object
+      required: [data]
+      properties:
+        data: {}
+    ResourceId:
+      type: string
+      pattern: "^(acct|org|mbr|inv|prj|env|svc|src|snp|bld|rev|dep|rel|op|dom|crt|rte|add|att|bkp|rst|sch|wh|whd|key|evt|tgt|edg|cell|pop|use)_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$"
+      example: prj_019b01da-7e31-7000-8000-000000000001
+    Service:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          id,
+          organization_id,
+          project_id,
+          slug,
+          name,
+          kind,
+          framework,
+          health,
+          current_release_id,
+          created_at,
+          updated_at,
+        ]
+      properties:
+        id:
+          $ref: "#/components/schemas/ResourceId"
+        organization_id:
+          $ref: "#/components/schemas/ResourceId"
+        project_id:
+          $ref: "#/components/schemas/ResourceId"
+        slug:
+          $ref: "#/components/schemas/Slug"
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        kind:
+          type: string
+          enum: [web, worker, private_service, static]
+        framework:
+          type: [string, "null"]
+          maxLength: 64
+        health:
+          type: string
+          enum: [healthy, degraded, deploying, paused, unknown]
+        current_release_id:
+          oneOf:
+            - $ref: "#/components/schemas/ResourceId"
+            - type: "null"
+        current_release:
+          oneOf:
+            - $ref: "#/components/schemas/Release"
+            - type: "null"
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    Sha256Digest:
+      type: string
+      pattern: "^sha256:[0-9a-f]{64}$"
+    Slug:
+      type: string
+      pattern: "^[a-z][a-z0-9-]{0,62}$"
+    Release:
+      type: object
+      additionalProperties: false
+      required:
+        [
+          id,
+          organization_id,
+          service_id,
+          environment_id,
+          revision_id,
+          generation,
+          state,
+          rollout_policy,
+          created_at,
+          updated_at,
+        ]
+      properties:
+        id:
+          $ref: "#/components/schemas/ResourceId"
+        organization_id:
+          $ref: "#/components/schemas/ResourceId"
+        service_id:
+          $ref: "#/components/schemas/ResourceId"
+        environment_id:
+          $ref: "#/components/schemas/ResourceId"
+        revision_id:
+          $ref: "#/components/schemas/ResourceId"
+        generation:
+          type: integer
+          minimum: 1
+        state:
+          type: string
+          enum:
+            [
+              draft,
+              policy_check,
+              provisioning,
+              previewing,
+              shifting,
+              verifying,
+              active,
+              paused,
+              aborting,
+              rolled_back,
+              superseded,
+              retired,
+            ]
+        rollout_policy:
+          type: string
+          enum: [default_canary, immediate, manual]
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time

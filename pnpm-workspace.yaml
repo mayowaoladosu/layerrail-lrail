@@ -4,10 +4,10 @@ packages:
   - "packages/*"
   - "test/e2e"
 
+allowBuilds:
+  "@playwright/browser-chromium": true
+  esbuild: true
+
 minimumReleaseAge: 1440
 minimumReleaseAgeExclude:
   - "@lrail/*"
-
-onlyBuiltDependencies:
-  - "@playwright/browser-chromium"
-  - "esbuild"

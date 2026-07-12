@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.lrail.dev/common/operation.schema.json",
+  "title": "Asynchronous operation",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "id",
+    "state",
+    "stage",
+    "progress",
+    "resource",
+    "conditions",
+    "created_at",
+    "updated_at"
+  ],
+  "properties": {
+    "id": {
+      "$ref": "https://contracts.lrail.dev/common/resource-id.schema.json"
+    },
+    "state": {
+      "enum": [
+        "accepted",
+        "running",
+        "waiting",
+        "retrying",
+        "succeeded",
+        "failed",
+        "canceling",
+        "canceled"
+      ]
+    },
+    "stage": { "type": "string", "pattern": "^[a-z][a-z0-9_]{1,63}$" },
+    "waiting_reason": { "type": ["string", "null"], "maxLength": 512 },
+    "progress": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["completed", "total"],
+      "properties": {
+        "completed": { "type": "integer", "minimum": 0 },
+        "total": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "resource": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "id"],
+      "properties": {
+        "type": { "type": "string", "pattern": "^[a-z][a-z0-9_]{1,63}$" },
+        "id": {
+          "$ref": "https://contracts.lrail.dev/common/resource-id.schema.json"
+        }
+      }
+    },
+    "conditions": {
+      "type": "array",
+      "maxItems": 64,
+      "items": {
+        "$ref": "https://contracts.lrail.dev/common/condition.schema.json"
+      }
+    },
+    "error": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "$ref": "https://contracts.lrail.dev/common/error.schema.json#/properties/error"
+        }
+      ]
+    },
+    "created_at": { "type": "string", "format": "date-time" },
+    "updated_at": { "type": "string", "format": "date-time" }
+  }
+}

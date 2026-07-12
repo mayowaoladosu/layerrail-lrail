@@ -20,14 +20,14 @@ authenticated organization
 
 ## Planes and authority
 
-| Plane | Authority | Must not hold |
-| --- | --- | --- |
-| Control | Product desired state, identity, policy, lifecycle, customer-visible operations | Customer execution, cluster-admin credentials, private image push credentials |
-| Source/build | Immutable source materialization and build evidence | Control database access, reusable provider credentials, runtime authority |
-| Runtime | Reconciliation of accepted signed regional generations | Product authorization, source-provider tokens, global mutation authority |
-| Data | Add-on, backup, restore, credential, and storage reconciliation | Customer account sessions, control database access |
-| Edge | DNS/TLS/routing/cache/WAF delivery of accepted generations | Customer code, source, general secret authority, Kubernetes administration |
-| Telemetry/meter | Tenant-scoped signals and signed usage facts | Product mutation authority, unscoped cross-tenant queries |
+| Plane           | Authority                                                                       | Must not hold                                                                 |
+| --------------- | ------------------------------------------------------------------------------- | ----------------------------------------------------------------------------- |
+| Control         | Product desired state, identity, policy, lifecycle, customer-visible operations | Customer execution, cluster-admin credentials, private image push credentials |
+| Source/build    | Immutable source materialization and build evidence                             | Control database access, reusable provider credentials, runtime authority     |
+| Runtime         | Reconciliation of accepted signed regional generations                          | Product authorization, source-provider tokens, global mutation authority      |
+| Data            | Add-on, backup, restore, credential, and storage reconciliation                 | Customer account sessions, control database access                            |
+| Edge            | DNS/TLS/routing/cache/WAF delivery of accepted generations                      | Customer code, source, general secret authority, Kubernetes administration    |
+| Telemetry/meter | Tenant-scoped signals and signed usage facts                                    | Product mutation authority, unscoped cross-tenant queries                     |
 
 ## Desired and observed state
 

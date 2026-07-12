@@ -1,0 +1,19 @@
+{
+  "api_version": "lrail.dev/v1",
+  "project": { "name": "checkout" },
+  "services": [
+    {
+      "name": "web",
+      "root": "../foreign-project",
+      "build": { "method": "auto" },
+      "processes": [
+        {
+          "name": "web",
+          "kind": "web",
+          "command": ["start"],
+          "resources": { "profile": "small" }
+        }
+      ]
+    }
+  ]
+}

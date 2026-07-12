@@ -17,11 +17,12 @@
 *.keystore
 *.age
 *.sops.yaml
-*credentials*
-*secret*
-!**/secret_refs.*
-!**/*secret*_test.*
-!**/*secret*.example
+credentials.json
+credentials.yml
+credentials.yaml
+secrets.json
+secrets.yml
+secrets.yaml
 kubeconfig*
 
 # Runtime state and backups

@@ -1,0 +1,248 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.lrail.dev/regional/target-bundle.schema.json",
+  "title": "Signed regional TargetBundle v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "api_version",
+    "bundle_id",
+    "cell_id",
+    "organization_id",
+    "project_id",
+    "environment_id",
+    "generation",
+    "previous_generation",
+    "issued_at",
+    "expires_at",
+    "policy_digest",
+    "services",
+    "routes",
+    "secret_refs",
+    "volumes",
+    "addon_bindings",
+    "schedules",
+    "artifacts",
+    "signature"
+  ],
+  "properties": {
+    "api_version": { "const": "regional.lrail.dev/v1" },
+    "bundle_id": {
+      "$ref": "https://contracts.lrail.dev/common/resource-id.schema.json"
+    },
+    "cell_id": {
+      "$ref": "https://contracts.lrail.dev/common/resource-id.schema.json"
+    },
+    "organization_id": {
+      "$ref": "https://contracts.lrail.dev/common/resource-id.schema.json"
+    },
+    "project_id": {
+      "$ref": "https://contracts.lrail.dev/common/resource-id.schema.json"
+    },
+    "environment_id": {
+      "$ref": "https://contracts.lrail.dev/common/resource-id.schema.json"
+    },
+    "generation": { "type": "integer", "minimum": 1 },
+    "previous_generation": { "type": ["integer", "null"], "minimum": 1 },
+    "issued_at": { "type": "string", "format": "date-time" },
+    "expires_at": { "type": "string", "format": "date-time" },
+    "policy_digest": { "$ref": "#/$defs/digest" },
+    "services": {
+      "type": "array",
+      "maxItems": 256,
+      "items": { "$ref": "#/$defs/service" }
+    },
+    "routes": {
+      "type": "array",
+      "maxItems": 1024,
+      "items": { "$ref": "#/$defs/route" }
+    },
+    "secret_refs": {
+      "type": "array",
+      "maxItems": 512,
+      "items": { "$ref": "#/$defs/versioned_ref" }
+    },
+    "volumes": {
+      "type": "array",
+      "maxItems": 128,
+      "items": { "$ref": "#/$defs/generic_ref" }
+    },
+    "addon_bindings": {
+      "type": "array",
+      "maxItems": 128,
+      "items": { "$ref": "#/$defs/generic_ref" }
+    },
+    "schedules": {
+      "type": "array",
+      "maxItems": 256,
+      "items": { "$ref": "#/$defs/generic_ref" }
+    },
+    "artifacts": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 512,
+      "items": { "$ref": "#/$defs/artifact" }
+    },
+    "signature": { "$ref": "#/$defs/signature" }
+  },
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "generic_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "generation"],
+      "properties": {
+        "id": {
+          "$ref": "https://contracts.lrail.dev/common/resource-id.schema.json"
+        },
+        "generation": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "versioned_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "version"],
+      "properties": {
+        "id": {
+          "$ref": "https://contracts.lrail.dev/common/resource-id.schema.json"
+        },
+        "version": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "resources": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["cpu_millis", "memory_bytes", "ephemeral_storage_bytes"],
+      "properties": {
+        "cpu_millis": { "type": "integer", "minimum": 10, "maximum": 128000 },
+        "memory_bytes": { "type": "integer", "minimum": 33554432 },
+        "ephemeral_storage_bytes": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "process": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "kind",
+        "command",
+        "port",
+        "runtime_class",
+        "resources",
+        "replicas"
+      ],
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,62}$" },
+        "kind": {
+          "enum": [
+            "web",
+            "worker",
+            "private_service",
+            "release",
+            "job",
+            "static"
+          ]
+        },
+        "command": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 64,
+          "items": { "type": "string", "maxLength": 4096 }
+        },
+        "port": { "type": ["integer", "null"], "minimum": 1, "maximum": 65535 },
+        "runtime_class": { "enum": ["sandbox", "microvm", "native"] },
+        "resources": { "$ref": "#/$defs/resources" },
+        "replicas": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["minimum", "maximum"],
+          "properties": {
+            "minimum": { "type": "integer", "minimum": 0, "maximum": 1000 },
+            "maximum": { "type": "integer", "minimum": 1, "maximum": 1000 }
+          }
+        }
+      }
+    },
+    "service": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "revision_digest", "config_digest", "processes"],
+      "properties": {
+        "id": {
+          "$ref": "https://contracts.lrail.dev/common/resource-id.schema.json"
+        },
+        "revision_digest": { "$ref": "#/$defs/digest" },
+        "config_digest": { "$ref": "#/$defs/digest" },
+        "processes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": { "$ref": "#/$defs/process" }
+        }
+      }
+    },
+    "route": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "service_id", "hostname", "path_prefix", "protocol"],
+      "properties": {
+        "id": {
+          "$ref": "https://contracts.lrail.dev/common/resource-id.schema.json"
+        },
+        "service_id": {
+          "$ref": "https://contracts.lrail.dev/common/resource-id.schema.json"
+        },
+        "hostname": {
+          "type": "string",
+          "format": "hostname",
+          "maxLength": 253
+        },
+        "path_prefix": { "type": "string", "pattern": "^/", "maxLength": 2048 },
+        "protocol": { "enum": ["http", "https", "tcp"] }
+      }
+    },
+    "artifact": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "digest",
+        "platform",
+        "signature_ref",
+        "provenance_ref",
+        "sbom_ref",
+        "policy_ref"
+      ],
+      "properties": {
+        "digest": { "$ref": "#/$defs/digest" },
+        "platform": { "type": "string", "pattern": "^linux/(amd64|arm64)$" },
+        "signature_ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "provenance_ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1024
+        },
+        "sbom_ref": { "type": "string", "minLength": 1, "maxLength": 1024 },
+        "policy_ref": { "type": "string", "minLength": 1, "maxLength": 1024 }
+      }
+    },
+    "signature": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key_id", "algorithm", "value"],
+      "properties": {
+        "key_id": { "type": "string", "pattern": "^[a-z][a-z0-9-]{1,63}$" },
+        "algorithm": { "const": "ed25519" },
+        "value": {
+          "type": "string",
+          "contentEncoding": "base64",
+          "minLength": 80,
+          "maxLength": 128
+        }
+      }
+    }
+  }
+}

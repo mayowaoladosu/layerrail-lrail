@@ -1,0 +1,258 @@
+syntax = "proto3";
+
+package lrail.v1;
+
+import "google/protobuf/struct.proto";
+import "lrail/v1/common.proto";
+
+option go_package = "github.com/mayowaoladosu/layerrail-lrail/gen/go/lrail/v1;lrailv1";
+
+service SourceService {
+  rpc CreateFetch(SourceFetchRequest) returns (Operation);
+  rpc FinalizeUpload(FinalizeUploadRequest) returns (Operation);
+  rpc GetSnapshot(GetResourceRequest) returns (ResourceResponse);
+  rpc Cancel(CancelRequest) returns (Operation);
+}
+
+service DetectorService {
+  rpc Detect(DetectRequest) returns (DetectResponse);
+  rpc ValidateProposal(ValidateProposalRequest) returns (DetectResponse);
+}
+
+service BuildService {
+  rpc Submit(BuildSubmitRequest) returns (Operation);
+  rpc Cancel(CancelRequest) returns (Operation);
+  rpc Get(GetResourceRequest) returns (Operation);
+  rpc WatchEvents(WatchRequest) returns (stream WatchEvent);
+}
+
+service CellService {
+  rpc ApplyTargetBundle(ApplyTargetBundleRequest) returns (Operation);
+  rpc GetTarget(GetResourceRequest) returns (ResourceResponse);
+  rpc WatchTarget(WatchRequest) returns (stream WatchEvent);
+  rpc Drain(DrainRequest) returns (Operation);
+}
+
+service EdgeService {
+  rpc Validate(EdgeGenerationRequest) returns (ValidationResponse);
+  rpc Publish(EdgeGenerationRequest) returns (Operation);
+  rpc GetPublication(GetResourceRequest) returns (ResourceResponse);
+  rpc Rollback(RollbackRequest) returns (Operation);
+  rpc Purge(PurgeRequest) returns (Operation);
+}
+
+service DNSService {
+  rpc VerifyOwnership(DomainRequest) returns (Operation);
+  rpc ApplyRecords(DNSChangeRequest) returns (Operation);
+  rpc GetPropagation(GetResourceRequest) returns (ResourceResponse);
+  rpc RemoveOwned(DNSChangeRequest) returns (Operation);
+}
+
+service CertificateService {
+  rpc Ensure(CertificateRequest) returns (Operation);
+  rpc GetDeployment(GetResourceRequest) returns (ResourceResponse);
+  rpc Renew(CertificateRequest) returns (Operation);
+  rpc Revoke(CertificateRequest) returns (Operation);
+}
+
+service DataService {
+  rpc Provision(DataRequest) returns (Operation);
+  rpc Attach(DataRequest) returns (Operation);
+  rpc Backup(DataRequest) returns (Operation);
+  rpc Restore(DataRequest) returns (Operation);
+  rpc Resize(DataRequest) returns (Operation);
+  rpc Rotate(DataRequest) returns (Operation);
+  rpc Delete(DataRequest) returns (Operation);
+  rpc Watch(WatchRequest) returns (stream WatchEvent);
+}
+
+service MeterService {
+  rpc IngestBatch(UsageBatchRequest) returns (UsageBatchResponse);
+  rpc GetWatermarks(WatermarkRequest) returns (WatermarkResponse);
+  rpc Reconcile(ReconcileUsageRequest) returns (Operation);
+  rpc CloseAggregate(CloseAggregateRequest) returns (Operation);
+}
+
+message GetResourceRequest {
+  RequestContext context = 1;
+  string resource_id = 2;
+}
+
+message ResourceResponse {
+  ResourceRef resource = 1;
+  repeated Condition conditions = 2;
+  google.protobuf.Struct data = 3;
+}
+
+message CancelRequest {
+  RequestContext context = 1;
+  string resource_id = 2;
+  string reason = 3;
+}
+
+message SourceFetchRequest {
+  RequestContext context = 1;
+  string provider = 2;
+  string connection_capability = 3;
+  string repository = 4;
+  string commit = 5;
+}
+
+message FinalizeUploadRequest {
+  RequestContext context = 1;
+  string upload_id = 2;
+  string declared_digest = 3;
+  uint64 declared_size_bytes = 4;
+}
+
+message DetectRequest {
+  RequestContext context = 1;
+  string snapshot_id = 2;
+  string root = 3;
+}
+
+message ValidateProposalRequest {
+  RequestContext context = 1;
+  string snapshot_id = 2;
+  google.protobuf.Struct proposal = 3;
+}
+
+message DetectResponse {
+  google.protobuf.Struct proposal = 1;
+  repeated google.protobuf.Struct evidence = 2;
+  repeated string unsupported_features = 3;
+  repeated string files_considered = 4;
+  repeated PlatformError diagnostics = 5;
+}
+
+message BuildSubmitRequest {
+  RequestContext context = 1;
+  string snapshot_id = 2;
+  string build_ir_digest = 3;
+  string build_ir_object_ref = 4;
+  string network_profile = 5;
+  repeated string secret_capability_refs = 6;
+}
+
+message ApplyTargetBundleRequest {
+  RequestContext context = 1;
+  string cell_id = 2;
+  string bundle_id = 3;
+  string bundle_digest = 4;
+  bytes canonical_bundle = 5;
+}
+
+message DrainRequest {
+  RequestContext context = 1;
+  string target_id = 2;
+  string target_kind = 3;
+  string reason = 4;
+  uint32 deadline_seconds = 5;
+}
+
+message EdgeGenerationRequest {
+  RequestContext context = 1;
+  string generation_id = 2;
+  string canonical_digest = 3;
+  bytes canonical_generation = 4;
+}
+
+message ValidationResponse {
+  bool valid = 1;
+  repeated PlatformError errors = 2;
+  string canonical_digest = 3;
+}
+
+message RollbackRequest {
+  RequestContext context = 1;
+  string resource_id = 2;
+  uint64 target_generation = 3;
+  string reason = 4;
+}
+
+message PurgeRequest {
+  RequestContext context = 1;
+  string scope = 2;
+  repeated string targets = 3;
+  bool hard = 4;
+}
+
+message DomainRequest {
+  RequestContext context = 1;
+  string domain_id = 2;
+  string canonical_hostname = 3;
+  uint64 challenge_generation = 4;
+}
+
+message DNSChangeRequest {
+  RequestContext context = 1;
+  string domain_id = 2;
+  string zone_id = 3;
+  string previous_fingerprint = 4;
+  repeated google.protobuf.Struct records = 5;
+}
+
+message CertificateRequest {
+  RequestContext context = 1;
+  string certificate_id = 2;
+  repeated string canonical_hostnames = 3;
+  string key_algorithm = 4;
+}
+
+message DataRequest {
+  RequestContext context = 1;
+  string addon_id = 2;
+  string action = 3;
+  google.protobuf.Struct specification = 4;
+}
+
+message UsageFact {
+  string fact_id = 1;
+  string organization_id = 2;
+  string resource_id = 3;
+  string source_id = 4;
+  string source_epoch = 5;
+  uint64 sequence = 6;
+  string meter_type = 7;
+  sint64 quantity = 8;
+  string unit = 9;
+  string start_time = 10;
+  string end_time = 11;
+  string correlation_id = 12;
+  google.protobuf.Struct attributes = 13;
+  bytes signature = 14;
+}
+
+message UsageBatchRequest {
+  RequestContext context = 1;
+  repeated UsageFact facts = 2;
+}
+
+message UsageBatchResponse {
+  uint32 accepted = 1;
+  uint32 duplicated = 2;
+  repeated uint64 missing_sequences = 3;
+  PlatformError error = 4;
+}
+
+message WatermarkRequest {
+  RequestContext context = 1;
+  repeated string source_ids = 2;
+}
+
+message WatermarkResponse {
+  map<string, uint64> sequences = 1;
+}
+
+message ReconcileUsageRequest {
+  RequestContext context = 1;
+  string organization_id = 2;
+  string billing_period = 3;
+}
+
+message CloseAggregateRequest {
+  RequestContext context = 1;
+  string organization_id = 2;
+  string billing_period = 3;
+  string expected_digest = 4;
+}

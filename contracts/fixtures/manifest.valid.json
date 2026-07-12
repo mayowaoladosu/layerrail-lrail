@@ -1,0 +1,42 @@
+{
+  "api_version": "lrail.dev/v1",
+  "project": { "name": "checkout", "default_region": "central-us" },
+  "services": [
+    {
+      "name": "web",
+      "root": "apps/web",
+      "build": { "method": "auto", "network": "packages" },
+      "processes": [
+        {
+          "name": "web",
+          "kind": "web",
+          "command": ["bin/rails", "server"],
+          "port": 3000,
+          "health_path": "/up",
+          "runtime_class": "sandbox",
+          "resources": { "profile": "small" }
+        }
+      ],
+      "routes": [
+        { "process": "web", "hostname": "checkout.lrail.dev", "path": "/" }
+      ]
+    }
+  ],
+  "addons": [
+    {
+      "name": "primary-db",
+      "engine": "postgresql",
+      "plan": "small",
+      "deletion_protection": true
+    }
+  ],
+  "schedules": [
+    {
+      "name": "daily-cleanup",
+      "cron": "0 3 * * *",
+      "timezone": "UTC",
+      "target": "web",
+      "overlap": "skip"
+    }
+  ]
+}

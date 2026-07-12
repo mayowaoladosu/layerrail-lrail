@@ -1,0 +1,116 @@
+syntax = "proto3";
+
+package lrail.v1;
+
+import "google/protobuf/struct.proto";
+import "google/protobuf/timestamp.proto";
+
+option go_package = "github.com/mayowaoladosu/layerrail-lrail/gen/go/lrail/v1;lrailv1";
+
+message RequestContext {
+  string request_id = 1;
+  string actor_id = 2;
+  string organization_id = 3;
+  string operation_id = 4;
+  string idempotency_key = 5;
+  uint64 generation = 6;
+  google.protobuf.Timestamp deadline = 7;
+  string traceparent = 8;
+}
+
+message ResourceRef {
+  string type = 1;
+  string id = 2;
+  uint64 generation = 3;
+}
+
+message ErrorDetail {
+  string field = 1;
+  string reason = 2;
+}
+
+message PlatformError {
+  ErrorClass class = 1;
+  string code = 2;
+  string safe_message = 3;
+  string provider_code = 4;
+  string provider_request_id = 5;
+  bool retryable = 6;
+  bool ambiguous_effect = 7;
+  google.protobuf.Timestamp recommended_after = 8;
+  repeated ErrorDetail details = 9;
+}
+
+enum ErrorClass {
+  ERROR_CLASS_UNSPECIFIED = 0;
+  ERROR_CLASS_INVALID_ARGUMENT = 1;
+  ERROR_CLASS_UNAUTHENTICATED = 2;
+  ERROR_CLASS_FORBIDDEN = 3;
+  ERROR_CLASS_NOT_FOUND = 4;
+  ERROR_CLASS_CONFLICT = 5;
+  ERROR_CLASS_PRECONDITION_FAILED = 6;
+  ERROR_CLASS_QUOTA_EXCEEDED = 7;
+  ERROR_CLASS_RATE_LIMITED = 8;
+  ERROR_CLASS_TRANSIENT = 9;
+  ERROR_CLASS_TIMEOUT = 10;
+  ERROR_CLASS_CANCELED = 11;
+  ERROR_CLASS_INTERNAL = 12;
+}
+
+message Condition {
+  string type = 1;
+  ConditionStatus status = 2;
+  string reason = 3;
+  string safe_message = 4;
+  uint64 observed_generation = 5;
+  google.protobuf.Timestamp last_transition_time = 6;
+  repeated string related_resource_ids = 7;
+}
+
+enum ConditionStatus {
+  CONDITION_STATUS_UNSPECIFIED = 0;
+  CONDITION_STATUS_TRUE = 1;
+  CONDITION_STATUS_FALSE = 2;
+  CONDITION_STATUS_UNKNOWN = 3;
+}
+
+message Operation {
+  string operation_id = 1;
+  OperationState state = 2;
+  string stage = 3;
+  string waiting_reason = 4;
+  uint32 completed_steps = 5;
+  uint32 total_steps = 6;
+  ResourceRef resource = 7;
+  repeated Condition conditions = 8;
+  PlatformError error = 9;
+  google.protobuf.Timestamp created_at = 10;
+  google.protobuf.Timestamp updated_at = 11;
+  google.protobuf.Struct metadata = 12;
+}
+
+enum OperationState {
+  OPERATION_STATE_UNSPECIFIED = 0;
+  OPERATION_STATE_ACCEPTED = 1;
+  OPERATION_STATE_RUNNING = 2;
+  OPERATION_STATE_WAITING = 3;
+  OPERATION_STATE_RETRYING = 4;
+  OPERATION_STATE_SUCCEEDED = 5;
+  OPERATION_STATE_FAILED = 6;
+  OPERATION_STATE_CANCELING = 7;
+  OPERATION_STATE_CANCELED = 8;
+}
+
+message WatchRequest {
+  RequestContext context = 1;
+  string resource_id = 2;
+  string cursor = 3;
+}
+
+message WatchEvent {
+  string cursor = 1;
+  ResourceRef resource = 2;
+  repeated Condition conditions = 3;
+  google.protobuf.Struct data = 4;
+  google.protobuf.Timestamp observed_at = 5;
+}

@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.lrail.dev/common/error.schema.json",
+  "title": "Public API error envelope",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["error"],
+  "properties": {
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message", "request_id", "details"],
+      "properties": {
+        "code": { "type": "string", "pattern": "^[a-z][a-z0-9_]{1,63}$" },
+        "message": { "type": "string", "minLength": 1, "maxLength": 512 },
+        "request_id": { "type": "string", "pattern": "^req_[0-9a-f]{32}$" },
+        "details": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["field", "reason"],
+            "properties": {
+              "field": { "type": "string", "maxLength": 128 },
+              "reason": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{1,63}$"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,146 @@
+name: lrail-dev
+
+x-service-defaults: &service-defaults
+  restart: unless-stopped
+  security_opt:
+    - no-new-privileges:true
+  networks:
+    - control
+
+services:
+  postgres:
+    <<: *service-defaults
+    image: postgres:17.6-alpine@sha256:ef257d85f76e48da1c64832459b59fcaba1a4dac97bf5d7450c77753542eee94
+    environment:
+      POSTGRES_DB: lrail_control_development
+      POSTGRES_USER: lrail_local
+      POSTGRES_PASSWORD: local-only-not-a-secret
+      POSTGRES_INITDB_ARGS: --data-checksums
+    command:
+      - postgres
+      - -c
+      - fsync=on
+      - -c
+      - full_page_writes=on
+      - -c
+      - password_encryption=scram-sha-256
+    ports:
+      - "127.0.0.1:55432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./platform/local/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test:
+        ["CMD-SHELL", "pg_isready -U lrail_local -d lrail_control_development"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+
+  temporal:
+    <<: *service-defaults
+    image: temporalio/auto-setup:1.29.1@sha256:5b3502a3b685f9eff1b925af90c57c9e3dbeccbef367cc28a2a9712c63379312
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DB: postgres12
+      DB_PORT: "5432"
+      POSTGRES_USER: lrail_local
+      POSTGRES_PWD: local-only-not-a-secret
+      POSTGRES_SEEDS: postgres
+      ENABLE_ES: "false"
+      TEMPORAL_ADDRESS: temporal:7233
+    ports:
+      - "127.0.0.1:57233:7233"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "temporal operator cluster health 2>/dev/null | grep -q SERVING",
+        ]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+      start_period: 30s
+
+  nats:
+    <<: *service-defaults
+    image: nats:2.14.3-alpine@sha256:c11af972c99ae542de8925e6a7d9c533aa1eb039660420d2074beed6089b3bf0
+    command: ["--config", "/etc/nats/nats.conf"]
+    ports:
+      - "127.0.0.1:54222:4222"
+      - "127.0.0.1:58222:8222"
+    volumes:
+      - nats-data:/data
+      - ./platform/local/nats/nats.conf:/etc/nats/nats.conf:ro
+    healthcheck:
+      test:
+        ["CMD-SHELL", "wget -q -O - http://127.0.0.1:8222/healthz | grep -q ok"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  valkey:
+    <<: *service-defaults
+    image: valkey/valkey:9.1.0-alpine@sha256:a35428eba9043cc0b79dbe54100f0c92784f2de00ad09b01182bfb1c5c83d1bd
+    command: ["valkey-server", "--appendonly", "yes", "--save", "60", "1"]
+    ports:
+      - "127.0.0.1:56379:6379"
+    volumes:
+      - valkey-data:/data
+    healthcheck:
+      test: ["CMD", "valkey-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+  minio:
+    <<: *service-defaults
+    image: minio/minio:RELEASE.2025-07-23T15-54-02Z@sha256:d249d1fb6966de4d8ad26c04754b545205ff15a62e4fd19ebd0f26fa5baacbc0
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: lrail_local
+      MINIO_ROOT_PASSWORD: local-only-not-a-secret
+    ports:
+      - "127.0.0.1:59000:9000"
+      - "127.0.0.1:59001:9001"
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://127.0.0.1:9000/minio/health/live"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+
+  mailpit:
+    <<: *service-defaults
+    image: axllent/mailpit:v1.30.4@sha256:5a49a77c5bdbe7c5474450b4f46348d09949df3695257729c93a30369382d4f6
+    environment:
+      MP_DATABASE: /data/mailpit.db
+      MP_MAX_MESSAGES: "500"
+      MP_SMTP_AUTH_ACCEPT_ANY: "false"
+      MP_SMTP_AUTH_ALLOW_INSECURE: "false"
+    ports:
+      - "127.0.0.1:51025:1025"
+      - "127.0.0.1:58025:8025"
+    volumes:
+      - mailpit-data:/data
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+
+networks:
+  control:
+    driver: bridge
+    internal: false
+
+volumes:
+  postgres-data:
+  nats-data:
+  valkey-data:
+  minio-data:
+  mailpit-data:

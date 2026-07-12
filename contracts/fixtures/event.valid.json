@@ -1,0 +1,26 @@
+{
+  "event_id": "evt_019b01da-7e31-7000-8000-000000000021",
+  "event_type": "release.activated",
+  "schema_version": 1,
+  "occurred_at": "2026-07-12T18:00:00.000Z",
+  "producer": "control-worker",
+  "organization_id": "org_019b01da-7e31-7000-8000-000000000001",
+  "resource": {
+    "type": "release",
+    "id": "rel_019b01da-7e31-7000-8000-000000000009",
+    "version": 7
+  },
+  "actor": {
+    "type": "account",
+    "id": "acct_019b01da-7e31-7000-8000-000000000002"
+  },
+  "correlation_id": "req_0123456789abcdef0123456789abcdef",
+  "causation_id": "evt_019b01da-7e31-7000-8000-000000000020",
+  "traceparent": "00-0123456789abcdef0123456789abcdef-0123456789abcdef-01",
+  "data": {
+    "service_id": "svc_019b01da-7e31-7000-8000-000000000004",
+    "environment_id": "env_019b01da-7e31-7000-8000-000000000003",
+    "revision_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "generation": 42
+  }
+}

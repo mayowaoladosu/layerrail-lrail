@@ -1,6 +1,17 @@
 require "active_support/core_ext/integer/time"
 
 Rails.application.configure do
+  required_environment = %w[
+    LRAIL_PUBLIC_HOST
+    LRAIL_DATABASE_URL
+    LRAIL_CACHE_DATABASE_URL
+    LRAIL_QUEUE_DATABASE_URL
+    LRAIL_CABLE_DATABASE_URL
+    LRAIL_WEBAUTHN_ORIGIN
+  ]
+  missing_environment = required_environment.select { |name| ENV[name].blank? }
+  raise KeyError, "missing required production environment: #{missing_environment.join(", ")}" if missing_environment.any?
+
   # Settings specified here will take precedence over those in config/application.rb.
 
   # Code is not reloaded between requests.
@@ -57,8 +68,9 @@ Rails.application.configure do
   # Set this to true and configure the email server for immediate delivery to raise delivery errors.
   # config.action_mailer.raise_delivery_errors = false
 
-  # Set host to be used by links generated in mailer templates.
-  config.action_mailer.default_url_options = { host: "example.com" }
+  public_host = ENV.fetch("LRAIL_PUBLIC_HOST")
+  config.action_mailer.default_url_options = { host: public_host, protocol: "https" }
+  Rails.application.routes.default_url_options = { host: public_host, protocol: "https" }
 
   # Specify outgoing SMTP server. Remember to add smtp/* credentials via bin/rails credentials:edit.
   # config.action_mailer.smtp_settings = {
@@ -80,10 +92,7 @@ Rails.application.configure do
   config.active_record.attributes_for_inspect = [ :id ]
 
   # Enable DNS rebinding protection and other `Host` header attacks.
-  # config.hosts = [
-  #   "example.com",     # Allow requests from example.com
-  #   /.*\.example\.com/ # Allow requests from subdomains like `www.example.com`
-  # ]
+  config.hosts = ENV.fetch("LRAIL_ALLOWED_HOSTS", public_host).split(",").map(&:strip)
   #
   # Skip DNS rebinding protection for the default health check endpoint.
   # config.host_authorization = { exclude: ->(request) { request.path == "/up" } }

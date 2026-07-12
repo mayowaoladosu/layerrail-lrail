@@ -1,0 +1,7 @@
+<% content_for :title, "#{code.humanize} · Lrail" %>
+<section class="error-state" aria-labelledby="error-title">
+  <div class="error-state__code"><%= code %></div>
+  <h1 id="error-title"><%= message %></h1>
+  <p>Request ID: <code><%= request.request_id %></code></p>
+  <%= link_to "Return to the console", root_path, class: "button button--primary" %>
+</section>

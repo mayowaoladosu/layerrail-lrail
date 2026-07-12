@@ -1,0 +1,26 @@
+<% content_for :title, "Projects · #{@organization.name} · Lrail" %>
+<% content_for :breadcrumbs do %><strong>Projects</strong><% end %>
+
+<header class="page-header">
+  <div><p class="page-header__eyebrow">Workspace portfolio</p><h1>Projects</h1><p class="page-header__description">Projects group services, environments, domains, data, and release history under one immutable tenant boundary.</p></div>
+  <div class="page-header__actions"><%= link_to "+ New project", new_console_project_path, class: "button button--primary" %></div>
+</header>
+
+<div class="context-bar">
+  <div class="resource-tabs"><a class="is-active" href="#">All <span class="nav-count"><%= @projects.count %></span></a><a href="#">Healthy</a><a href="#">Deploying</a><a href="#">Needs attention</a></div>
+  <button class="button button--ghost button--compact" type="button"><%= icon(:search, size: 14) %> Filter</button>
+</div>
+
+<% if @projects.any? %>
+  <div class="project-grid">
+    <% @projects.each do |project| %>
+      <%= link_to console_organization_project_path(@organization.public_id, project.public_id), class: "project-card" do %>
+        <div class="project-card__top"><span class="resource-icon"><%= icon(:projects) %></span><div class="project-card__identity"><h3><%= project.name %></h3><p><%= project.description.presence || project.slug %></p></div><%= status_badge(project.status) %></div>
+        <div class="project-card__body"><div class="card-fact"><span>Services</span><strong><%= project.services.size %> resources</strong></div><div class="card-fact"><span>Environments</span><strong><%= project.environments.size %> configured</strong></div><div class="card-fact"><span>Manifest</span><strong>Revision <%= project.manifest_revision %></strong></div><div class="card-fact"><span>Last change</span><strong><%= relative_time(project.updated_at) %></strong></div></div>
+        <div class="project-card__footer"><span class="mono"><%= project.public_id.last(16) %></span><span>Open <%= icon(:chevron, size: 11) %></span></div>
+      <% end %>
+    <% end %>
+  </div>
+<% else %>
+  <div class="data-panel empty-state"><span class="empty-state__icon"><%= icon(:projects) %></span><h3>No projects in this workspace</h3><p>Create one from Git, a local directory, or a reviewed template.</p><%= link_to "New project", new_console_project_path, class: "button button--primary" %></div>
+<% end %>

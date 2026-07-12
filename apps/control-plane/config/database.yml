@@ -15,13 +15,17 @@
 default: &default
   adapter: postgresql
   encoding: unicode
+  host: <%= ENV.fetch("LRAIL_DATABASE_HOST", "127.0.0.1") %>
+  port: <%= ENV.fetch("LRAIL_DATABASE_PORT", 55432) %>
+  username: <%= ENV.fetch("LRAIL_DATABASE_USER", "lrail_web") %>
+  password: <%= ENV.fetch("LRAIL_DATABASE_PASSWORD", "local-only-not-a-secret") %>
   # For details on connection pooling, see Rails configuration guide
   # https://guides.rubyonrails.org/configuring.html#database-pooling
   max_connections: <%= ENV.fetch("RAILS_MAX_THREADS") { 5 } %>
 
 development:
   <<: *default
-  database: control_plane_development
+  database: <%= ENV.fetch("LRAIL_DATABASE_NAME", "lrail_control_development") %>
 
   # The specified database role being used to connect to PostgreSQL.
   # To create additional roles in PostgreSQL see `$ createuser --help`.
@@ -55,7 +59,8 @@ development:
 # Do not set this db to the same as development or production.
 test:
   <<: *default
-  database: control_plane_test
+  database: <%= ENV.fetch("LRAIL_TEST_DATABASE_NAME", "lrail_control_test") %>
+  username: <%= ENV.fetch("LRAIL_TEST_DATABASE_USER", "lrail_local") %>
 
 # As with config/credentials.yml, you never want to store sensitive information,
 # like your database password, in your source code. If your source code is
@@ -86,18 +91,16 @@ test:
 production:
   primary: &primary_production
     <<: *default
-    database: control_plane_production
-    username: control_plane
-    password: <%= ENV["CONTROL_PLANE_DATABASE_PASSWORD"] %>
+    url: <%= ENV["LRAIL_DATABASE_URL"] %>
   cache:
     <<: *primary_production
-    database: control_plane_production_cache
+    url: <%= ENV["LRAIL_CACHE_DATABASE_URL"] %>
     migrations_paths: db/cache_migrate
   queue:
     <<: *primary_production
-    database: control_plane_production_queue
+    url: <%= ENV["LRAIL_QUEUE_DATABASE_URL"] %>
     migrations_paths: db/queue_migrate
   cable:
     <<: *primary_production
-    database: control_plane_production_cable
+    url: <%= ENV["LRAIL_CABLE_DATABASE_URL"] %>
     migrations_paths: db/cable_migrate

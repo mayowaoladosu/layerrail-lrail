@@ -1,0 +1,40 @@
+<% content_for :title, "#{@deployment.public_id.last(10)} · #{@project.name} · Lrail" %>
+<% content_for :breadcrumbs do %><span>Projects</span><%= link_to @project.name, console_organization_project_path(@organization.public_id, @project.public_id) %><%= link_to "Deployments", console_organization_project_deployments_path(@organization.public_id, @project.public_id) %><strong><%= @deployment.public_id.last(10) %></strong><% end %>
+<% stages = %w[sourcing detecting queued building scanning publishing scheduling starting verifying ready promoted] %>
+<% current_index = stages.index(@deployment.state) || stages.index(@deployment.operation.stage) || -1 %>
+
+<header class="page-header">
+  <div><p class="page-header__eyebrow"><%= status_badge(@deployment.state) %> <span class="mono"><%= @deployment.public_id %></span></p><h1><%= @deployment.reason %></h1><p class="page-header__description"><%= @deployment.source.fetch("repository", @deployment.source.fetch("kind", "source")) %> · <%= @deployment.environment.name %> · Created <%= relative_time(@deployment.created_at) %></p></div>
+  <div class="page-header__actions"><button class="button button--ghost" type="button">Download logs</button><% if @deployment.can_transition_to?("canceling") %><button class="button button--danger" type="button">Cancel deployment</button><% end %></div>
+</header>
+
+<section class="data-panel" aria-labelledby="pipeline-title">
+  <div class="data-panel__header"><h2 id="pipeline-title">Delivery pipeline</h2><span class="mono"><%= @deployment.operation.completed_steps %> / <%= @deployment.operation.total_steps %> stages</span></div>
+  <div class="pipeline">
+    <% stages.each_with_index do |stage, index| %><div class="pipeline__stage <%= "is-complete" if current_index > index %> <%= "is-current" if current_index == index %>"><span class="pipeline__marker"><%= current_index > index ? "✓" : index + 1 %></span><strong><%= stage.humanize %></strong><small><%= current_index > index ? "Complete" : current_index == index ? "In progress" : "Pending" %></small></div><% end %>
+  </div>
+</section>
+
+<div class="split-layout split-layout--spaced">
+  <section class="detail-stack">
+    <div class="log-viewer" aria-label="Deployment logs">
+      <div class="log-viewer__toolbar"><div class="window-dots"><span></span><span></span><span></span></div><strong class="mono">structured delivery log</strong><div class="log-viewer__tools"><button type="button">Follow</button><button type="button">Wrap</button><button type="button">Search</button></div></div>
+      <div class="log-lines" role="log" aria-live="polite">
+        <% if @timeline.any? %>
+          <% @timeline.each do |transition| %><div class="log-line log-line--info"><%= transition.created_at.iso8601(6) %> state.transition from=<%= transition.from_state || "none" %> to=<%= transition.to_state %></div><div class="log-line log-line--muted"><%= transition.reason %> correlation=<%= transition.correlation_id %></div><% end %>
+          <div class="log-line"><%= @deployment.operation.updated_at.iso8601(6) %> operation.stage <%= @deployment.operation.stage %></div>
+          <% if @deployment.operation.waiting_reason.present? %><div class="log-line"><%= @deployment.operation.waiting_reason %></div><% end %>
+        <% else %><div class="log-line log-line--muted">No stage events have been committed.</div><% end %>
+        <% if @deployment.revision %><div class="log-line log-line--success">revision.verified digest=<%= @deployment.revision.image_digest %></div><% else %><div class="log-line log-line--muted">Waiting for an immutable source snapshot and isolated build assignment.</div><% end %>
+      </div>
+    </div>
+
+    <div class="data-panel"><div class="data-panel__header"><h2>State timeline</h2><span><%= @timeline.count %> events</span></div><ol class="timeline"><% @timeline.reverse_each do |transition| %><li><span class="timeline__dot"></span><span><strong><%= transition.to_state.humanize %></strong><br><%= transition.reason %></span><small><%= relative_time(transition.created_at) %></small></li><% end %></ol></div>
+  </section>
+
+  <aside class="detail-stack">
+    <div class="data-panel"><div class="data-panel__header"><h2>Deployment</h2></div><dl class="kv-list"><div><dt>Environment</dt><dd><%= @deployment.environment.name %></dd></div><div><dt>Manifest</dt><dd>Revision <%= @deployment.manifest_revision %></dd></div><div><dt>Operation</dt><dd class="mono"><%= @deployment.operation.public_id.last(15) %></dd></div><div><dt>Source kind</dt><dd><%= @deployment.source.fetch("kind", "unknown").humanize %></dd></div><div><dt>Commit</dt><dd class="mono"><%= @deployment.source.fetch("commit", "pending").last(12) %></dd></div></dl></div>
+    <div class="data-panel"><div class="data-panel__header"><h2>Supply-chain evidence</h2></div><dl class="kv-list"><div><dt>Image digest</dt><dd class="mono"><%= @deployment.revision&.image_digest&.last(18) || "Pending" %></dd></div><div><dt>SBOM</dt><dd><%= @deployment.revision ? "Attached" : "Pending" %></dd></div><div><dt>Provenance</dt><dd><%= @deployment.revision ? "Verified" : "Pending" %></dd></div><div><dt>Signature</dt><dd><%= @deployment.revision ? "Verified" : "Pending" %></dd></div><div><dt>Policy</dt><dd><%= @deployment.revision&.policy_state || "Pending" %></dd></div></dl></div>
+    <div class="data-panel"><div class="data-panel__header"><h2>Safe actions</h2></div><div class="panel-actions"><button class="button button--secondary" type="button" disabled>Promote revision</button><button class="button button--ghost" type="button">Retry reconciliation</button><p class="field-hint">Actions become available only when their state guards and permissions pass.</p></div></div>
+  </aside>
+</div>

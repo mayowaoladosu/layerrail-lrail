@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
   <head>
-    <title><%= content_for(:title) || "Control Plane" %></title>
+    <title><%= content_for(:title) || "Lrail Console" %></title>
     <meta name="viewport" content="width=device-width,initial-scale=1">
     <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="application-name" content="Control Plane">
+    <meta name="application-name" content="Lrail Console">
     <meta name="mobile-web-app-capable" content="yes">
     <%= csrf_meta_tags %>
     <%= csp_meta_tag %>
@@ -14,18 +14,134 @@
     <%# Enable PWA manifest for installable apps (make sure to enable in config/routes.rb too!) %>
     <%#= tag.link rel: "manifest", href: pwa_manifest_path(format: :json) %>
 
-    <link rel="icon" href="/icon.png" type="image/png">
     <link rel="icon" href="/icon.svg" type="image/svg+xml">
-    <link rel="apple-touch-icon" href="/icon.png">
 
     <%# Includes all stylesheet files in app/assets/stylesheets %>
     <%= stylesheet_link_tag :app, "data-turbo-track": "reload" %>
     <%= javascript_importmap_tags %>
   </head>
 
-  <body>
-    <main class="container mx-auto mt-28 px-5 flex">
-      <%= yield %>
-    </main>
+  <body class="<%= controller_path.start_with?("console/") ? "console-body" : "auth-body" %>"
+        data-controller="shell" data-action="keydown@window->shell#shortcut">
+    <% if controller_path.start_with?("console/") %>
+      <a class="skip-link" href="#main-content">Skip to content</a>
+      <div class="app-shell">
+        <div class="mobile-backdrop" data-shell-target="backdrop" data-action="click->shell#closeNav"></div>
+        <aside class="app-sidebar" data-shell-target="nav" aria-label="Primary navigation">
+          <div class="app-brand">
+            <%= link_to console_root_path, class: "app-brand__link", aria: { label: "Lrail home" } do %>
+              <span class="app-brand__mark" aria-hidden="true"><span></span><span></span><span></span></span>
+              <span>Lrail</span>
+            <% end %>
+            <span class="app-brand__channel">cloud</span>
+          </div>
+
+          <% if @organization %>
+            <details class="org-switcher">
+              <summary>
+                <span class="avatar avatar--organization"><%= @organization.name.first(2).upcase %></span>
+                <span class="org-switcher__copy"><strong><%= @organization.name %></strong><small><%= @organization.plan.capitalize %> workspace</small></span>
+                <%= icon(:chevron, size: 15) %>
+              </summary>
+              <div class="org-switcher__menu">
+                <% @organizations.each do |organization| %>
+                  <%= link_to console_organization_overview_path(organization.public_id), class: class_names("org-switcher__option", "is-current": organization == @organization) do %>
+                    <span class="avatar avatar--small"><%= organization.name.first(2).upcase %></span>
+                    <span><strong><%= organization.name %></strong><small><%= organization.personal? ? "Personal" : organization.plan.capitalize %></small></span>
+                  <% end %>
+                <% end %>
+                <button type="button" class="org-switcher__create"><span>+</span> Create workspace</button>
+              </div>
+            </details>
+          <% end %>
+
+          <nav class="app-nav">
+            <div class="app-nav__group">
+              <p class="app-nav__label">Workspace</p>
+              <%= link_to console_root_path, class: nav_class("console/dashboard") do %><%= icon(:overview) %><span>Overview</span><% end %>
+              <%= link_to console_projects_path, class: nav_class("console/projects") do %><%= icon(:projects) %><span>Projects</span><% end %>
+              <a class="app-nav__link" href="#activity"><%= icon(:activity) %><span>Activity</span></a>
+            </div>
+
+            <div class="app-nav__group">
+              <p class="app-nav__label">Platform</p>
+              <a class="app-nav__link" href="#deployments"><%= icon(:deploy) %><span>Deployments</span><span class="nav-count"><%= @organization&.deployments&.where(state: %w[created sourcing detecting queued building scanning publishing scheduling starting verifying])&.count || 0 %></span></a>
+              <a class="app-nav__link" href="#data"><%= icon(:data) %><span>Data services</span></a>
+              <a class="app-nav__link" href="#domains"><%= icon(:domains) %><span>Domains</span></a>
+              <a class="app-nav__link" href="#telemetry"><%= icon(:telemetry) %><span>Observability</span></a>
+            </div>
+
+            <% if @organization %>
+              <div class="app-nav__group app-nav__group--organization">
+                <p class="app-nav__label">Organization</p>
+                <%= link_to console_organization_members_path(@organization.public_id), class: nav_class("console/organizations", "members") do %><%= icon(:members) %><span>Members</span><% end %>
+                <%= link_to console_organization_usage_path(@organization.public_id), class: nav_class("console/organizations", "usage") do %><%= icon(:usage) %><span>Usage</span><% end %>
+                <%= link_to console_organization_audit_path(@organization.public_id), class: nav_class("console/organizations", "audit") do %><%= icon(:audit) %><span>Audit log</span><% end %>
+                <%= link_to console_organization_settings_path(@organization.public_id), class: nav_class("console/organizations", "settings") do %><%= icon(:settings) %><span>Settings</span><% end %>
+              </div>
+            <% end %>
+          </nav>
+
+          <div class="app-sidebar__footer">
+            <a href="https://docs.layerrail.com" class="sidebar-support"><span class="support-pulse"></span><span><strong>Platform operational</strong><small>View system status</small></span></a>
+            <details class="account-menu">
+              <summary><span class="avatar"><%= current_account.display_name.first(2).upcase %></span><span><strong><%= current_account.display_name %></strong><small><%= current_account.email %></small></span><%= icon(:more) %></summary>
+              <div class="account-menu__popover">
+                <%= link_to "Security settings", rodauth.webauthn_setup_path %>
+                <%= button_to "Sign out", rodauth.logout_path, method: :post, class: "account-menu__signout" %>
+              </div>
+            </details>
+          </div>
+        </aside>
+
+        <section class="app-workspace">
+          <header class="app-topbar">
+            <button class="icon-button mobile-menu-button" type="button" data-action="shell#toggleNav" aria-label="Open navigation"><span></span><span></span><span></span></button>
+            <div class="breadcrumbs"><span><%= @organization&.name || "Lrail" %></span><%= content_for :breadcrumbs %></div>
+            <div class="app-topbar__actions">
+              <button class="search-trigger" type="button" data-action="shell#openPalette"><%= icon(:search, size: 16) %><span>Search resources</span><kbd>Ctrl K</kbd></button>
+              <button class="icon-button" type="button" aria-label="Notifications"><%= icon(:bell) %><span class="notification-dot"></span></button>
+              <%= link_to new_console_project_path, class: "button button--primary button--compact" do %><span>+</span> New project<% end %>
+            </div>
+          </header>
+
+          <div class="flash-region" aria-live="polite">
+            <% flash.each do |type, message| %><div class="flash flash--<%= type %>"><%= message %></div><% end %>
+          </div>
+          <main class="app-main" id="main-content"><%= yield %></main>
+        </section>
+      </div>
+
+      <dialog class="command-palette" data-shell-target="palette" data-action="click->shell#dialogBackdrop">
+        <div class="command-palette__surface">
+          <div class="command-palette__input"><%= icon(:search) %><input type="search" placeholder="Search projects, services, deployments…" aria-label="Search commands" data-shell-target="search" data-action="input->shell#filterCommands"><kbd>Esc</kbd></div>
+          <div class="command-palette__results" data-shell-target="commands">
+            <p>Quick actions</p>
+            <%= link_to new_console_project_path, data: { command: "new create project" } do %><%= icon(:projects) %><span><strong>Create project</strong><small>Import a repository or start from a template</small></span><kbd>N P</kbd><% end %>
+            <%= link_to console_projects_path, data: { command: "projects list search" } do %><%= icon(:search) %><span><strong>Find a project</strong><small>Search this workspace</small></span><% end %>
+            <% @organization&.projects&.limit(6)&.each do |project| %>
+              <%= link_to console_organization_project_path(@organization.public_id, project.public_id), data: { command: "project #{project.name} #{project.slug}" } do %><%= icon(:projects) %><span><strong><%= project.name %></strong><small><%= project.services.count %> services · <%= project.status %></small></span><% end %>
+            <% end %>
+          </div>
+          <footer><span><kbd>↑</kbd><kbd>↓</kbd> Navigate</span><span><kbd>↵</kbd> Open</span><span><kbd>Esc</kbd> Close</span></footer>
+        </div>
+      </dialog>
+    <% else %>
+      <main class="auth-shell">
+        <section class="auth-brand-panel" aria-label="Lrail platform">
+          <%= link_to root_path, class: "auth-brand" do %><span class="app-brand__mark"><span></span><span></span><span></span></span><span>Lrail</span><% end %>
+          <div class="auth-brand-panel__copy"><p>DEPLOY WITH EVIDENCE</p><h1>Ship software.<br>Keep the controls.</h1><p>Immutable builds, progressive delivery, private services, managed data, and one operational timeline.</p></div>
+          <div class="auth-brand-panel__status"><span class="support-pulse"></span> All systems operational</div>
+        </section>
+        <section class="auth-form-panel">
+          <div class="auth-card">
+            <div class="auth-card__heading"><span class="mobile-auth-mark">Lrail</span><h1><%= content_for(:auth_title) || @page_title || "Welcome to Lrail" %></h1><p><%= content_for(:auth_description) || "Use your verified account to continue." %></p></div>
+            <div class="flash-region" aria-live="polite"><% flash.each do |type, message| %><div class="flash flash--<%= type %>"><%= message %></div><% end %></div>
+            <%= yield %>
+          </div>
+          <footer class="auth-footer">Protected by rate limits, secure sessions, and audited access.</footer>
+        </section>
+      </main>
+    <% end %>
   </body>
 </html>

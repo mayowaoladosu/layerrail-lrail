@@ -1,0 +1,58 @@
+<% content_for :title, "#{@project.name} · Lrail" %>
+<% content_for :breadcrumbs do %><span>Projects</span><strong><%= @project.name %></strong><% end %>
+
+<div class="project-hero">
+  <div class="project-identity"><span class="resource-icon"><%= icon(:projects, size: 20) %></span><div><h1><%= @project.name %></h1><p><span class="mono"><%= @project.slug %></span> · Manifest revision <%= @project.manifest_revision %> · Updated <%= relative_time(@project.updated_at) %></p></div></div>
+  <div class="project-actions"><%= link_to "View activity", console_organization_project_deployments_path(@organization.public_id, @project.public_id), class: "button button--secondary" %><button class="button button--primary" type="button" data-action="shell#openDialog" data-dialog-id="deploy-dialog"><%= icon(:deploy, size: 15) %> Deploy</button></div>
+</div>
+
+<div class="context-bar">
+  <nav class="resource-tabs" aria-label="Project sections"><a class="is-active" href="#overview">Overview</a><a href="#services">Services</a><a href="#deployments">Deployments</a><a href="#data">Data</a><a href="#domains">Domains</a><a href="#telemetry">Observability</a><a href="#settings">Settings</a></nav>
+  <nav class="environment-tabs" aria-label="Environment">
+    <% @environments.each do |environment| %><%= link_to console_organization_project_path(@organization.public_id, @project.public_id, environment: environment.public_id), class: class_names("is-active": environment == @environment) do %><span class="environment-tabs__dot"></span><%= environment.name %><% if environment.protected? %><span class="nav-count">Protected</span><% end %><% end %><% end %>
+  </nav>
+</div>
+
+<div class="notice-panel" id="overview"><%= icon(:activity, size: 17) %><div><strong><%= @environment.name %> is <%= @environment.health %></strong><p>Desired generation <%= @environment.generation %>. Traffic changes require a verified release, accepted runtime target, and edge probe.</p></div></div>
+
+<div class="section-heading" id="services"><div><h2>Services</h2><p>Applications, workers, and private processes in <%= @environment.name %>.</p></div><a href="#">Add service +</a></div>
+<% if @services.any? %>
+  <div class="service-grid">
+    <% @services.each do |service| %>
+      <%= link_to console_organization_project_service_path(@organization.public_id, @project.public_id, service.public_id), class: "service-card" do %>
+        <div class="service-card__top"><span class="resource-icon resource-icon--web"><%= icon(service.kind == "static" ? :domains : :activity) %></span><div class="service-card__identity"><h3><%= service.name %></h3><p><%= service.framework.presence || service.kind.humanize %></p></div><%= status_badge(service.health) %></div>
+        <div class="service-card__body"><div class="card-fact"><span>Current release</span><strong><%= service.current_release&.public_id&.last(12) || "Not deployed" %></strong></div><div class="card-fact"><span>Runtime</span><strong><%= service.runtime_specification.fetch("profile", "sandbox") %></strong></div><div class="card-fact"><span>Process</span><strong><%= service.kind.humanize %></strong></div><div class="card-fact"><span>Region</span><strong><%= service.runtime_specification.fetch("region", "Not placed") %></strong></div></div>
+        <div class="service-card__footer"><span class="mono"><%= service.public_id.last(14) %></span><span>Configure <%= icon(:chevron, size: 11) %></span></div>
+      <% end %>
+    <% end %>
+  </div>
+<% else %>
+  <div class="data-panel empty-state"><span class="empty-state__icon"><%= icon(:activity) %></span><h3>No service proposal accepted</h3><p>Connect the selected repository. The static detector will return framework, build, start, port, health, and add-on evidence for review.</p><button class="button button--primary" type="button">Connect repository</button></div>
+<% end %>
+
+<div class="section-heading" id="deployments"><div><h2>Recent deployments</h2><p>Attempts are immutable; promotion moves verified release pointers.</p></div><%= link_to "Full history →", console_organization_project_deployments_path(@organization.public_id, @project.public_id) %></div>
+<div class="data-panel">
+  <% if @deployments.any? %>
+    <div class="table-scroll"><table class="resource-table"><thead><tr><th>Source / reason</th><th>Status</th><th>Stage</th><th>Revision</th><th>Created</th></tr></thead><tbody>
+      <% @deployments.each do |deployment| %><tr><td data-label="Source"><%= link_to console_organization_project_deployment_path(@organization.public_id, @project.public_id, deployment.public_id), class: "table-primary" do %><span class="commit-avatar"><%= deployment.source.fetch("commit", deployment.public_id).last(6) %></span><span><%= deployment.reason %><br><small><%= deployment.source.fetch("repository", deployment.source.fetch("kind", "source")) %></small></span><% end %></td><td data-label="Status"><%= status_badge(deployment.state) %></td><td data-label="Stage"><span class="mono"><%= deployment.operation.stage %></span></td><td data-label="Revision"><span class="mono"><%= deployment.revision&.image_digest&.last(12) || "pending" %></span></td><td data-label="Created"><%= relative_time(deployment.created_at) %></td></tr><% end %>
+    </tbody></table></div>
+  <% else %><div class="empty-state"><span class="empty-state__icon"><%= icon(:deploy) %></span><h3>No deployment attempts</h3><p>Start after a source connection is authorized and its exact commit is selected.</p></div><% end %>
+</div>
+
+<div class="split-layout">
+  <section id="data">
+    <div class="section-heading"><div><h2>Data services</h2><p>Private endpoints and independently rotating credentials.</p></div></div>
+    <div class="data-panel"><% if @addons.any? %><dl class="kv-list"><% @addons.each do |addon| %><div><dt><%= addon.name %> · <%= addon.engine %></dt><dd><%= status_badge(addon.state) %></dd></div><% end %></dl><% else %><div class="empty-state"><span class="empty-state__icon"><%= icon(:data) %></span><h3>No attached data</h3><p>Provisioned add-ons remain isolated until an explicit service attachment.</p></div><% end %></div>
+  </section>
+  <aside id="domains">
+    <div class="section-heading"><div><h2>Domains</h2><p>Ownership and TLS state.</p></div></div>
+    <div class="data-panel"><% if @domains.any? %><dl class="kv-list"><% @domains.each do |domain| %><div><dt class="mono"><%= domain.hostname %></dt><dd><%= status_badge(domain.state) %></dd></div><% end %></dl><% else %><div class="empty-state"><span class="empty-state__icon"><%= icon(:domains) %></span><h3>No domains</h3><p>A revision URL appears after runtime verification.</p></div><% end %></div>
+  </aside>
+</div>
+
+<dialog id="deploy-dialog" class="command-palette">
+  <div class="command-palette__surface">
+    <div class="data-panel__header"><h2>Create deployment</h2><button class="icon-button" type="button" data-action="shell#closeDialog" aria-label="Close">×</button></div>
+    <%= form_with url: console_organization_project_deployments_path(@organization.public_id, @project.public_id), class: "onboarding-panel__form" do |form| %><div class="form-stack"><div class="field"><%= form.label :repository %><%= form.text_field :repository, required: true, placeholder: "owner/repository" %></div><div class="field"><%= form.label :commit, "Exact commit SHA" %><%= form.text_field :commit, required: true, pattern: "[0-9a-f]{40,64}", placeholder: "40-character commit" %></div><div class="field"><%= form.label :environment_id, "Environment" %><%= form.select :environment_id, @environments.map { |environment| [environment.name, environment.public_id] } %></div><div class="field"><%= form.label :reason %><%= form.text_field :reason, value: "Manual deployment", maxlength: 512 %></div></div><div class="form-actions"><button class="button button--ghost" type="button" data-action="shell#closeDialog">Cancel</button><%= form.submit "Accept deployment", class: "button button--primary" %></div><% end %>
+  </div>
+</dialog>

@@ -25,20 +25,27 @@ tasks:
     deps: [doctor]
     cmds:
       - corepack pnpm install --frozen-lockfile
-      - cmd: bundle install
-        dir: "{{.CONTROL_PLANE}}"
-      - cmd: uv sync --frozen
-        dir: "{{.DETECTOR}}"
+      - task: rails:bootstrap
+      - task: detector:bootstrap
       - go work sync
       - task: generate
+
+  rails:bootstrap:
+    internal: true
+    dir: "{{.CONTROL_PLANE}}"
+    cmds:
+      - bundle install
+
+  detector:bootstrap:
+    internal: true
+    dir: "{{.DETECTOR}}"
+    cmds:
+      - uv sync --frozen
 
   check:
     desc: Run formatting, lint, types, contracts, and fast security checks
     cmds:
-      - cmd: bundle exec rubocop
-        dir: "{{.CONTROL_PLANE}}"
-      - cmd: bundle exec brakeman --no-pager --quiet
-        dir: "{{.CONTROL_PLANE}}"
+      - task: rails:check
       - corepack pnpm check
       - uv run --project "{{.DETECTOR}}" ruff check "{{.DETECTOR}}"
       - uv run --project "{{.DETECTOR}}" mypy "{{.DETECTOR}}/src"
@@ -46,23 +53,39 @@ tasks:
       - corepack pnpm contracts:lint
       - python tools/validate-compose.py
 
+  rails:check:
+    internal: true
+    dir: "{{.CONTROL_PLANE}}"
+    cmds:
+      - bundle exec rubocop
+      - bundle exec brakeman --no-pager --quiet
+
   test:
     desc: Run all hermetic package tests
     cmds:
-      - cmd: bundle exec rspec
-        dir: "{{.CONTROL_PLANE}}"
+      - task: rails:test
       - corepack pnpm test
       - uv run --project "{{.DETECTOR}}" pytest "{{.DETECTOR}}/tests"
       - python tools/go-test-race.py
+
+  rails:test:
+    internal: true
+    dir: "{{.CONTROL_PLANE}}"
+    cmds:
+      - bundle exec rspec
 
   test:integration:
     desc: Run tests against local dependencies
     cmds:
       - docker compose up -d --wait postgres temporal nats valkey minio mailpit
-      - cmd: bundle exec rails db:prepare
-        dir: "{{.CONTROL_PLANE}}"
-      - cmd: bundle exec rspec spec/integration
-        dir: "{{.CONTROL_PLANE}}"
+      - task: rails:db:prepare
+      - task: rails:test:integration
+
+  rails:test:integration:
+    internal: true
+    dir: "{{.CONTROL_PLANE}}"
+    cmds:
+      - bundle exec rspec spec/integration
 
   lab:up:
     desc: Start the complete lightweight local profile
@@ -82,8 +105,15 @@ tasks:
   db:prepare:
     desc: Create and migrate local control-plane databases
     cmds:
-      - cmd: bundle exec rails db:prepare
-        dir: "{{.CONTROL_PLANE}}"
+      - task: rails:db:prepare
+
+  rails:db:prepare:
+    internal: true
+    dir: "{{.CONTROL_PLANE}}"
+    cmds:
+      - bundle exec rails db:prepare
+    env:
+      LRAIL_DATABASE_USER: lrail_local
 
   e2e:
     desc: Run browser, API, and CLI golden journeys
@@ -94,12 +124,16 @@ tasks:
     desc: Run repository, dependency, code, image, and policy security checks
     cmds:
       - python tools/scan_secrets.py
-      - cmd: bundle exec bundler-audit check --update
-        dir: "{{.CONTROL_PLANE}}"
-      - cmd: bundle exec brakeman --no-pager
-        dir: "{{.CONTROL_PLANE}}"
+      - task: rails:security
       - corepack pnpm audit --audit-level high
       - govulncheck ./...
+
+  rails:security:
+    internal: true
+    dir: "{{.CONTROL_PLANE}}"
+    cmds:
+      - bundle exec bundler-audit check --update
+      - bundle exec brakeman --no-pager
 
   generate:
     desc: Generate all contracts and verify deterministic output

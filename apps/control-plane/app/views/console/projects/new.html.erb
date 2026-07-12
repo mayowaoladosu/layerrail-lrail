@@ -1,0 +1,31 @@
+<% content_for :title, "Create project · Lrail" %>
+<% content_for :breadcrumbs do %><span>Projects</span><strong>New project</strong><% end %>
+
+<div class="onboarding-shell">
+  <header class="onboarding-header"><span class="onboarding-header__step">Project onboarding</span><h1>What will you deploy?</h1><p>Choose a source, name the project, then review the detector proposal before Lrail creates an immutable build.</p></header>
+  <div class="onboarding-progress" aria-label="Onboarding progress"><div class="onboarding-progress__step is-active"><span class="onboarding-progress__number">1</span><span>Connect source</span></div><div class="onboarding-progress__step"><span class="onboarding-progress__number">2</span><span>Configure</span></div><div class="onboarding-progress__step"><span class="onboarding-progress__number">3</span><span>Deploy</span></div></div>
+
+  <%= form_with model: @project, url: console_projects_path, class: "onboarding-panel" do |form| %>
+    <section class="onboarding-panel__sources">
+      <h2>Select a source</h2><p class="onboarding-panel__intro">Provider access is requested only for repositories you choose.</p>
+      <div class="source-grid">
+        <label class="source-card"><input type="radio" name="source_kind" value="github" checked><span class="source-card__logo">GH</span><span><strong>GitHub</strong><small>App installation · automatic previews</small></span></label>
+        <label class="source-card"><input type="radio" name="source_kind" value="gitlab"><span class="source-card__logo">GL</span><span><strong>GitLab</strong><small>OAuth project access</small></span></label>
+        <label class="source-card"><input type="radio" name="source_kind" value="bitbucket"><span class="source-card__logo">BB</span><span><strong>Bitbucket</strong><small>Workspace repositories</small></span></label>
+        <label class="source-card"><input type="radio" name="source_kind" value="local"><span class="source-card__logo">CLI</span><span><strong>Local directory</strong><small>Upload with the Lrail CLI</small></span></label>
+      </div>
+      <div class="notice-panel"><%= icon(:git, size: 17) %><div><strong>Connect after creation</strong><p>No provider credential is stored in this form. The next step opens the scoped provider authorization flow.</p></div></div>
+    </section>
+
+    <section class="onboarding-panel__form">
+      <h2>Project details</h2><p class="onboarding-panel__intro">These values become mutable aliases; authorization uses immutable IDs.</p>
+      <div class="form-stack">
+        <div class="field"><%= form.label :name %><%= form.text_field :name, required: true, autofocus: true, placeholder: "Checkout API" %><% @project.errors.full_messages_for(:name).each do |message| %><span class="field-error"><%= message %></span><% end %></div>
+        <div class="field"><%= form.label :slug %><%= form.text_field :slug, required: true, pattern: "[a-z][a-z0-9-]{0,62}", placeholder: "checkout-api" %><span class="field-hint">Used in generated preview hostnames. Lowercase letters, numbers, and hyphens.</span><% @project.errors.full_messages_for(:slug).each do |message| %><span class="field-error"><%= message %></span><% end %></div>
+        <div class="field"><%= form.label :description %><%= form.text_area :description, maxlength: 500, placeholder: "What this project owns" %></div>
+        <div class="field"><span class="field-label">Workspace</span><div class="source-card"><span class="avatar avatar--small"><%= @organization.name.first(2).upcase %></span><span><strong><%= @organization.name %></strong><small><%= current_membership.role.capitalize %> · <%= @organization.plan.capitalize %> plan</small></span></div></div>
+      </div>
+      <div class="form-actions"><%= link_to "Cancel", console_projects_path, class: "button button--ghost" %><%= form.submit "Continue to source", class: "button button--primary" %></div>
+    </section>
+  <% end %>
+</div>

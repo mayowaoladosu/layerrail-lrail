@@ -1,0 +1,75 @@
+<% content_for :title, "Overview · #{@organization.name} · Lrail" %>
+<% content_for :breadcrumbs do %><strong>Overview</strong><% end %>
+
+<header class="page-header">
+  <div>
+    <p class="page-header__eyebrow"><span class="support-pulse"></span> Workspace healthy</p>
+    <h1>Good <%= Time.current.hour < 12 ? "morning" : Time.current.hour < 18 ? "afternoon" : "evening" %>, <%= current_account.display_name.split.first %>.</h1>
+    <p class="page-header__description">A single view of projects, releases, data services, and operational changes across <%= @organization.name %>.</p>
+  </div>
+  <div class="page-header__actions">
+    <%= link_to console_projects_path, class: "button button--secondary" do %><%= icon(:projects, size: 15) %> View projects<% end %>
+    <%= link_to new_console_project_path, class: "button button--primary" do %><span>+</span> Deploy project<% end %>
+  </div>
+</header>
+
+<section class="metrics-strip" aria-label="Workspace summary">
+  <div class="metric"><span class="metric__label">Projects</span><strong class="metric__value"><%= @organization.projects.count %></strong><span class="metric__meta"><%= @projects.count %> recently active</span></div>
+  <div class="metric"><span class="metric__label">Active services</span><strong class="metric__value"><%= @active_services %></strong><span class="metric__meta">Across <%= @organization.environments.count %> environments</span></div>
+  <div class="metric"><span class="metric__label">Deployments</span><strong class="metric__value"><%= @organization.deployments.where(created_at: Time.current.beginning_of_month..).count %></strong><span class="metric__meta">This month</span></div>
+  <div class="metric"><span class="metric__label">Attention</span><strong class="metric__value"><%= @open_incidents %></strong><span class="metric__meta"><%= @open_incidents.zero? ? "No degraded services" : "Services need review" %></span></div>
+</section>
+
+<div class="section-heading">
+  <div><h2>Projects</h2><p>Environment health and latest delivery activity.</p></div>
+  <%= link_to "View all projects →", console_projects_path %>
+</div>
+
+<% if @projects.any? %>
+  <div class="project-grid">
+    <% @projects.each do |project| %>
+      <%= link_to console_organization_project_path(@organization.public_id, project.public_id), class: "project-card" do %>
+        <div class="project-card__top">
+          <span class="resource-icon"><%= icon(:projects) %></span>
+          <div class="project-card__identity"><h3><%= project.name %></h3><p><%= project.description.presence || "#{project.slug}.lrail.app" %></p></div>
+          <%= status_badge(project.status) %>
+        </div>
+        <div class="project-card__body">
+          <div class="card-fact"><span>Services</span><strong><%= project.services.size %> configured</strong></div>
+          <div class="card-fact"><span>Environments</span><strong><%= project.environments.map(&:name).join(", ") %></strong></div>
+        </div>
+        <div class="project-card__footer"><span>Updated <%= relative_time(project.updated_at) %></span><span>Open project <%= icon(:chevron, size: 11) %></span></div>
+      <% end %>
+    <% end %>
+  </div>
+<% else %>
+  <div class="data-panel empty-state"><span class="empty-state__icon"><%= icon(:projects, size: 21) %></span><h3>No projects yet</h3><p>Import a Git repository or begin with a template. Detection will propose services before any source is executed.</p><%= link_to "Create first project", new_console_project_path, class: "button button--primary" %></div>
+<% end %>
+
+<div class="section-heading" id="activity">
+  <div><h2>Recent deployments</h2><p>Immutable delivery attempts across this workspace.</p></div>
+</div>
+
+<div class="data-panel" id="deployments">
+  <% if @recent_deployments.any? %>
+    <div class="table-scroll">
+      <table class="resource-table">
+        <thead><tr><th>Deployment</th><th>Project</th><th>Environment</th><th>Status</th><th>Stage</th><th>Started</th></tr></thead>
+        <tbody>
+          <% @recent_deployments.each do |deployment| %>
+            <tr>
+              <td data-label="Deployment"><%= link_to console_organization_project_deployment_path(@organization.public_id, deployment.project.public_id, deployment.public_id), class: "table-primary" do %><span class="commit-avatar"><%= deployment.public_id.last(6) %></span><span><%= deployment.reason %><br><small class="mono"><%= deployment.public_id %></small></span><% end %></td>
+              <td data-label="Project"><%= deployment.project.name %></td>
+              <td data-label="Environment"><%= deployment.environment.name %></td>
+              <td data-label="Status"><%= status_badge(deployment.state) %></td>
+              <td data-label="Stage"><span class="mono"><%= deployment.operation.stage %></span></td>
+              <td data-label="Started"><%= relative_time(deployment.created_at) %></td>
+            </tr>
+          <% end %>
+        </tbody>
+      </table>
+    </div>
+  <% else %>
+    <div class="empty-state"><span class="empty-state__icon"><%= icon(:deploy) %></span><h3>No deployments recorded</h3><p>A deployment appears here after a source snapshot is accepted.</p></div>
+  <% end %>
+</div>

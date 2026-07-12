@@ -1,0 +1,90 @@
+# Local blueprint and extraction artifacts (authoritative input, not public source)
+/Lrail_Owned_PaaS_Master_Engineering_Blueprint.docx
+/.work/
+
+# Secrets: deny by default
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.pem
+*.key
+*.crt
+*.cer
+*.p12
+*.pfx
+*.jks
+*.keystore
+*.age
+*.sops.yaml
+*credentials*
+*secret*
+!**/secret_refs.*
+!**/*secret*_test.*
+!**/*secret*.example
+kubeconfig*
+
+# Runtime state and backups
+/data/
+/tmp/
+/log/
+/storage/
+/backups/
+*.log
+*.pid
+*.sqlite3
+*.sqlite3-*
+*.dump
+*.sql.gz
+*.tfstate
+*.tfstate.*
+.terraform/
+
+# Ruby / Rails
+.bundle/
+vendor/bundle/
+coverage/
+.rspec_status
+/apps/control-plane/public/assets/
+/apps/control-plane/public/packs/
+/apps/control-plane/node_modules/
+/apps/control-plane/config/master.key
+/apps/control-plane/config/credentials/*.key
+
+# Go
+/bin/
+*.test
+*.out
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+
+# Node / TypeScript
+node_modules/
+.pnpm-store/
+.npm/
+*.tsbuildinfo
+/dist/
+
+# Build, test, and generated local artifacts
+/.cache/
+/.artifacts/
+/playwright-report/
+/test-results/
+/.task/
+
+# IDE and OS
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/tasks.json
+.idea/
+.DS_Store
+Thumbs.db
+Desktop.ini

@@ -53,7 +53,7 @@ tasks:
         dir: "{{.CONTROL_PLANE}}"
       - corepack pnpm test
       - uv run --project "{{.DETECTOR}}" pytest "{{.DETECTOR}}/tests"
-      - go test -race ./...
+      - python tools/go-test-race.py
 
   test:integration:
     desc: Run tests against local dependencies

@@ -16,6 +16,9 @@ RSpec.describe "account authentication", type: :request do
     expect(account.public_id).to start_with("acct_")
     expect(account.memberships.first).to have_attributes(role: "owner", status: "active")
     expect(account.organizations.first).to be_personal
+    expect(account.email_intents).to contain_exactly(
+      have_attributes(template: "rodauth_message", template_version: 1, state: "pending"),
+    )
   end
 
   it "authenticates a verified account and renders the operational shell" do

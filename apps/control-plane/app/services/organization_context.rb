@@ -16,10 +16,10 @@ class OrganizationContext
     end
   end
 
-  def self.select_for(account:, identifier:, &)
+  def self.select_for(account:, identifier:, &block)
     with(account:) do
       organization = Organization.where(public_id: identifier).or(Organization.where(slug: identifier)).first!
-      with(account:, organization:, &)
+      with(account:, organization:) { block.call(organization) }
     end
   end
 

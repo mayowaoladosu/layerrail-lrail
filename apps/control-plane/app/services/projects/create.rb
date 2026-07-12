@@ -41,7 +41,12 @@ module Projects
           resource: project,
           event_type: "project.created",
           action: "project.create",
-          data: { environment_id: production.public_id, policy_reason: decision.reason },
+          data: {
+            environment_id: production.public_id,
+            operation_id: operation.public_id,
+            workflow_id: operation.workflow_id,
+            policy_reason: decision.reason
+          },
         )
         Result.new(project, operation)
       end

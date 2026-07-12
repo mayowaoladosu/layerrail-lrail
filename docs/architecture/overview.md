@@ -51,7 +51,7 @@ Rails stores versioned desired specifications. Commands evaluate invariants and 
 ## Technology baseline
 
 - Rails 8.1.3 and Ruby 3.4.10
-- Go 1.26.4
+- Go 1.26.5
 - Python 3.14.6 with uv 0.11.28
 - Node 24.16.0, TypeScript 5.9.3, pnpm 11.12.0
 - OpenAPI 3.1, JSON Schema 2020-12, and Protobuf/Buf 1.71.0

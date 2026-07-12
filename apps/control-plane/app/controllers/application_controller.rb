@@ -24,8 +24,9 @@ class ApplicationController < ActionController::Base
   end
 
   def assign_request_context
-    Current.request_id = request.request_id
-    Current.traceparent = request.headers["traceparent"]&.first(128)
+    Current.request_id = RequestIdentity.request_id(request.request_id)
+    Current.traceparent = RequestIdentity.traceparent(request.headers["traceparent"]&.first(128))
+    response.set_header("X-Request-ID", Current.request_id)
   end
 
   def render_not_found
@@ -42,7 +43,7 @@ class ApplicationController < ActionController::Base
 
   def render_error(status:, code:, message:, details: [])
     if request.format.json?
-      render json: { error: { code:, message:, request_id: request.request_id, details: } }, status:
+      render json: { error: { code:, message:, request_id: Current.request_id, details: } }, status:
     else
       render "errors/show", status:, locals: { code:, message: }
     end

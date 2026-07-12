@@ -88,8 +88,10 @@ class RodauthMain < Rodauth::Rails::Auth
 
     # ==> Emails
     send_email do |email|
-      # queue email delivery on the mailer after the transaction commits
-      db.after_commit { email.deliver_later }
+      account_database_id = account_id
+      db.after_commit do
+        ::Email::Enqueue.from_mail(account: Account.find(account_database_id), message: email)
+      end
     end
 
     # ==> Flash

@@ -34,6 +34,7 @@ gem "request_store", "~> 1.7"
 gem "pagy", "~> 43.6"
 gem "nats-pure", "~> 2.5"
 gem "resend", "~> 1.6"
+gem "svix", "~> 1.96"
 gem "prometheus-client", "~> 4.2"
 
 # Use Active Model has_secure_password [https://guides.rubyonrails.org/active_model_basics.html#securepassword]

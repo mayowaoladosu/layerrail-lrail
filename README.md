@@ -16,8 +16,7 @@ This repository is intentionally independent. It does not import another LayerRa
 
 ## Repository shape
 
-- `apps/control-plane` — Rails HTML/API, authentication, domain commands, and operator plane
-- `apps/control-workers` — durable workflow, outbox, notification, and webhook workers
+- `apps/control-plane` — Rails HTML/API, authentication, domain commands, operator plane, and separately runnable worker entrypoints
 - `services` — Go and Python source, build, regional, edge, DNS, data, telemetry, and tunnel services
 - `cli` — TypeScript developer CLI
 - `sdk` — Ruby, TypeScript, Go, and Python SDKs
@@ -30,6 +29,12 @@ This repository is intentionally independent. It does not import another LayerRa
 ## Security
 
 No production credential belongs in this repository. Configuration examples contain references or unmistakably fake values only. See [SECURITY.md](SECURITY.md) for reporting and handling rules.
+
+## Local acceptance
+
+The lightweight profile starts PostgreSQL, Temporal, NATS JetStream, Valkey, MinIO, and Mailpit through `task lab:up`. `task db:prepare` applies authoritative migrations, while `task db:dump` generates a deterministic PostgreSQL SQL structure through the pinned container. `task db:verify` restores that artifact into a disposable database and checks functions, RLS policies, triggers, migration versions, and runtime-role denials.
+
+The Rails app exposes independent process entrypoints for `lrail:workers:outbox`, `lrail:workers:project_events`, and `lrail:workers:email`. Their `_once` variants provide bounded probes. Production email uses Resend; development and tests use an in-memory adapter and never require a provider credential. `task check`, `task test`, and `task test:integration` are the required local gates.
 
 ## Status
 

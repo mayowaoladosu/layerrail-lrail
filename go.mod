@@ -1,6 +1,6 @@
 module github.com/mayowaoladosu/layerrail-lrail
 
-go 1.26.4
+go 1.26.5
 
 require (
 	go.starlark.net v0.0.0-20260708150628-5395d018f003

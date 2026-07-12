@@ -28,6 +28,10 @@ class Rack::Attack
     request.ip if request.path.start_with?("/v1/")
   end
 
+  throttle("provider-webhooks/ip", limit: 600, period: 1.minute) do |request|
+    request.ip if request.post? && request.path.start_with?("/webhooks/")
+  end
+
   self.throttled_responder = lambda do |request|
     match = request.env.fetch("rack.attack.match_data", {})
     period = Integer(match.fetch(:period, 60))

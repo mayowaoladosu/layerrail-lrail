@@ -47,7 +47,7 @@ tasks:
     cmds:
       - task: rails:check
       - corepack pnpm check
-      - uv run --project "{{.DETECTOR}}" ruff check "{{.DETECTOR}}"
+      - uv run --project "{{.DETECTOR}}" ruff check tools "{{.DETECTOR}}"
       - uv run --project "{{.DETECTOR}}" mypy "{{.DETECTOR}}/src"
       - go test ./...
       - corepack pnpm contracts:lint
@@ -80,10 +80,13 @@ tasks:
       - docker compose up -d --wait postgres temporal nats valkey minio mailpit
       - task: rails:db:prepare
       - task: rails:test:integration
+      - task: db:verify
 
   rails:test:integration:
     internal: true
     dir: "{{.CONTROL_PLANE}}"
+    env:
+      LRAIL_NATS_INTEGRATION: "1"
     cmds:
       - bundle exec rspec spec/integration
 
@@ -107,6 +110,16 @@ tasks:
     cmds:
       - task: rails:db:prepare
 
+  db:dump:
+    desc: Generate the PostgreSQL structure dump through the pinned local container
+    cmds:
+      - python tools/dump-rails-structure.py
+
+  db:verify:
+    desc: Restore and verify the PostgreSQL SQL schema in a disposable database
+    cmds:
+      - python tools/verify-rails-structure.py
+
   rails:db:prepare:
     internal: true
     dir: "{{.CONTROL_PLANE}}"
@@ -123,7 +136,7 @@ tasks:
   security:
     desc: Run repository, dependency, code, image, and policy security checks
     cmds:
-      - python tools/scan_secrets.py
+      - python tools/scan-secrets.py
       - task: rails:security
       - corepack pnpm audit --audit-level high
       - govulncheck ./...

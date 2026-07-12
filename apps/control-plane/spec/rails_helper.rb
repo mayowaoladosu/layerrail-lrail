@@ -47,6 +47,7 @@ RSpec.configure do |config|
   config.use_transactional_fixtures = true
   config.infer_spec_type_from_file_location!
   config.order = :random
+  config.before(:each, type: :request) { Rack::Attack.cache.store.clear }
 
   # You can uncomment this line to turn off ActiveRecord support entirely.
   # config.use_active_record = false

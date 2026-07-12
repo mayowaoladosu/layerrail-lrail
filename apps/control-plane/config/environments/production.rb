@@ -8,6 +8,10 @@ Rails.application.configure do
     LRAIL_QUEUE_DATABASE_URL
     LRAIL_CABLE_DATABASE_URL
     LRAIL_WEBAUTHN_ORIGIN
+    LRAIL_NATS_URL
+    LRAIL_EMAIL_FROM
+    RESEND_API_KEY
+    RESEND_WEBHOOK_SECRET
   ]
   missing_environment = required_environment.select { |name| ENV[name].blank? }
   raise KeyError, "missing required production environment: #{missing_environment.join(", ")}" if missing_environment.any?

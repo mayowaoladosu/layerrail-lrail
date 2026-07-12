@@ -53,6 +53,10 @@ kubeconfig*
 .bundle/
 vendor/bundle/
 coverage/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
 .rspec_status
 /apps/control-plane/public/assets/
 /apps/control-plane/public/packs/

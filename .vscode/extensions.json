@@ -1,0 +1,13 @@
+{
+  "recommendations": [
+    "shopify.ruby-lsp",
+    "golang.go",
+    "ms-python.python",
+    "ms-python.vscode-python-envs",
+    "dbaeumer.vscode-eslint",
+    "redhat.vscode-yaml",
+    "bufbuild.vscode-buf",
+    "ms-azuretools.vscode-docker",
+    "timonwong.shellcheck"
+  ]
+}

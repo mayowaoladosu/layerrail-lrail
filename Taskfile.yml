@@ -1,0 +1,101 @@
+version: "3"
+
+set:
+  - errexit
+  - nounset
+  - pipefail
+
+vars:
+  CONTROL_PLANE: apps/control-plane
+  DETECTOR: services/detector
+
+tasks:
+  default:
+    desc: List available tasks
+    cmds:
+      - task --list
+
+  doctor:
+    desc: Verify the deterministic developer environment
+    cmds:
+      - python tools/doctor.py
+
+  bootstrap:
+    desc: Install locked dependencies and generate contracts
+    deps: [doctor]
+    cmds:
+      - corepack pnpm install --frozen-lockfile
+      - cmd: bundle install
+        dir: "{{.CONTROL_PLANE}}"
+      - cmd: uv sync --frozen
+        dir: "{{.DETECTOR}}"
+      - go work sync
+      - task: generate
+
+  check:
+    desc: Run formatting, lint, types, contracts, and fast security checks
+    cmds:
+      - cmd: bundle exec rubocop
+        dir: "{{.CONTROL_PLANE}}"
+      - cmd: bundle exec brakeman --no-pager --quiet
+        dir: "{{.CONTROL_PLANE}}"
+      - corepack pnpm check
+      - uv run --project "{{.DETECTOR}}" ruff check "{{.DETECTOR}}"
+      - uv run --project "{{.DETECTOR}}" mypy "{{.DETECTOR}}/src"
+      - go test ./...
+      - python tools/validate_contracts.py
+
+  test:
+    desc: Run all hermetic package tests
+    cmds:
+      - cmd: bundle exec rspec
+        dir: "{{.CONTROL_PLANE}}"
+      - corepack pnpm test
+      - uv run --project "{{.DETECTOR}}" pytest "{{.DETECTOR}}/tests"
+      - go test -race ./...
+
+  test:integration:
+    desc: Run tests against local dependencies
+    cmds:
+      - docker compose up -d --wait postgres temporal nats valkey minio mailpit
+      - cmd: bundle exec rails db:prepare
+        dir: "{{.CONTROL_PLANE}}"
+      - cmd: bundle exec rspec spec/integration
+        dir: "{{.CONTROL_PLANE}}"
+
+  lab:up:
+    desc: Start the complete lightweight local profile
+    cmds:
+      - docker compose up -d --wait
+
+  lab:down:
+    desc: Stop the local profile without deleting named data
+    cmds:
+      - docker compose down
+
+  e2e:
+    desc: Run browser, API, and CLI golden journeys
+    cmds:
+      - corepack pnpm --filter @lrail/e2e test
+
+  security:
+    desc: Run repository, dependency, code, image, and policy security checks
+    cmds:
+      - python tools/scan_secrets.py
+      - cmd: bundle exec bundler-audit check --update
+        dir: "{{.CONTROL_PLANE}}"
+      - cmd: bundle exec brakeman --no-pager
+        dir: "{{.CONTROL_PLANE}}"
+      - corepack pnpm audit --audit-level high
+      - govulncheck ./...
+
+  generate:
+    desc: Generate all contracts and verify deterministic output
+    cmds:
+      - buf generate
+      - python tools/generate_contract_fixtures.py
+
+  package:
+    desc: Build candidate artifacts from locked inputs
+    cmds:
+      - docker buildx bake --file platform/build/docker-bake.hcl

@@ -1,0 +1,13 @@
+packages:
+  - "cli"
+  - "sdk/typescript"
+  - "packages/*"
+  - "test/e2e"
+
+minimumReleaseAge: 1440
+minimumReleaseAgeExclude:
+  - "@lrail/*"
+
+onlyBuiltDependencies:
+  - "@playwright/browser-chromium"
+  - "esbuild"

@@ -1,0 +1,18 @@
+{
+  "name": "@lrail/monorepo",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Independent owned PaaS monorepo",
+  "license": "UNLICENSED",
+  "packageManager": "pnpm@11.12.0",
+  "engines": {
+    "node": ">=24.16.0 <25",
+    "pnpm": ">=11.12.0 <12"
+  },
+  "scripts": {
+    "check": "pnpm -r --if-present check",
+    "test": "pnpm -r --if-present test",
+    "build": "pnpm -r --if-present build",
+    "format:check": "pnpm -r --if-present format:check"
+  }
+}

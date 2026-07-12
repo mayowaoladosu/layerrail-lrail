@@ -1,0 +1,11 @@
+{
+  "files.eol": "\n",
+  "files.insertFinalNewline": true,
+  "files.trimTrailingWhitespace": true,
+  "editor.formatOnSave": true,
+  "rubyLsp.bundleGemfile": "${workspaceFolder}/apps/control-plane/Gemfile",
+  "python.defaultInterpreterPath": "${workspaceFolder}/services/detector/.venv/Scripts/python.exe",
+  "yaml.schemas": {
+    "https://json.schemastore.org/github-workflow.json": ".github/workflows/*.yml"
+  }
+}

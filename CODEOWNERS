@@ -1,0 +1,12 @@
+* @mayowaoladosu
+
+/apps/control-plane/ @mayowaoladosu
+/contracts/ @mayowaoladosu
+/services/build-plane/ @mayowaoladosu
+/services/regional-control/ @mayowaoladosu
+/services/edge-control/ @mayowaoladosu
+/services/dns-certificate/ @mayowaoladosu
+/services/data-control/ @mayowaoladosu
+/bpf/ @mayowaoladosu
+/platform/policies/ @mayowaoladosu
+/.github/workflows/ @mayowaoladosu

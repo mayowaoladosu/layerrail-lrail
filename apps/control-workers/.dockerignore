@@ -1,0 +1,5 @@
+.bundle
+coverage
+log
+tmp
+vendor

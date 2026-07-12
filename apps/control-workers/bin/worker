@@ -1,0 +1,13 @@
+#!/usr/bin/env ruby
+
+require "lrail_control_workers"
+
+client = Temporalio::Client.connect(
+  ENV.fetch("LRAIL_TEMPORAL_ADDRESS"),
+  ENV.fetch("LRAIL_TEMPORAL_NAMESPACE")
+)
+worker = LrailControlWorkers::WorkerFactory.build(
+  client:,
+  task_queue: ENV.fetch("LRAIL_TEMPORAL_TASK_QUEUE")
+)
+worker.run(shutdown_signals: %w[SIGINT SIGTERM])

@@ -34,7 +34,9 @@ No production credential belongs in this repository. Configuration examples cont
 
 The lightweight profile starts PostgreSQL, Temporal, NATS JetStream, Valkey, MinIO, and Mailpit through `task lab:up`. `task db:prepare` applies authoritative migrations, while `task db:dump` generates a deterministic PostgreSQL SQL structure through the pinned container. `task db:verify` restores that artifact into a disposable database and checks functions, RLS policies, triggers, migration versions, and runtime-role denials.
 
-The Rails app exposes independent process entrypoints for `lrail:workers:outbox`, `lrail:workers:project_events`, and `lrail:workers:email`. Their `_once` variants provide bounded probes. Production email uses Resend; development and tests use an in-memory adapter and never require a provider credential. `task check`, `task test`, and `task test:integration` are the required local gates.
+The Rails app exposes independent process entrypoints for `lrail:workers:outbox`, `lrail:workers:project_events`, and `lrail:workers:email`. Their `_once` variants provide bounded probes. Production email uses Resend; development and tests use an in-memory adapter and never require a provider credential.
+
+The official Temporal Ruby SDK does not support Windows, so `apps/control-workers` is intentionally built and tested as a separate non-root Linux image from an immutable Ruby base. Its real-service test proves business-key duplicate start, worker shutdown and replay on a new worker, explicit completion, bounded activity retry policy, and cancellation. `task check`, `task test`, and `task test:integration` are the required local gates.
 
 ## Status
 

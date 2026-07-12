@@ -7,6 +7,9 @@ set:
 
 vars:
   CONTROL_PLANE: apps/control-plane
+  CONTROL_WORKERS: apps/control-workers
+  CONTROL_WORKERS_TEST_IMAGE: lrail-control-workers:test
+  CONTROL_WORKERS_IMAGE: lrail-control-workers:local
   DETECTOR: services/detector
 
 tasks:
@@ -45,6 +48,7 @@ tasks:
   check:
     desc: Run formatting, lint, types, contracts, and fast security checks
     cmds:
+      - task: control-workers:check
       - task: rails:check
       - corepack pnpm check
       - uv run --project "{{.DETECTOR}}" ruff check tools "{{.DETECTOR}}"
@@ -59,6 +63,12 @@ tasks:
     cmds:
       - bundle exec rubocop
       - bundle exec brakeman --no-pager --quiet
+
+  control-workers:check:
+    internal: true
+    cmds:
+      - docker build --target test -t "{{.CONTROL_WORKERS_TEST_IMAGE}}" "{{.CONTROL_WORKERS}}"
+      - docker run --rm "{{.CONTROL_WORKERS_TEST_IMAGE}}" bundle exec rubocop
 
   test:
     desc: Run all hermetic package tests
@@ -80,7 +90,17 @@ tasks:
       - docker compose up -d --wait postgres temporal nats valkey minio mailpit
       - task: rails:db:prepare
       - task: rails:test:integration
+      - task: control-workers:test:integration
       - task: db:verify
+
+  control-workers:test:integration:
+    internal: true
+    cmds:
+      - docker build --target test -t "{{.CONTROL_WORKERS_TEST_IMAGE}}" "{{.CONTROL_WORKERS}}"
+      - >-
+        docker run --rm --network lrail-dev_control
+        -e LRAIL_TEMPORAL_ADDRESS=temporal:7233
+        "{{.CONTROL_WORKERS_TEST_IMAGE}}"
 
   rails:test:integration:
     internal: true
@@ -137,9 +157,16 @@ tasks:
     desc: Run repository, dependency, code, image, and policy security checks
     cmds:
       - python tools/scan-secrets.py
+      - task: control-workers:security
       - task: rails:security
       - corepack pnpm audit --audit-level high
       - govulncheck ./...
+
+  control-workers:security:
+    internal: true
+    cmds:
+      - docker build --target test -t "{{.CONTROL_WORKERS_TEST_IMAGE}}" "{{.CONTROL_WORKERS}}"
+      - docker run --rm "{{.CONTROL_WORKERS_TEST_IMAGE}}" bundle exec bundler-audit check --update
 
   rails:security:
     internal: true
@@ -158,4 +185,5 @@ tasks:
   package:
     desc: Build candidate artifacts from locked inputs
     cmds:
+      - docker build --target runtime -t "{{.CONTROL_WORKERS_IMAGE}}" "{{.CONTROL_WORKERS}}"
       - docker buildx bake --file platform/build/docker-bake.hcl

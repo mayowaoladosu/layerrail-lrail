@@ -15,6 +15,8 @@ Consumers use named durable pull subscriptions and explicit acknowledgements. Be
 
 Temporal is reserved for durable process state: workflow identity, timers, retries, cancellation, compensation, and versioned replay. NATS events may start or signal a Temporal workflow, but a consumer must never infer process completion from message delivery alone.
 
+The official Temporal Ruby SDK is used from a separate immutable, non-root Linux image because its native core does not support MinGW Windows. Workflow IDs are command business keys. Duplicate starts resolve to the existing handle, incompatible worker generations use new task queues, and code changes use patch markers. Integration runs stop one worker while a workflow is waiting, resume it on a new worker, replay the completed history, and exercise cancellation against the real local Temporal service.
+
 ## Boundaries
 
 - Event envelopes are contract-validated, self-contained, organization identified, and secret free.

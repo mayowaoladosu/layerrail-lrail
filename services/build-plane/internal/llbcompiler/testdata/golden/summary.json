@@ -1,11 +1,11 @@
 {
-  "definition_digest": "sha256:a23d1ab902f0b0c1afe145d798743086ba019bbf345bd25eadee84554301c981",
+  "definition_digest": "sha256:94660c297b0fbcc951471a866f9d47c9c1ab8c256c4b9c14510313025ac581d8",
   "ir_digest": "sha256:92511f56467e65786c92754bd800482260b3fe3dd09d507ac07170dbe213017f",
   "policy_digest": "sha256:af30b6a755d800bb5e0b79b66a79fd408f57c8b500dce448a622d14c441eef5a",
   "output_name": "api",
   "output_kind": "oci_image",
-  "llb_digest": "sha256:ae0e901a75230ca334d36199c554f091dd4e506fb9d45b998510e181f1e47615",
+  "llb_digest": "sha256:40884866632e36b1e5b8d408b050067715dc8fdcad6fb154436fe523e9f166f1",
   "config_digest": "sha256:bfd3a2d61d1007ccc2f6c2d3a192b33bd1c90ff5cd460eb6cfaef7e9ee3e4e60",
-  "head": "sha256:04dcddc501e82665d349d022cf56b37be3053dfd65794bd077384b1e71205509",
-  "vertex_kinds": ["source", "exec", "source", "file", "output"]
+  "head": "sha256:23103ea5250ed73f0419e05bf0b002a6d2fcbcf944675339d41907f620f389c0",
+  "vertex_kinds": ["source", "file", "exec", "source", "file", "output"]
 }

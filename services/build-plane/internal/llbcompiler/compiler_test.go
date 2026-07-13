@@ -194,6 +194,23 @@ func TestCompileEmitsExplicitCacheSecretAndNetworkCapabilities(t *testing.T) {
 	if mountTypes[pb.MountType_CACHE] != 1 || mountTypes[pb.MountType_SECRET] != 1 {
 		t.Fatalf("mount types = %#v", mountTypes)
 	}
+	cacheOwned := false
+	for _, operation := range operations {
+		file := operation.GetFile()
+		if file == nil {
+			continue
+		}
+		for _, action := range file.Actions {
+			directory := action.GetMkdir()
+			if directory != nil && directory.Path == "/cache" && directory.Mode == 0o700 &&
+				directory.Owner.GetUser().GetByID() == 10001 && directory.Owner.GetGroup().GetByID() == 10001 {
+				cacheOwned = true
+			}
+		}
+	}
+	if !cacheOwned {
+		t.Fatal("cache mount lacks signed non-root ownership initialization")
+	}
 	if execution.Network != pb.NetMode_UNSET {
 		t.Fatalf("packages network mode = %v", execution.Network)
 	}

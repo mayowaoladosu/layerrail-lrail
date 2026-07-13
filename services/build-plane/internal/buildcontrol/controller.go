@@ -355,6 +355,11 @@ executionLoop:
 			}
 		}
 	}
+	// The assignment-level cancellation goroutine can cancel the worker context,
+	// let the worker return, and make done selectable before this loop observes
+	// the original cancellation channel. Reconcile both signals before deciding
+	// whether a canceled worker result is a failure.
+	canceled = canceled || ctx.Err() != nil || cancellationRequested(cancellation)
 
 	releaseContext, releaseCancel := context.WithTimeout(context.Background(), controller.releaseTimeout)
 	releaseReport, releaseErr := worker.Release(releaseContext)

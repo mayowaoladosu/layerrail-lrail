@@ -124,6 +124,24 @@ type fakeDispatcher struct {
 	resolved    buildcell.ResolvedAssignment
 }
 
+type memoryCheckpoints struct {
+	value Checkpoint
+	found bool
+}
+
+func (store *memoryCheckpoints) Load(_ context.Context, buildID string, generation uint64) (Checkpoint, bool, error) {
+	if !store.found || store.value.BuildID != buildID || store.value.Generation != generation {
+		return Checkpoint{}, false, nil
+	}
+	return store.value, true, nil
+}
+
+func (store *memoryCheckpoints) Save(_ context.Context, checkpoint Checkpoint) error {
+	store.value = checkpoint
+	store.found = true
+	return nil
+}
+
 func (dispatcher *fakeDispatcher) Execute(ctx context.Context, envelope buildcell.Envelope, emit func(*lrailv1.BuildCellEvent) error) (*lrailv1.BuildCellResult, error) {
 	dispatcher.executeCall++
 	verified, err := dispatcher.verifier.Verify(envelope)
@@ -199,13 +217,58 @@ func newTestOrchestrator(t *testing.T, now time.Time, content *fakeContent, dete
 	dispatcher := &fakeDispatcher{verifier: verifier, content: content, now: now}
 	orchestrator, err := New(OrchestratorOptions{
 		Content: content, Detector: detector, Compiler: compiler, Signer: authority, Dispatcher: dispatcher,
-		CellID: testCellID, AssignmentKeyID: testAssignmentKeyID, AssignmentPublicKeyDigest: publicDigest,
+		Checkpoints: &memoryCheckpoints{},
+		CellID:      testCellID, AssignmentKeyID: testAssignmentKeyID, AssignmentPublicKeyDigest: publicDigest,
 		ScratchRoot: t.TempDir(), Clock: func() time.Time { return now }, Nonce: func() (string, error) { return strings.Repeat("a", 64), nil },
 	})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
 	return orchestrator, dispatcher, authority
+}
+
+func TestOrchestratorRestartReusesExactSignedAssignment(t *testing.T) {
+	t.Parallel()
+	now := time.Date(2026, 7, 13, 12, 0, 0, 0, time.UTC)
+	content := newFakeContent()
+	detector := &fakeDetector{result: validDetection()}
+	compiler, err := NewDefinitionCompiler(validPolicy(), validCatalog(t), "0.3.0", "0.2.0")
+	if err != nil {
+		t.Fatalf("NewDefinitionCompiler: %v", err)
+	}
+	authority, publicDigest := newFakeAuthority(t)
+	publicKey, _, _ := parseTestPublicKey(authority.public)
+	verifier, _ := buildcell.NewVerifier(buildcell.VerifierOptions{
+		CellID: testCellID, Keys: map[string]ed25519.PublicKey{testAssignmentKeyID: publicKey}, ObjectPrefix: testObjectPrefix,
+		Clock: func() time.Time { return now },
+	})
+	dispatcher := &fakeDispatcher{verifier: verifier, content: content, now: now}
+	checkpoints := &memoryCheckpoints{}
+	newOrchestrator := func(nonce string) *Orchestrator {
+		value, newErr := New(OrchestratorOptions{
+			Content: content, Detector: detector, Compiler: compiler, Signer: authority, Dispatcher: dispatcher, Checkpoints: checkpoints,
+			CellID: testCellID, AssignmentKeyID: testAssignmentKeyID, AssignmentPublicKeyDigest: publicDigest,
+			ScratchRoot: t.TempDir(), Clock: func() time.Time { return now }, Nonce: func() (string, error) { return nonce, nil },
+		})
+		if newErr != nil {
+			t.Fatalf("New: %v", newErr)
+		}
+		return value
+	}
+	request := validRequest(now)
+	first, err := newOrchestrator(strings.Repeat("a", 64)).Run(context.Background(), request, func(Event) error { return nil })
+	if err != nil {
+		t.Fatalf("first Run: %v", err)
+	}
+	firstDigest := first.AssignmentDigest
+	detectorCalls := detector.calls
+	second, err := newOrchestrator(strings.Repeat("b", 64)).Run(context.Background(), request, func(Event) error { return nil })
+	if err != nil {
+		t.Fatalf("recovered Run: %v", err)
+	}
+	if second.AssignmentDigest != firstDigest || detector.calls != detectorCalls || dispatcher.executeCall != 2 {
+		t.Fatalf("recovery changed work: first=%s second=%s detector=%d/%d execute=%d", firstDigest, second.AssignmentDigest, detectorCalls, detector.calls, dispatcher.executeCall)
+	}
 }
 
 func TestOrchestratorRunsSnapshotThroughRealVerifierAndLLBResolution(t *testing.T) {
@@ -315,3 +378,4 @@ var _ buildcell.ArtifactStore = (*fakeContent)(nil)
 var _ Detector = (*fakeDetector)(nil)
 var _ buildsigning.Authority = (*fakeAuthority)(nil)
 var _ CellDispatcher = (*fakeDispatcher)(nil)
+var _ CheckpointStore = (*memoryCheckpoints)(nil)

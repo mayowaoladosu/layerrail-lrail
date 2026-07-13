@@ -54,12 +54,29 @@ type CellDispatcher interface {
 	Cancel(ctx context.Context, buildID string, generation uint64, reason string) (bool, error)
 }
 
+type CheckpointStore interface {
+	Load(ctx context.Context, buildID string, generation uint64) (Checkpoint, bool, error)
+	Save(ctx context.Context, checkpoint Checkpoint) error
+}
+
+type Checkpoint struct {
+	Version       int                `json:"version"`
+	BuildID       string             `json:"build_id"`
+	Generation    uint64             `json:"generation"`
+	RequestDigest string             `json:"request_digest"`
+	StartedAt     string             `json:"started_at"`
+	Partial       Result             `json:"partial"`
+	Envelope      buildcell.Envelope `json:"envelope"`
+	UpdatedAt     string             `json:"updated_at"`
+}
+
 type OrchestratorOptions struct {
 	Content                   Content
 	Detector                  Detector
 	Compiler                  *DefinitionCompiler
 	Signer                    buildsigning.Authority
 	Dispatcher                CellDispatcher
+	Checkpoints               CheckpointStore
 	CellID                    string
 	AssignmentKeyID           string
 	AssignmentPublicKeyDigest string
@@ -75,6 +92,7 @@ type Orchestrator struct {
 	compiler        *DefinitionCompiler
 	signer          buildsigning.Authority
 	dispatcher      CellDispatcher
+	checkpoints     CheckpointStore
 	cellID          string
 	assignmentKeyID string
 	assignmentKey   string
@@ -87,7 +105,7 @@ type Orchestrator struct {
 type Emit func(Event) error
 
 func New(options OrchestratorOptions) (*Orchestrator, error) {
-	if options.Content == nil || options.Detector == nil || options.Compiler == nil || options.Signer == nil || options.Dispatcher == nil {
+	if options.Content == nil || options.Detector == nil || options.Compiler == nil || options.Signer == nil || options.Dispatcher == nil || options.Checkpoints == nil {
 		return nil, errors.New("build orchestrator dependencies are incomplete")
 	}
 	cell, cellErr := platformid.Parse(options.CellID)
@@ -120,16 +138,35 @@ func New(options OrchestratorOptions) (*Orchestrator, error) {
 	}
 	return &Orchestrator{
 		content: options.Content, detector: options.Detector, compiler: options.Compiler, signer: options.Signer,
-		dispatcher: options.Dispatcher, cellID: options.CellID, assignmentKeyID: options.AssignmentKeyID,
+		dispatcher: options.Dispatcher, checkpoints: options.Checkpoints, cellID: options.CellID, assignmentKeyID: options.AssignmentKeyID,
 		assignmentKey: options.AssignmentPublicKeyDigest, scratch: absolute, clock: options.Clock, nonce: options.Nonce,
 		assignmentTTL: options.AssignmentTTL,
 	}, nil
 }
 
 func (orchestrator *Orchestrator) Run(ctx context.Context, request Request, emit Emit) (Result, error) {
-	started := orchestrator.clock().UTC()
 	if ctx == nil || emit == nil {
 		return Result{}, errors.New("build orchestration context or event sink is absent")
+	}
+	requestBytes, err := canonicaljson.Marshal(request)
+	if err != nil {
+		return Result{}, errors.New("canonicalize build orchestration request")
+	}
+	requestDigest := digestBytes(requestBytes)
+	checkpoint, found, err := orchestrator.checkpoints.Load(ctx, request.BuildID, request.Generation)
+	if err != nil {
+		return Result{}, err
+	}
+	started := orchestrator.clock().UTC()
+	if found {
+		if checkpoint.RequestDigest != requestDigest {
+			return Result{}, errors.New("build generation was already bound to another request")
+		}
+		parsed, parseErr := time.Parse(time.RFC3339Nano, checkpoint.StartedAt)
+		if parseErr != nil {
+			return Result{}, errors.New("build checkpoint start time is invalid")
+		}
+		started = parsed.UTC()
 	}
 	if err := request.Validate(started); err != nil {
 		return Result{}, err
@@ -137,6 +174,35 @@ func (orchestrator *Orchestrator) Run(ctx context.Context, request Request, emit
 	stream := &eventStream{request: request, clock: orchestrator.clock, emit: emit}
 	if err := stream.send("accepted", "accepted", "Build request accepted"); err != nil {
 		return Result{}, err
+	}
+	if !found {
+		checkpoint = Checkpoint{
+			Version: 1, BuildID: request.BuildID, Generation: request.Generation, RequestDigest: requestDigest,
+			StartedAt: started.Format(time.RFC3339Nano), Partial: Result{}, UpdatedAt: started.Format(time.RFC3339Nano),
+		}
+		if err := orchestrator.checkpoints.Save(ctx, checkpoint); err != nil {
+			return Result{}, err
+		}
+	}
+	if checkpoint.Envelope.Payload.BuildID != "" {
+		if err := validateCheckpoint(checkpoint, request); err != nil {
+			return Result{}, err
+		}
+		if err := stream.send("resuming", "progress", "Recovering the exact signed BuildCell assignment"); err != nil {
+			return Result{}, err
+		}
+		cellResult, err := orchestrator.dispatcher.Execute(ctx, checkpoint.Envelope, stream.relay)
+		if err != nil {
+			return Result{}, err
+		}
+		result, err := mapCellResult(request, started, checkpoint.Partial, cellResult)
+		if err != nil {
+			return Result{}, err
+		}
+		if err := stream.terminal(result); err != nil {
+			return Result{}, err
+		}
+		return result, nil
 	}
 	workspace, err := os.MkdirTemp(orchestrator.scratch, "lrail-orchestrator-*")
 	if err != nil {
@@ -268,6 +334,12 @@ func (orchestrator *Orchestrator) Run(ctx context.Context, request Request, emit
 		return Result{}, err
 	}
 	partial.AssignmentDigest = assignmentDigest
+	checkpoint.Partial = partial
+	checkpoint.Envelope = envelope
+	checkpoint.UpdatedAt = orchestrator.clock().UTC().Format(time.RFC3339Nano)
+	if err := orchestrator.checkpoints.Save(ctx, checkpoint); err != nil {
+		return Result{}, err
+	}
 	if err := stream.send("assigned", "progress", "Signed BuildCell assignment accepted for dispatch"); err != nil {
 		return Result{}, err
 	}
@@ -284,6 +356,25 @@ func (orchestrator *Orchestrator) Run(ctx context.Context, request Request, emit
 		return Result{}, err
 	}
 	return result, nil
+}
+
+func validateCheckpoint(checkpoint Checkpoint, request Request) error {
+	payload := checkpoint.Envelope.Payload
+	if checkpoint.Version != 1 || checkpoint.BuildID != request.BuildID || checkpoint.Generation != request.Generation ||
+		payload.BuildID != request.BuildID || payload.Generation != request.Generation || payload.OrganizationID != request.OrganizationID ||
+		payload.ProjectID != request.ProjectID || payload.OperationID != request.OperationID || payload.Source.SnapshotDigest != request.Source.SnapshotDigest ||
+		checkpoint.Partial.AssignmentDigest == "" || checkpoint.Partial.AssignmentDigest != digestCanonicalPayload(payload) {
+		return errors.New("build checkpoint is inconsistent with its immutable request")
+	}
+	return nil
+}
+
+func digestCanonicalPayload(payload buildcell.Payload) string {
+	contents, err := canonicaljson.Marshal(payload)
+	if err != nil {
+		return ""
+	}
+	return digestBytes(contents)
 }
 
 func (orchestrator *Orchestrator) Cancel(ctx context.Context, buildID string, generation uint64, reason string) (bool, error) {

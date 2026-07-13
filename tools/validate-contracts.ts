@@ -18,6 +18,7 @@ const schemaFiles = [
   "events/domain-event.schema.json",
   "jsonschema/regional/target-bundle.schema.json",
   "jsonschema/build/build-ir.schema.json",
+  "jsonschema/build/build-ir-v2.schema.json",
   "jsonschema/manifest/lrail.schema.json",
   "jsonschema/source/source-manifest.schema.json",
 ];
@@ -40,6 +41,7 @@ for (const relative of schemaFiles) {
 
 const fixtureContracts: Record<string, string> = {
   "build-ir": "https://contracts.lrail.dev/build/build-ir.schema.json",
+  "build-ir-v2": "https://contracts.lrail.dev/build/v2/build-ir.schema.json",
   detector: "https://contracts.lrail.dev/detector/detection-result.schema.json",
   "detector-v2":
     "https://contracts.lrail.dev/detector/v2/detection-result.schema.json",
@@ -55,7 +57,7 @@ const fixtureContracts: Record<string, string> = {
 let fixtureCount = 0;
 for (const file of readdirSync(resolve(contracts, "fixtures")).sort()) {
   const match =
-    /^(build-ir|detector|detector-v2|event|manifest|operation|source-manifest|target-bundle)\.(valid|invalid)\.json$/.exec(
+    /^(build-ir|build-ir-v2|detector|detector-v2|event|manifest|operation|source-manifest|target-bundle)\.(valid|invalid)\.json$/.exec(
       file,
     );
   if (!match) continue;
@@ -112,8 +114,8 @@ for (const [path, pathItem] of Object.entries(openapi.paths)) {
   }
 }
 
-if (fixtureCount !== 16)
-  throw new Error(`expected 16 contract fixtures, validated ${fixtureCount}`);
+if (fixtureCount !== 18)
+  throw new Error(`expected 18 contract fixtures, validated ${fixtureCount}`);
 if (operationCount < 20)
   throw new Error(
     `expected at least 20 public operations, found ${operationCount}`,

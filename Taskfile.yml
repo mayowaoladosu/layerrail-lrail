@@ -55,6 +55,7 @@ tasks:
       - uv run --project "{{.DETECTOR}}" ruff format --check "{{.DETECTOR}}"
       - uv run --project "{{.DETECTOR}}" ruff check tools "{{.DETECTOR}}"
       - uv run --project "{{.DETECTOR}}" mypy "{{.DETECTOR}}/src"
+      - python tools/check-go-format.py
       - go test ./...
       - corepack pnpm contracts:lint
       - python tools/validate-compose.py

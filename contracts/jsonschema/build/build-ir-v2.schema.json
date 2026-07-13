@@ -1,0 +1,479 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.lrail.dev/build/v2/build-ir.schema.json",
+  "title": "Deterministic Lrail Build IR v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "ir_version",
+    "dsl_api_version",
+    "compiler_version",
+    "source_snapshot",
+    "target_platform",
+    "network_profile",
+    "modules",
+    "nodes",
+    "outputs"
+  ],
+  "properties": {
+    "ir_version": { "const": 2 },
+    "dsl_api_version": { "const": "lrail.build/v1" },
+    "compiler_version": {
+      "type": "string",
+      "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$"
+    },
+    "source_snapshot": { "$ref": "#/$defs/digest" },
+    "target_platform": { "enum": ["linux/amd64", "linux/arm64"] },
+    "network_profile": { "enum": ["none", "packages", "allowlist", "private"] },
+    "allowed_hosts": {
+      "type": "array",
+      "maxItems": 64,
+      "uniqueItems": true,
+      "items": { "type": "string", "format": "hostname", "maxLength": 253 }
+    },
+    "modules": {
+      "type": "array",
+      "maxItems": 64,
+      "items": { "$ref": "#/$defs/module" }
+    },
+    "nodes": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 1024,
+      "items": { "$ref": "#/$defs/node" }
+    },
+    "outputs": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": { "$ref": "#/$defs/output" }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "required": ["network_profile"],
+        "properties": { "network_profile": { "const": "allowlist" } }
+      },
+      "then": {
+        "required": ["allowed_hosts"],
+        "properties": { "allowed_hosts": { "type": "array", "minItems": 1 } }
+      },
+      "else": {
+        "properties": { "allowed_hosts": { "type": "array", "maxItems": 0 } }
+      }
+    }
+  ],
+  "$defs": {
+    "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "node_id": { "type": "string", "pattern": "^n[1-9][0-9]{0,3}$" },
+    "bounded_string": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4096,
+      "pattern": "^[^\\u0000]+$"
+    },
+    "string_array": {
+      "type": "array",
+      "maxItems": 128,
+      "items": { "$ref": "#/$defs/bounded_string" }
+    },
+    "relative_path": {
+      "oneOf": [
+        { "const": "." },
+        {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "pattern": "^[^/\\\\:\\u0000][^\\\\:\\u0000]*$",
+          "not": { "pattern": "(?:^|/)\\.{1,2}(?:/|$)|//|/$" }
+        }
+      ]
+    },
+    "pattern_array": {
+      "type": "array",
+      "maxItems": 128,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 4096,
+        "pattern": "^[^/\\\\:\\u0000][^\\\\:\\u0000]*$",
+        "not": { "pattern": "(?:^|/)\\.{1,2}(?:/|$)|//|/$" }
+      }
+    },
+    "module": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "kind", "digest"],
+      "properties": {
+        "name": { "type": "string" },
+        "kind": { "enum": ["repository", "standard"] },
+        "digest": { "$ref": "#/$defs/digest" }
+      },
+      "oneOf": [
+        {
+          "properties": {
+            "kind": { "const": "repository" },
+            "name": {
+              "type": "string",
+              "pattern": "^//[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*\\.star$",
+              "not": { "pattern": "(?:^|/)\\.{1,2}(?:/|$)" }
+            }
+          }
+        },
+        {
+          "properties": {
+            "kind": { "const": "standard" },
+            "name": {
+              "type": "string",
+              "pattern": "^@lrail/v[1-9][0-9]*/[A-Za-z0-9._-]+(?:/[A-Za-z0-9._-]+)*\\.star$",
+              "not": { "pattern": "(?:^|/)\\.{1,2}(?:/|$)" }
+            }
+          }
+        }
+      ]
+    },
+    "node_base": {
+      "type": "object",
+      "required": ["id", "op", "inputs", "attributes"],
+      "properties": {
+        "id": { "$ref": "#/$defs/node_id" },
+        "op": { "type": "string" },
+        "inputs": {
+          "type": "array",
+          "maxItems": 32,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/node_id" }
+        },
+        "attributes": { "type": "object" }
+      }
+    },
+    "source_node": {
+      "type": "object",
+      "unevaluatedProperties": false,
+      "allOf": [
+        { "$ref": "#/$defs/node_base" },
+        {
+          "type": "object",
+          "properties": {
+            "op": { "const": "source" },
+            "inputs": { "type": "array", "maxItems": 0 },
+            "attributes": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["path", "include", "exclude"],
+              "properties": {
+                "path": { "$ref": "#/$defs/relative_path" },
+                "include": { "$ref": "#/$defs/pattern_array" },
+                "exclude": { "$ref": "#/$defs/pattern_array" }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "image_node": {
+      "type": "object",
+      "unevaluatedProperties": false,
+      "allOf": [
+        { "$ref": "#/$defs/node_base" },
+        {
+          "type": "object",
+          "properties": {
+            "op": { "const": "image" },
+            "inputs": { "type": "array", "maxItems": 0 },
+            "attributes": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["ref"],
+              "properties": {
+                "ref": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9./:_-]{0,511}@sha256:[0-9a-f]{64}$",
+                  "not": { "pattern": "\\.\\.|//" }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "cache_node": {
+      "type": "object",
+      "unevaluatedProperties": false,
+      "allOf": [
+        { "$ref": "#/$defs/node_base" },
+        {
+          "type": "object",
+          "properties": {
+            "op": { "const": "cache" },
+            "inputs": { "type": "array", "maxItems": 0 },
+            "attributes": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name", "target", "sharing"],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9._-]{0,127}$"
+                },
+                "target": { "$ref": "#/$defs/absolute_path" },
+                "sharing": { "enum": ["locked", "private", "shared"] }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "secret_node": {
+      "type": "object",
+      "unevaluatedProperties": false,
+      "allOf": [
+        { "$ref": "#/$defs/node_base" },
+        {
+          "type": "object",
+          "properties": {
+            "op": { "const": "secret" },
+            "inputs": { "type": "array", "maxItems": 0 },
+            "attributes": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["name", "target", "required"],
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9._-]{0,127}$"
+                },
+                "target": {
+                  "type": "string",
+                  "pattern": "^/run/secrets/[A-Za-z0-9._/-]+$",
+                  "maxLength": 4096,
+                  "not": { "pattern": "(?:^|/)\\.{1,2}(?:/|$)|//|/$" }
+                },
+                "required": { "type": "boolean" }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "run_node": {
+      "type": "object",
+      "unevaluatedProperties": false,
+      "allOf": [
+        { "$ref": "#/$defs/node_base" },
+        {
+          "type": "object",
+          "properties": {
+            "op": { "const": "run" },
+            "inputs": { "type": "array", "minItems": 1 },
+            "attributes": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "argv",
+                "env",
+                "mounts",
+                "network",
+                "shell",
+                "user",
+                "workdir"
+              ],
+              "properties": {
+                "argv": {
+                  "allOf": [
+                    { "$ref": "#/$defs/string_array" },
+                    { "type": "array", "minItems": 1 }
+                  ]
+                },
+                "env": {
+                  "type": "object",
+                  "maxProperties": 128,
+                  "propertyNames": { "pattern": "^[A-Z_][A-Z0-9_]{0,127}$" },
+                  "additionalProperties": {
+                    "type": "string",
+                    "maxLength": 4096,
+                    "pattern": "^[^\\u0000]*$"
+                  }
+                },
+                "mounts": {
+                  "type": "array",
+                  "maxItems": 31,
+                  "uniqueItems": true,
+                  "items": { "$ref": "#/$defs/node_id" }
+                },
+                "network": {
+                  "enum": ["none", "packages", "allowlist", "private"]
+                },
+                "shell": { "type": "boolean" },
+                "user": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,9}:[1-9][0-9]{0,9}$"
+                },
+                "workdir": { "$ref": "#/$defs/absolute_path" }
+              },
+              "allOf": [
+                {
+                  "if": {
+                    "required": ["shell"],
+                    "properties": { "shell": { "const": true } }
+                  },
+                  "then": {
+                    "properties": {
+                      "argv": {
+                        "type": "array",
+                        "minItems": 3,
+                        "maxItems": 3,
+                        "prefixItems": [
+                          { "const": "/bin/sh" },
+                          { "const": "-euc" },
+                          { "$ref": "#/$defs/bounded_string" }
+                        ]
+                      }
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "copy_node": {
+      "type": "object",
+      "unevaluatedProperties": false,
+      "allOf": [
+        { "$ref": "#/$defs/node_base" },
+        {
+          "type": "object",
+          "properties": {
+            "op": { "const": "copy" },
+            "inputs": { "type": "array", "minItems": 2, "maxItems": 2 },
+            "attributes": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["dest", "owner", "mode"],
+              "properties": {
+                "dest": { "$ref": "#/$defs/absolute_path" },
+                "owner": {
+                  "type": "string",
+                  "pattern": "^[1-9][0-9]{0,9}:[1-9][0-9]{0,9}$"
+                },
+                "mode": { "type": "string", "pattern": "^0[0-7]{3}$" }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "absolute_path": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 4096,
+      "pattern": "^/[^\\u0000\\\\]+$",
+      "not": { "pattern": "(?:^|/)\\.{1,2}(?:/|$)|//|/$" }
+    },
+    "node": {
+      "oneOf": [
+        { "$ref": "#/$defs/source_node" },
+        { "$ref": "#/$defs/image_node" },
+        { "$ref": "#/$defs/cache_node" },
+        { "$ref": "#/$defs/secret_node" },
+        { "$ref": "#/$defs/run_node" },
+        { "$ref": "#/$defs/copy_node" }
+      ]
+    },
+    "output_base": {
+      "type": "object",
+      "required": [
+        "name",
+        "kind",
+        "state",
+        "entrypoint",
+        "command",
+        "ports",
+        "labels",
+        "headers"
+      ],
+      "properties": {
+        "name": { "type": "string", "pattern": "^[a-z][a-z0-9-]{0,62}$" },
+        "kind": { "type": "string" },
+        "state": { "$ref": "#/$defs/node_id" },
+        "entrypoint": {
+          "type": "array",
+          "maxItems": 32,
+          "items": { "$ref": "#/$defs/bounded_string" }
+        },
+        "command": {
+          "type": "array",
+          "maxItems": 64,
+          "items": { "$ref": "#/$defs/bounded_string" }
+        },
+        "ports": {
+          "type": "array",
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": { "type": "integer", "minimum": 1, "maximum": 65535 }
+        },
+        "labels": {
+          "type": "object",
+          "maxProperties": 128,
+          "propertyNames": { "pattern": "^[a-z0-9][a-z0-9./_-]{0,127}$" },
+          "additionalProperties": {
+            "type": "string",
+            "maxLength": 4096,
+            "pattern": "^[^\\u0000]*$"
+          }
+        },
+        "headers": {
+          "type": "object",
+          "maxProperties": 128,
+          "propertyNames": { "pattern": "^[A-Za-z][A-Za-z0-9-]{0,126}$" },
+          "additionalProperties": {
+            "type": "string",
+            "maxLength": 4096,
+            "pattern": "^[^\\u0000\\r\\n]*$"
+          }
+        }
+      }
+    },
+    "oci_output": {
+      "type": "object",
+      "unevaluatedProperties": false,
+      "allOf": [
+        { "$ref": "#/$defs/output_base" },
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "const": "oci_image" },
+            "headers": { "type": "object", "maxProperties": 0 }
+          }
+        }
+      ]
+    },
+    "static_output": {
+      "type": "object",
+      "unevaluatedProperties": false,
+      "allOf": [
+        { "$ref": "#/$defs/output_base" },
+        {
+          "type": "object",
+          "properties": {
+            "kind": { "const": "static_bundle" },
+            "entrypoint": { "type": "array", "maxItems": 0 },
+            "command": { "type": "array", "maxItems": 0 },
+            "ports": { "type": "array", "maxItems": 0 },
+            "labels": { "type": "object", "maxProperties": 0 }
+          }
+        }
+      ]
+    },
+    "output": {
+      "oneOf": [
+        { "$ref": "#/$defs/oci_output" },
+        { "$ref": "#/$defs/static_output" }
+      ]
+    }
+  }
+}

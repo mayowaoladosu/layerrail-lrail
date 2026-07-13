@@ -1,0 +1,7 @@
+load("//build/helpers.star", "build")
+src = source(path = ".", include = ["app/**"], exclude = [".git/**"])
+base = image(ref = "registry.example.invalid/lrail/ruby:3.4@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb")
+bundle = cache(name = "bundle", target = "/usr/local/bundle", sharing = "locked")
+deps = build(base = base, cache_mount = bundle)
+app = copy(base = deps, src = src, dest = "/workspace", owner = "10001:10001", mode = "0755")
+artifact(name = "api", state = app, entrypoint = [], cmd = ["server"], ports = [3000], labels = {})

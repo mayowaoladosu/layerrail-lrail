@@ -1,0 +1,17 @@
+{
+  "ir_version": 2,
+  "dsl_api_version": "lrail.build/v2",
+  "compiler_version": "latest",
+  "source_snapshot": "mutable-source",
+  "target_platform": "windows/amd64",
+  "network_profile": "internet",
+  "modules": [
+    {
+      "name": "//../host.star",
+      "kind": "remote",
+      "digest": "mutable"
+    }
+  ],
+  "nodes": [],
+  "outputs": []
+}

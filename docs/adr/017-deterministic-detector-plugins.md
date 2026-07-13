@@ -1,4 +1,4 @@
-# ADR 005: Deterministic detector plugins and evidence graph
+# ADR-017: Deterministic detector plugins and evidence graph
 
 - Status: accepted
 - Date: 2026-07-13

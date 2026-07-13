@@ -1,0 +1,86 @@
+{
+  "ir_version": 2,
+  "dsl_api_version": "lrail.build/v1",
+  "compiler_version": "0.2.0",
+  "source_snapshot": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "target_platform": "linux/amd64",
+  "network_profile": "packages",
+  "modules": [
+    {
+      "name": "//build/helpers.star",
+      "kind": "repository",
+      "digest": "sha256:8f1c7a92dd89ae4269693843ac35736072393e0dea53d70cd23829fcc7ef0501"
+    },
+    {
+      "name": "@lrail/v1/helpers.star",
+      "kind": "standard",
+      "digest": "sha256:6b8234504aa2a85a6ef87f874b8dd1238b69573939c8c82d28e97ae27a4ec74a"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "n1",
+      "op": "source",
+      "inputs": [],
+      "attributes": {
+        "path": ".",
+        "include": ["app/**"],
+        "exclude": [".git/**"]
+      }
+    },
+    {
+      "id": "n2",
+      "op": "image",
+      "inputs": [],
+      "attributes": {
+        "ref": "registry.example.invalid/lrail/ruby:3.4@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      }
+    },
+    {
+      "id": "n3",
+      "op": "cache",
+      "inputs": [],
+      "attributes": {
+        "name": "bundle",
+        "target": "/usr/local/bundle",
+        "sharing": "locked"
+      }
+    },
+    {
+      "id": "n4",
+      "op": "run",
+      "inputs": ["n2", "n3"],
+      "attributes": {
+        "argv": ["bundle", "install"],
+        "env": { "RAILS_ENV": "production" },
+        "mounts": ["n3"],
+        "network": "packages",
+        "shell": false,
+        "user": "10001:10001",
+        "workdir": "/workspace"
+      }
+    },
+    {
+      "id": "n5",
+      "op": "copy",
+      "inputs": ["n4", "n1"],
+      "attributes": {
+        "dest": "/workspace",
+        "owner": "10001:10001",
+        "mode": "0755"
+      }
+    }
+  ],
+  "outputs": [
+    {
+      "name": "api",
+      "kind": "oci_image",
+      "state": "n5",
+      "entrypoint": [],
+      "command": ["server"],
+      "ports": [3000],
+      "labels": {},
+      "headers": {}
+    }
+  ]
+}

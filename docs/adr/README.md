@@ -20,5 +20,7 @@ ADRs are immutable decision history. Superseding decisions link to the prior rec
 | 014 | Loki/Mimir/Tempo and ClickHouse behind scoped query services                        |
 | 015 | Append-only reconciled PostgreSQL usage ledger                                      |
 | 016 | Small bounded C CO-RE eBPF programs controlled by Go                                |
+| 017 | Deterministic non-executing detector plugins and evidence graph                     |
+| 018 | Starlark v1 bounded modules, execution profile, diagnostics, and Build IR v2        |
 
 Each record uses: status, context, decision, boundaries, consequences, and supersession.

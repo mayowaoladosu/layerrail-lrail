@@ -4,6 +4,11 @@ import { randomUUID } from "node:crypto";
 import { Command } from "commander";
 import { createSourceArchive } from "./archive.js";
 import { LrailClient } from "./client.js";
+import {
+  normalizedCommit,
+  normalizedRepository,
+  normalizedRoot,
+} from "./git-input.js";
 import type {
   OperationEvent,
   OperationResource,
@@ -428,45 +433,6 @@ function nonnegativeInteger(value: string, name: string): number {
   const result = Number(value);
   if (!Number.isSafeInteger(result) || result < 0) {
     throw new Error(`${name} must be a nonnegative integer`);
-  }
-  return result;
-}
-
-function normalizedRepository(value: string): string {
-  const result = value.trim().toLowerCase();
-  if (
-    !/^[a-z0-9](?:[a-z0-9_.-]{0,98}[a-z0-9])?\/[a-z0-9_.-]{1,100}$/u.test(
-      result,
-    )
-  ) {
-    throw new Error("repository must be an owner/name identifier");
-  }
-  return result;
-}
-
-function normalizedCommit(value: string): string {
-  const result = value.trim().toLowerCase();
-  if (
-    !/^[0-9a-f]{40}(?:[0-9a-f]{24})?$/u.test(result) ||
-    /^0+$/u.test(result)
-  ) {
-    throw new Error("commit must be an exact nonzero 40 or 64 character SHA");
-  }
-  return result;
-}
-
-function normalizedRoot(value: string): string {
-  const result = value.trim();
-  const parts = result.split("/");
-  if (
-    result.length > 512 ||
-    result.startsWith("/") ||
-    result.endsWith("/") ||
-    result.includes("\\") ||
-    result.includes(":") ||
-    parts.some((part) => part === "." || part === ".." || part === "")
-  ) {
-    throw new Error("root must be a canonical relative repository path");
   }
   return result;
 }

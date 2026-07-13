@@ -59,7 +59,7 @@ func run() error {
 		Command: "rootlesskit", Arguments: arguments, Stdout: os.Stdout, Stderr: os.Stderr,
 		PrepareDirectories: []string{"buildkit", "run", "tmp"},
 		MonitorCommand:     "rootlesskit", MonitorArguments: []string{
-			"--net=none", "--state-dir=" + root + "/quota-rootlesskit",
+			"--state-dir=" + root + "/quota-rootlesskit",
 			"/usr/local/bin/lrail-buildkit-wrapper", "--quota-monitor",
 		}, MonitorReadyFile: readyFile,
 	})

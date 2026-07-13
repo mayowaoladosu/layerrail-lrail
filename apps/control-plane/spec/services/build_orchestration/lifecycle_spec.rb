@@ -169,6 +169,7 @@ RSpec.describe "deployment build orchestration persistence" do
     within_organization(account, organization) do
       build = BuildOrchestration::Prepare.call(deployment:).build
       event = {
+        version: 1,
         build_id: build.public_id,
         generation: 1,
         sequence: 1,

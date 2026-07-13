@@ -1,10 +1,21 @@
 module BuildOrchestration
   class PersistEvent
+    EVENT_FIELDS = %w[
+      version build_id generation sequence attempt stage kind output vertex name current total
+      cached stream line code message occurred_at terminal
+    ].freeze
+    STAGE = /\A[a-z][a-z0-9_]{0,63}\z/
+    KIND = /\A[a-z][a-z0-9_.-]{0,63}\z/
+
     def self.call(deployment:, build:, event:)
       values = event.to_h.stringify_keys
-      raise ArgumentError, "build event identity mismatch" unless
+      valid = (values.keys - EVENT_FIELDS).empty? && values.fetch("version") == 1 &&
         values.fetch("build_id") == build.public_id &&
-        Integer(values.fetch("generation")) == build.generation
+        Integer(values.fetch("generation")) == build.generation &&
+        Integer(values.fetch("sequence")).positive? && Integer(values.fetch("attempt")).positive? &&
+        values.fetch("stage").match?(STAGE) && values.fetch("kind").match?(KIND) &&
+        values["line"].to_s.bytesize <= 16_384 && values["message"].to_s.bytesize <= 4_096
+      raise ArgumentError, "build event identity mismatch" unless valid
 
       OperationEvent.transaction do
         deployment.operation.lock!

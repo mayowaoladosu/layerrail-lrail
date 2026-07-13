@@ -33,8 +33,11 @@ module Api
       def destroy
         deployment = current_organization!.deployments.find_by_public_id!(params[:id])
         Authorization.authorize!(account: current_account, organization: current_organization!, action: "deployment.cancel", resource: deployment)
-        idempotent(payload: { id: deployment.public_id }) do
-          Deployments::Transition.call(deployment:, to: "canceling", reason: "user_requested")
+        reason = params.permit(:reason).fetch(:reason, "user_requested").to_s.first(512)
+        raise ActionController::BadRequest, "reason is invalid" unless reason.length.between?(3, 512)
+
+        idempotent(payload: { id: deployment.public_id, reason: }) do
+          Deployments::Transition.call(deployment:, to: "canceling", reason:)
           deployment.operation.update!(state: "canceling", stage: "canceling")
           [ 202, { data: ApiResource.operation(deployment.operation) } ]
         end

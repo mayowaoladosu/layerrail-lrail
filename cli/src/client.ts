@@ -1,5 +1,13 @@
 import { createHash, randomUUID } from "node:crypto";
-import type { UploadAuthorization, UploadedPart } from "./types.js";
+import type {
+  DeploymentCreateResult,
+  DeploymentResource,
+  OperationEventsResult,
+  OperationResource,
+  SourceUploadResult,
+  UploadAuthorization,
+  UploadedPart,
+} from "./types.js";
 
 interface ClientOptions {
   apiUrl: string;
@@ -7,6 +15,9 @@ interface ClientOptions {
   organization?: string;
   fetch?: typeof globalThis.fetch;
 }
+
+const MAX_API_RESPONSE_BYTES = 8 * 1024 * 1024;
+const MAX_PART_ATTEMPTS = 4;
 
 export class LrailClient {
   readonly #baseUrl: URL;
@@ -18,6 +29,9 @@ export class LrailClient {
     this.#baseUrl = new URL(options.apiUrl);
     validateTransport(this.#baseUrl, "control-plane");
     if (!this.#baseUrl.pathname.endsWith("/")) this.#baseUrl.pathname += "/";
+    if (!options.token || /[\r\n]/u.test(options.token)) {
+      throw new Error("API token is missing or invalid");
+    }
     this.#token = options.token;
     this.#organization = options.organization;
     this.#fetch = options.fetch ?? globalThis.fetch;
@@ -75,14 +89,7 @@ export class LrailClient {
       if (body.length === 0)
         throw new Error(`empty source upload part ${part.number}`);
       const uploadBody = Uint8Array.from(body).buffer;
-      const response = await this.#fetch(part.url, {
-        method: "PUT",
-        body: uploadBody,
-      });
-      if (!response.ok)
-        throw new Error(
-          `source part ${part.number} upload failed with HTTP ${response.status}`,
-        );
+      await this.#uploadPart(part.url, uploadBody, part.number);
       uploaded.push({
         number: part.number,
         size: body.length,
@@ -92,17 +99,122 @@ export class LrailClient {
     return uploaded;
   }
 
+  async #uploadPart(
+    url: string,
+    body: ArrayBuffer,
+    partNumber: number,
+  ): Promise<void> {
+    let lastStatus: number | undefined;
+    for (let attempt = 1; attempt <= MAX_PART_ATTEMPTS; attempt += 1) {
+      try {
+        const response = await this.#fetch(url, { method: "PUT", body });
+        if (response.ok) return;
+        lastStatus = response.status;
+        if (!retryableStatus(response.status)) break;
+      } catch (error) {
+        if (attempt === MAX_PART_ATTEMPTS) throw error;
+      }
+      if (attempt < MAX_PART_ATTEMPTS) await delay(100 * 2 ** (attempt - 1));
+    }
+    throw new Error(
+      `source part ${partNumber} upload failed${lastStatus ? ` with HTTP ${lastStatus}` : ""}`,
+    );
+  }
+
   async finalizeUpload(
     sessionId: string,
     parts: UploadedPart[],
-  ): Promise<unknown> {
-    return this.#request(
+  ): Promise<SourceUploadResult> {
+    return this.#request<SourceUploadResult>(
       `v1/source_uploads/${encodeURIComponent(sessionId)}/finalize`,
       {
         method: "POST",
         idempotencyKey: randomUUID(),
         body: { source_upload: { parts } },
       },
+    );
+  }
+
+  async createDeployment(
+    projectId: string,
+    input: {
+      environmentId: string;
+      source:
+        | { kind: "local"; source_snapshot_id: string }
+        | {
+            kind: "git";
+            connection_id: string;
+            repository: string;
+            commit: string;
+          };
+      manifestRevision: number;
+      reason: string;
+      buildMode: "auto" | "repository";
+      acceptDetected: boolean;
+      buildFile?: string;
+      idempotencyKey: string;
+    },
+  ): Promise<DeploymentCreateResult> {
+    return this.#request<DeploymentCreateResult>(
+      `v1/projects/${encodeURIComponent(projectId)}/deployments`,
+      {
+        method: "POST",
+        idempotencyKey: input.idempotencyKey,
+        body: {
+          environment_id: input.environmentId,
+          source: input.source,
+          manifest_revision: input.manifestRevision,
+          reason: input.reason,
+          build_mode: input.buildMode,
+          accept_detected: input.acceptDetected,
+          ...(input.buildFile ? { build_file: input.buildFile } : {}),
+        },
+      },
+    );
+  }
+
+  async getDeployment(deploymentId: string): Promise<DeploymentResource> {
+    const result = await this.#request<{ data: DeploymentResource }>(
+      `v1/deployments/${encodeURIComponent(deploymentId)}`,
+      { method: "GET" },
+    );
+    return result.data;
+  }
+
+  async cancelDeployment(
+    deploymentId: string,
+    idempotencyKey: string,
+    reason: string,
+  ): Promise<OperationResource> {
+    const result = await this.#request<{ data: OperationResource }>(
+      `v1/deployments/${encodeURIComponent(deploymentId)}`,
+      { method: "DELETE", idempotencyKey, body: { reason } },
+    );
+    return result.data;
+  }
+
+  async getOperation(operationId: string): Promise<OperationResource> {
+    const result = await this.#request<{ data: OperationResource }>(
+      `v1/operations/${encodeURIComponent(operationId)}`,
+      { method: "GET" },
+    );
+    return result.data;
+  }
+
+  async getOperationEvents(
+    operationId: string,
+    generation: number,
+    after: number,
+    limit = 250,
+  ): Promise<OperationEventsResult> {
+    const query = new URLSearchParams({
+      generation: String(generation),
+      after: String(after),
+      limit: String(limit),
+    });
+    return this.#request<OperationEventsResult>(
+      `v1/operations/${encodeURIComponent(operationId)}/events?${query.toString()}`,
+      { method: "GET" },
     );
   }
 
@@ -126,7 +238,14 @@ export class LrailClient {
     };
     if (options.body !== undefined) request.body = JSON.stringify(options.body);
     const response = await this.#fetch(new URL(path, this.#baseUrl), request);
+    const contentLength = Number(response.headers.get("content-length") ?? "0");
+    if (contentLength > MAX_API_RESPONSE_BYTES) {
+      throw new Error("Lrail API response exceeded the safety limit");
+    }
     const raw = await response.text();
+    if (Buffer.byteLength(raw) > MAX_API_RESPONSE_BYTES) {
+      throw new Error("Lrail API response exceeded the safety limit");
+    }
     let payload: unknown;
     try {
       payload = JSON.parse(raw);
@@ -141,6 +260,14 @@ export class LrailClient {
     }
     return payload as T;
   }
+}
+
+function retryableStatus(status: number): boolean {
+  return status === 408 || status === 429 || status >= 500;
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 function validateTransport(url: URL, name: string): void {

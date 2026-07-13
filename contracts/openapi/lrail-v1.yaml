@@ -770,6 +770,18 @@ paths:
       x-lrail-action: deployment.cancel
       parameters:
         - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                reason:
+                  type: string
+                  minLength: 3
+                  maxLength: 512
       responses:
         "202":
           $ref: "#/components/responses/OperationAccepted"
@@ -1573,6 +1585,10 @@ components:
           operation_id,
           revision_id,
           source_snapshot_id,
+          build_mode,
+          build_file,
+          accept_detected,
+          artifact_ready_at,
           created_at,
           updated_at,
         ]

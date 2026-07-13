@@ -22,21 +22,23 @@ const registryBuildID = "bld_019b01da-7e31-7000-8000-000000000003"
 var registryNow = time.Date(2026, 7, 13, 11, 0, 0, 0, time.UTC)
 
 type fakeHarbor struct {
-	mu              sync.Mutex
-	server          *httptest.Server
-	project         *harborProject
-	rule            *immutableRule
-	robots          map[int64]harborRobotCreated
-	nextRobot       int64
-	projectCreates  int
-	projectUpdates  int
-	ruleCreates     int
-	robotCreates    int
-	robotDeletes    int
-	tokenRequests   int
-	wrongTokenScope bool
-	adminUsername   string
-	adminPassword   string
+	mu                sync.Mutex
+	server            *httptest.Server
+	project           *harborProject
+	rule              *immutableRule
+	robots            map[int64]harborRobotCreated
+	nextRobot         int64
+	projectCreates    int
+	projectUpdates    int
+	ruleCreates       int
+	robotCreates      int
+	robotDeletes      int
+	tokenRequests     int
+	artifactDeletes   int
+	artifactDeleteURI string
+	wrongTokenScope   bool
+	adminUsername     string
+	adminPassword     string
 }
 
 func newFakeHarbor(t *testing.T) *fakeHarbor {
@@ -148,6 +150,10 @@ func (fake *fakeHarbor) handle(response http.ResponseWriter, request *http.Reque
 		}
 		delete(fake.robots, robotID)
 		fake.robotDeletes++
+		response.WriteHeader(http.StatusOK)
+	case request.Method == http.MethodDelete && strings.Contains(request.RequestURI, "/artifacts/"):
+		fake.artifactDeletes++
+		fake.artifactDeleteURI = request.RequestURI
 		response.WriteHeader(http.StatusOK)
 	default:
 		response.WriteHeader(http.StatusNotFound)

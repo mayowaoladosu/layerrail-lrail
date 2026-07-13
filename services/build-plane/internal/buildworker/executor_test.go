@@ -326,6 +326,36 @@ func TestOCIValidationRejectsUnreferencedBlob(t *testing.T) {
 	}
 }
 
+func TestVisitOCIArtifactBlobsStreamsEveryVerifiedDescriptor(t *testing.T) {
+	t.Parallel()
+	artifact, _, _ := fakeOCIArchive(t)
+	filePath := filepath.Join(t.TempDir(), "artifact.oci.tar")
+	if err := os.WriteFile(filePath, artifact, 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	identity, err := InspectOCIArtifact(filePath)
+	if err != nil {
+		t.Fatalf("InspectOCIArtifact: %v", err)
+	}
+	visited := map[string]int64{}
+	if err := VisitOCIArtifactBlobs(context.Background(), filePath, identity, func(descriptor OCIArtifactDescriptor, reader io.Reader) error {
+		count, err := io.Copy(io.Discard, reader)
+		visited[descriptor.Digest] = count
+		return err
+	}); err != nil {
+		t.Fatalf("VisitOCIArtifactBlobs: %v", err)
+	}
+	if len(visited) != len(identity.Layers)+1 || visited[identity.Config.Digest] != identity.Config.Size {
+		t.Fatalf("visited=%#v identity=%#v", visited, identity)
+	}
+	if err := VisitOCIArtifactBlobs(context.Background(), filePath, identity, func(_ OCIArtifactDescriptor, reader io.Reader) error {
+		_, _ = io.CopyN(io.Discard, reader, 1)
+		return nil
+	}); err == nil {
+		t.Fatal("expected partially consumed blob rejection")
+	}
+}
+
 func fakeOCIArchive(t *testing.T) ([]byte, string, []string) {
 	return fakeOCIArchiveWithExtra(t, nil)
 }

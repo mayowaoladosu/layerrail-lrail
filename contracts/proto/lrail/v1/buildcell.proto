@@ -86,6 +86,7 @@ message BuildCellOutput {
   string config_digest = 6;
   string manifest_digest = 7;
   repeated string layer_digests = 8;
+  string publication_manifest_ref = 9;
 }
 
 message BuildCellCleanup {

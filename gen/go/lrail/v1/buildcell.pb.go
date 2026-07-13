@@ -587,17 +587,18 @@ func (x *BuildCellResult) GetCacheMisses() int64 {
 }
 
 type BuildCellOutput struct {
-	state          protoimpl.MessageState `protogen:"open.v1"`
-	Name           string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Kind           string                 `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`
-	ArtifactRef    string                 `protobuf:"bytes,3,opt,name=artifact_ref,json=artifactRef,proto3" json:"artifact_ref,omitempty"`
-	ArtifactDigest string                 `protobuf:"bytes,4,opt,name=artifact_digest,json=artifactDigest,proto3" json:"artifact_digest,omitempty"`
-	ArtifactSize   int64                  `protobuf:"zigzag64,5,opt,name=artifact_size,json=artifactSize,proto3" json:"artifact_size,omitempty"`
-	ConfigDigest   string                 `protobuf:"bytes,6,opt,name=config_digest,json=configDigest,proto3" json:"config_digest,omitempty"`
-	ManifestDigest string                 `protobuf:"bytes,7,opt,name=manifest_digest,json=manifestDigest,proto3" json:"manifest_digest,omitempty"`
-	LayerDigests   []string               `protobuf:"bytes,8,rep,name=layer_digests,json=layerDigests,proto3" json:"layer_digests,omitempty"`
-	unknownFields  protoimpl.UnknownFields
-	sizeCache      protoimpl.SizeCache
+	state                  protoimpl.MessageState `protogen:"open.v1"`
+	Name                   string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Kind                   string                 `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`
+	ArtifactRef            string                 `protobuf:"bytes,3,opt,name=artifact_ref,json=artifactRef,proto3" json:"artifact_ref,omitempty"`
+	ArtifactDigest         string                 `protobuf:"bytes,4,opt,name=artifact_digest,json=artifactDigest,proto3" json:"artifact_digest,omitempty"`
+	ArtifactSize           int64                  `protobuf:"zigzag64,5,opt,name=artifact_size,json=artifactSize,proto3" json:"artifact_size,omitempty"`
+	ConfigDigest           string                 `protobuf:"bytes,6,opt,name=config_digest,json=configDigest,proto3" json:"config_digest,omitempty"`
+	ManifestDigest         string                 `protobuf:"bytes,7,opt,name=manifest_digest,json=manifestDigest,proto3" json:"manifest_digest,omitempty"`
+	LayerDigests           []string               `protobuf:"bytes,8,rep,name=layer_digests,json=layerDigests,proto3" json:"layer_digests,omitempty"`
+	PublicationManifestRef string                 `protobuf:"bytes,9,opt,name=publication_manifest_ref,json=publicationManifestRef,proto3" json:"publication_manifest_ref,omitempty"`
+	unknownFields          protoimpl.UnknownFields
+	sizeCache              protoimpl.SizeCache
 }
 
 func (x *BuildCellOutput) Reset() {
@@ -684,6 +685,13 @@ func (x *BuildCellOutput) GetLayerDigests() []string {
 		return x.LayerDigests
 	}
 	return nil
+}
+
+func (x *BuildCellOutput) GetPublicationManifestRef() string {
+	if x != nil {
+		return x.PublicationManifestRef
+	}
+	return ""
 }
 
 type BuildCellCleanup struct {
@@ -994,7 +1002,7 @@ const file_lrail_v1_buildcell_proto_rawDesc = "" +
 	"logsDigest\x12\x1d\n" +
 	"\n" +
 	"cache_hits\x18\r \x01(\x12R\tcacheHits\x12!\n" +
-	"\fcache_misses\x18\x0e \x01(\x12R\vcacheMisses\"\x9d\x02\n" +
+	"\fcache_misses\x18\x0e \x01(\x12R\vcacheMisses\"\xd7\x02\n" +
 	"\x0fBuildCellOutput\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\x12!\n" +
@@ -1003,7 +1011,8 @@ const file_lrail_v1_buildcell_proto_rawDesc = "" +
 	"\rartifact_size\x18\x05 \x01(\x12R\fartifactSize\x12#\n" +
 	"\rconfig_digest\x18\x06 \x01(\tR\fconfigDigest\x12'\n" +
 	"\x0fmanifest_digest\x18\a \x01(\tR\x0emanifestDigest\x12#\n" +
-	"\rlayer_digests\x18\b \x03(\tR\flayerDigests\"|\n" +
+	"\rlayer_digests\x18\b \x03(\tR\flayerDigests\x128\n" +
+	"\x18publication_manifest_ref\x18\t \x01(\tR\x16publicationManifestRef\"|\n" +
 	"\x10BuildCellCleanup\x12\x16\n" +
 	"\x06status\x18\x01 \x01(\tR\x06status\x12#\n" +
 	"\rresidue_count\x18\x02 \x01(\rR\fresidueCount\x12+\n" +

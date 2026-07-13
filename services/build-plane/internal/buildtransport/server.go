@@ -171,6 +171,7 @@ func resultMessage(result buildcontrol.Result) *lrailv1.BuildCellResult {
 			Name: output.Name, Kind: output.Kind, ArtifactRef: output.ArtifactRef,
 			ArtifactDigest: output.ArtifactDigest, ArtifactSize: output.ArtifactSize, ConfigDigest: output.ConfigDigest,
 			ManifestDigest: output.ManifestDigest, LayerDigests: append([]string(nil), output.LayerDigests...),
+			PublicationManifestRef: output.PublicationManifestRef,
 		})
 	}
 	return &lrailv1.BuildCellResult{

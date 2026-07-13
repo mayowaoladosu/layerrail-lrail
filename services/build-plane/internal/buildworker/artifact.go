@@ -101,9 +101,10 @@ func (committer *DirectoryArtifactCommitter) Commit(ctx context.Context, artifac
 
 func validateExportedArtifact(artifact ExportedArtifact, maxBytes int64) error {
 	organization, organizationErr := platformid.Parse(artifact.OrganizationID)
+	project, projectErr := platformid.Parse(artifact.ProjectID)
 	build, buildErr := platformid.Parse(artifact.BuildID)
 	info, statErr := os.Lstat(artifact.Path)
-	if organizationErr != nil || organization.Prefix() != "org" || buildErr != nil || build.Prefix() != "bld" ||
+	if organizationErr != nil || organization.Prefix() != "org" || projectErr != nil || project.Prefix() != "prj" || buildErr != nil || build.Prefix() != "bld" ||
 		artifact.Attempt == 0 || !artifactOutputPattern.MatchString(artifact.OutputName) ||
 		(artifact.Kind != "oci_image" && artifact.Kind != "static_bundle") || !artifactDigestPattern.MatchString(artifact.Digest) ||
 		artifact.Size < 0 || artifact.Size > maxBytes || artifact.Path == "" || statErr != nil || info.Mode()&os.ModeSymlink != 0 {
@@ -117,6 +118,12 @@ func validateExportedArtifact(artifact ExportedArtifact, maxBytes int64) error {
 		return errors.New("exported artifact does not match its declared identity")
 	}
 	return nil
+}
+
+// ValidateExportedArtifact exposes the exact build-output validation used by
+// commit adapters without exposing filesystem implementation details.
+func ValidateExportedArtifact(artifact ExportedArtifact, maxBytes int64) error {
+	return validateExportedArtifact(artifact, maxBytes)
 }
 
 func inspectCommittedArtifact(destination string, artifact ExportedArtifact) (CommittedArtifact, bool, error) {

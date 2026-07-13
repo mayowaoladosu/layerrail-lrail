@@ -12,6 +12,7 @@ import (
 
 const testBuildID = "bld_019b01da-7e31-7000-8000-000000000001"
 const testOrgID = "org_019b01da-7e31-7000-8000-000000000003"
+const testArtifactProjectID = "prj_019b01da-7e31-7000-8000-000000000004"
 
 func artifactCommitter(t *testing.T, maxBytes int64) *DirectoryArtifactCommitter {
 	t.Helper()
@@ -32,7 +33,7 @@ func TestDirectoryArtifactCommitterCommitsOCIIdempotently(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 	artifact := ExportedArtifact{
-		OrganizationID: testOrgID, BuildID: testBuildID, Attempt: 1,
+		OrganizationID: testOrgID, ProjectID: testArtifactProjectID, BuildID: testBuildID, Attempt: 1,
 		OutputName: "api", Kind: "oci_image", Path: source,
 		Digest: digestBytes(contents), Size: int64(len(contents)),
 	}
@@ -71,7 +72,7 @@ func TestDirectoryArtifactCommitterPreservesStaticIdentity(t *testing.T) {
 		t.Fatalf("directoryDigest: %v", err)
 	}
 	artifact := ExportedArtifact{
-		OrganizationID: testOrgID, BuildID: testBuildID, Attempt: 1,
+		OrganizationID: testOrgID, ProjectID: testArtifactProjectID, BuildID: testBuildID, Attempt: 1,
 		OutputName: "site", Kind: "static_bundle", Path: source, Digest: digest, Size: size,
 	}
 	committed, err := artifactCommitter(t, 0).Commit(context.Background(), artifact)
@@ -92,7 +93,7 @@ func TestDirectoryArtifactCommitterRejectsTamperingLimitsAndCancellation(t *test
 		t.Fatalf("WriteFile: %v", err)
 	}
 	valid := ExportedArtifact{
-		OrganizationID: testOrgID, BuildID: testBuildID, Attempt: 1,
+		OrganizationID: testOrgID, ProjectID: testArtifactProjectID, BuildID: testBuildID, Attempt: 1,
 		OutputName: "api", Kind: "oci_image", Path: source,
 		Digest: digestBytes(contents), Size: int64(len(contents)),
 	}
@@ -133,7 +134,7 @@ func TestDirectoryArtifactCommitterSerializesSameDigest(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 	artifact := ExportedArtifact{
-		OrganizationID: testOrgID, BuildID: testBuildID, Attempt: 1,
+		OrganizationID: testOrgID, ProjectID: testArtifactProjectID, BuildID: testBuildID, Attempt: 1,
 		OutputName: "api", Kind: "oci_image", Path: source,
 		Digest: digestBytes(contents), Size: int64(len(contents)),
 	}
@@ -182,7 +183,7 @@ func TestDirectoryArtifactCommitterRejectsSymlinkBundle(t *testing.T) {
 		t.Fatalf("Symlink: %v", err)
 	}
 	artifact := ExportedArtifact{
-		OrganizationID: testOrgID, BuildID: testBuildID, Attempt: 1,
+		OrganizationID: testOrgID, ProjectID: testArtifactProjectID, BuildID: testBuildID, Attempt: 1,
 		OutputName: "site", Kind: "static_bundle", Path: source,
 		Digest: testIRDigest, Size: 1,
 	}

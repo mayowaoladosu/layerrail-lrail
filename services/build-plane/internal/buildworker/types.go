@@ -48,16 +48,17 @@ type Event struct {
 }
 
 type OutputResult struct {
-	Name             string            `json:"name"`
-	Kind             string            `json:"kind"`
-	ArtifactRef      string            `json:"artifact_ref"`
-	ArtifactPath     string            `json:"artifact_path,omitempty"`
-	ArtifactDigest   string            `json:"artifact_digest"`
-	ArtifactSize     int64             `json:"artifact_size"`
-	ConfigDigest     string            `json:"config_digest"`
-	ManifestDigest   string            `json:"manifest_digest,omitempty"`
-	LayerDigests     []string          `json:"layer_digests"`
-	ExporterResponse map[string]string `json:"exporter_response"`
+	Name                   string            `json:"name"`
+	Kind                   string            `json:"kind"`
+	ArtifactRef            string            `json:"artifact_ref"`
+	ArtifactPath           string            `json:"artifact_path,omitempty"`
+	ArtifactDigest         string            `json:"artifact_digest"`
+	ArtifactSize           int64             `json:"artifact_size"`
+	ConfigDigest           string            `json:"config_digest"`
+	ManifestDigest         string            `json:"manifest_digest,omitempty"`
+	PublicationManifestRef string            `json:"publication_manifest_ref,omitempty"`
+	LayerDigests           []string          `json:"layer_digests"`
+	ExporterResponse       map[string]string `json:"exporter_response"`
 }
 
 type Result struct {
@@ -101,6 +102,7 @@ type Cleaner interface {
 
 type ExportedArtifact struct {
 	OrganizationID string
+	ProjectID      string
 	BuildID        string
 	Attempt        uint32
 	OutputName     string
@@ -111,10 +113,12 @@ type ExportedArtifact struct {
 }
 
 type CommittedArtifact struct {
-	Reference string
-	Path      string
-	Digest    string
-	Size      int64
+	Reference              string
+	Path                   string
+	Digest                 string
+	Size                   int64
+	ManifestDigest         string
+	PublicationManifestRef string
 }
 
 type ArtifactCommitter interface {

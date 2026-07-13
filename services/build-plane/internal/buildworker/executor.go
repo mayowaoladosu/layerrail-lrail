@@ -306,11 +306,13 @@ func (executor *BuildKitExecutor) Execute(ctx context.Context, request Request) 
 		commitContext, commitCancel := context.WithTimeout(executionContext, DefaultArtifactCommitTimeout)
 		committed, commitErr := executor.committer.Commit(commitContext, ExportedArtifact{
 			OrganizationID: request.Assignment.Verified.Payload.OrganizationID,
+			ProjectID:      request.Assignment.Verified.Payload.ProjectID,
 			BuildID:        result.BuildID, Attempt: result.Attempt, OutputName: output.Name, Kind: output.Kind,
 			Path: artifactPath, Digest: artifactDigest, Size: artifactSize,
 		})
 		commitCancel()
-		if commitErr != nil || committed.Reference == "" || committed.Digest != artifactDigest || committed.Size != artifactSize {
+		if commitErr != nil || committed.Reference == "" || committed.Digest != artifactDigest || committed.Size != artifactSize ||
+			(output.Kind == "oci_image" && committed.ManifestDigest != "" && committed.ManifestDigest != ociIdentity.ManifestDigest) {
 			result.Phase = phaseForContext(executionContext)
 			result.ErrorCode = "artifact_commit"
 			emit(Event{Phase: result.Phase, Kind: "error", Output: output.Name, Code: result.ErrorCode, Message: "Exported artifact could not be committed."})
@@ -324,10 +326,15 @@ func (executor *BuildKitExecutor) Execute(ctx context.Context, request Request) 
 			return result, resultErr
 		}
 		emit(Event{Phase: PhaseExporting, Kind: "output_complete", Output: output.Name})
+		manifestDigest := ociIdentity.ManifestDigest
+		if committed.ManifestDigest != "" {
+			manifestDigest = committed.ManifestDigest
+		}
 		result.Outputs = append(result.Outputs, OutputResult{
 			Name: output.Name, Kind: output.Kind, ArtifactRef: committed.Reference, ArtifactPath: committed.Path,
 			ArtifactDigest: committed.Digest, ArtifactSize: committed.Size, ConfigDigest: digestContents(output.Config),
-			ManifestDigest: ociIdentity.ManifestDigest, LayerDigests: append([]string{}, ociIdentity.LayerDigests...),
+			ManifestDigest: manifestDigest, PublicationManifestRef: committed.PublicationManifestRef,
+			LayerDigests:     append([]string{}, ociIdentity.LayerDigests...),
 			ExporterResponse: cloneStringMap(response.ExporterResponse),
 		})
 		cacheSucceeded = true
@@ -471,6 +478,13 @@ func exportedArtifactDigest(artifactPath, kind string) (string, int64, error) {
 		return fileDigest(artifactPath)
 	}
 	return directoryDigest(artifactPath)
+}
+
+func ExportedArtifactIdentity(artifactPath, kind string) (string, int64, error) {
+	if kind != "oci_image" && kind != "static_bundle" {
+		return "", 0, errors.New("exported artifact kind is invalid")
+	}
+	return exportedArtifactDigest(artifactPath, kind)
 }
 
 func fileDigest(path string) (string, int64, error) {

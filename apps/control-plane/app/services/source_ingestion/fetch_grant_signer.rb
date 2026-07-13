@@ -2,7 +2,7 @@ require "base64"
 require "openssl"
 
 module SourceIngestion
-  class GrantSigner
+  class FetchGrantSigner
     AUDIENCE = "lrail-source-gateway"
 
     def initialize(key:)
@@ -10,23 +10,24 @@ module SourceIngestion
       raise ArgumentError, "source grant key must contain 32 bytes" unless @key.bytesize == 32
     end
 
-    def sign(session)
+    def sign(fetch)
       grant = {
         "version" => 1,
         "audience" => AUDIENCE,
-        "session_id" => session.public_id,
-        "organization_id" => session.organization.public_id,
-        "project_id" => session.project.public_id,
-        "creator_id" => session.created_by_account.public_id,
-        "root_directory" => session.root_directory,
-        "excluded_count" => session.excluded_count,
-        "expected_archive_bytes" => session.expected_archive_bytes,
-        "expected_archive_sha256" => session.expected_archive_sha256,
-        "expected_parts" => session.expected_parts,
-        "expires_at" => session.expires_at.utc.iso8601
+        "fetch_id" => fetch.public_id,
+        "organization_id" => fetch.organization.public_id,
+        "project_id" => fetch.project.public_id,
+        "creator_id" => fetch.created_by_account.public_id,
+        "source_connection_id" => fetch.source_connection.public_id,
+        "provider" => fetch.source_connection.provider,
+        "installation_id" => fetch.source_connection.installation_external_id,
+        "repository" => fetch.repository,
+        "commit_sha" => fetch.requested_commit_sha,
+        "root_directory" => fetch.root_directory,
+        "expires_at" => fetch.expires_at.utc.iso8601
       }
       payload = Base64.urlsafe_encode64(CanonicalJson.dump(grant), padding: false)
-      message = "v1.#{payload}"
+      message = "f1.#{payload}"
       signature = OpenSSL::HMAC.digest("SHA256", @key, message)
       "#{message}.#{Base64.urlsafe_encode64(signature, padding: false)}"
     end

@@ -124,6 +124,42 @@ def main() -> None:
         if api_key_grants != "t|f":
             raise SystemExit(f"unexpected restored API key grants: {api_key_grants}")
 
+        provider_grants = psql(
+            container,
+            DATABASE,
+            """
+            SELECT
+              has_function_privilege('lrail_web', 'lrail_apply_github_provider_delivery(text,text,text,text,text,text,text,text,text,integer,boolean,boolean,text,text,text,bigint,text,text,jsonb,text,text,text,text)', 'EXECUTE'),
+              has_function_privilege('lrail_worker', 'lrail_apply_github_provider_delivery(text,text,text,text,text,text,text,text,text,integer,boolean,boolean,text,text,text,bigint,text,text,jsonb,text,text,text,text)', 'EXECUTE'),
+              has_function_privilege('lrail_web', 'lrail_claim_github_provider_delivery(text,text)', 'EXECUTE'),
+              has_function_privilege('lrail_worker', 'lrail_claim_github_provider_delivery(text,text)', 'EXECUTE'),
+              has_function_privilege('lrail_web', 'lrail_finish_github_provider_delivery(text,text,boolean,text)', 'EXECUTE'),
+              has_function_privilege('lrail_worker', 'lrail_finish_github_provider_delivery(text,text,boolean,text)', 'EXECUTE'),
+              has_table_privilege('lrail_web', 'source_provider_deliveries', 'SELECT'),
+              has_table_privilege('lrail_web', 'source_provider_deliveries', 'INSERT,UPDATE,DELETE'),
+              has_sequence_privilege('lrail_web', 'source_provider_deliveries_id_seq', 'USAGE');
+            """,
+        ).stdout.strip()
+        if provider_grants != "t|f|t|f|t|f|t|f|f":
+            raise SystemExit(f"unexpected restored provider grants: {provider_grants}")
+
+        provider_rls = psql(
+            container,
+            DATABASE,
+            """
+            SELECT string_agg(relname || ':' || relrowsecurity || ':' || relforcerowsecurity, ',' ORDER BY relname)
+            FROM pg_class
+            WHERE relname IN ('source_provider_deliveries', 'source_fetches', 'project_source_bindings');
+            """,
+        ).stdout.strip()
+        expected_provider_rls = (
+            "project_source_bindings:true:true,"
+            "source_fetches:true:true,"
+            "source_provider_deliveries:true:true"
+        )
+        if provider_rls != expected_provider_rls:
+            raise SystemExit(f"unexpected restored provider RLS: {provider_rls}")
+
         print(
             "Verified SQL restore: "
             f"{function_count} functions, {policy_count} tenant policies, "

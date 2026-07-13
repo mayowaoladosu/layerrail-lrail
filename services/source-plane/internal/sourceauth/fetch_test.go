@@ -3,11 +3,76 @@ package sourceauth
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
+	"os"
+	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 )
+
+func TestRubyGoFetchGrantFixture(t *testing.T) {
+	t.Parallel()
+	data, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "contracts", "fixtures", "source-fetch-grant.valid.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixture struct {
+		KeyBase64URL string     `json:"key_base64url"`
+		Grant        FetchGrant `json:"grant"`
+		TokenChunks  []string   `json:"token_chunks"`
+	}
+	if err := json.Unmarshal(data, &fixture); err != nil {
+		t.Fatal(err)
+	}
+	key, err := base64.RawURLEncoding.DecodeString(fixture.KeyBase64URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	token := strings.Join(fixture.TokenChunks, "")
+	verified, err := VerifyFetchGrant(key, token, fixture.Grant.ExpiresAt.Add(-time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(verified, fixture.Grant) {
+		t.Fatalf("verified grant changed: %#v", verified)
+	}
+	signed, err := SignFetchGrantAt(key, fixture.Grant, fixture.Grant.ExpiresAt.Add(-15*time.Minute))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if signed != token {
+		t.Fatalf("Go grant differs from Rails fixture\nwant %s\n got %s", token, signed)
+	}
+}
+
+func TestGoFetchResultFixture(t *testing.T) {
+	t.Parallel()
+	data, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "contracts", "fixtures", "source-fetch-result.valid.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixture struct {
+		PublicKeyBase64URL string      `json:"public_key_base64url"`
+		KeyID              string      `json:"key_id"`
+		Result             FetchResult `json:"result"`
+		Signature          string      `json:"signature"`
+	}
+	if err := json.Unmarshal(data, &fixture); err != nil {
+		t.Fatal(err)
+	}
+	publicKey, err := base64.RawURLEncoding.DecodeString(fixture.PublicKeyBase64URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	signed := SignedFetchResult{KeyID: fixture.KeyID, Result: fixture.Result, Signature: fixture.Signature}
+	if err := VerifyFetchResult(ed25519.PublicKey(publicKey), signed); err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestFetchGrantRoundTripTamperExpiryAndScope(t *testing.T) {
 	t.Parallel()

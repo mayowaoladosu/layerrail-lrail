@@ -22,7 +22,7 @@ module Authorization
     "developer" => %w[
       organization.read project.read project.create environment.read service.read service.update
       deployment.read deployment.create deployment.cancel release.read telemetry.read operation.read
-      source.upload.create source.upload.finalize source.snapshot.read
+      source.upload.create source.upload.finalize source.fetch.create source.snapshot.read
     ],
     "operator" => %w[
       organization.read project.read environment.read service.read deployment.read deployment.cancel

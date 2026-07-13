@@ -82,10 +82,24 @@ OrganizationContext.with(account: demo, organization: demo_org) do
 
     connection = SourceConnection.create!(
       organization: demo_org,
+      connected_by_account: demo,
       provider: "github",
-      installation_external_id: "local-fixture-installation",
+      installation_external_id: "1000001",
       status: "active",
       scopes: [ "contents:read", "metadata:read" ],
+      provider_account_login: "northstar",
+      repository_selection: "selected",
+      selected_repositories: [ "northstar/checkout" ],
+    )
+    ProjectSourceBinding.create!(
+      organization: demo_org,
+      project:,
+      source_connection: connection,
+      created_by_account: demo,
+      repository: "northstar/checkout",
+      production_branch: "main",
+      root_directory: "",
+      automatic_deployments: true,
     )
     snapshot = SourceSnapshot.create!(
       organization: demo_org,

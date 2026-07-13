@@ -1,0 +1,31 @@
+{
+  "public_key_base64url": "W2SJycf9Dc9QVF58FkiG70BJHsBsfxsSMEF5foEXU14",
+  "key_id": "source-finalizer-fixture-v1",
+  "result": {
+    "version": 1,
+    "fetch_id": "fet_019b01da-7e31-7000-8000-000000000001",
+    "organization_id": "org_019b01da-7e31-7000-8000-000000000002",
+    "project_id": "prj_019b01da-7e31-7000-8000-000000000003",
+    "source_connection_id": "src_019b01da-7e31-7000-8000-000000000005",
+    "provider": "github",
+    "repository": "example/repository",
+    "requested_commit_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "resolved_commit_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "tree_sha": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "author": "Example Author",
+    "authored_at": "2026-07-12T01:00:00Z",
+    "snapshot_sha256": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+    "manifest_sha256": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+    "archive_sha256": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "manifest_ref": "s3://lrail-source/snapshots/c/manifest.json",
+    "archive_ref": "s3://lrail-source/snapshots/c/source.tar.gz",
+    "size_bytes": 1024,
+    "policy_version": "source-v1",
+    "submodules": [],
+    "lfs_digests": [],
+    "warnings": [],
+    "token_expires_at": "2026-07-13T02:00:00Z",
+    "finalized_at": "2026-07-13T01:00:00Z"
+  },
+  "signature": "mfs8jyyF28lDYbkgOYU1kmYiLDJJLM2w53LLpYF2EgIAR-zJU7wQC-toaXc-6FalZzeddEPlzZXiMfR1pDoAAw"
+}

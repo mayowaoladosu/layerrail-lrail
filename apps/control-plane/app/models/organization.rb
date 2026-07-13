@@ -20,6 +20,10 @@ class Organization < ApplicationRecord
   has_many :usage_ledger, class_name: "UsageLedger", dependent: :restrict_with_error
   has_many :webhooks, dependent: :destroy
   has_many :source_upload_sessions, dependent: :destroy
+  has_many :source_connections, dependent: :restrict_with_error
+  has_many :source_fetches, dependent: :restrict_with_error
+  has_many :source_provider_deliveries, dependent: :restrict_with_error
+  has_many :project_source_bindings, dependent: :restrict_with_error
   has_many :source_snapshots, dependent: :restrict_with_error
   has_many :api_keys, dependent: :destroy
 

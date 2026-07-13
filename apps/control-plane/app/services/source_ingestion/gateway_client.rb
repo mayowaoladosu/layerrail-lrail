@@ -15,13 +15,15 @@ module SourceIngestion
     end
     MAX_RESPONSE_BYTES = 256.kilobytes
 
-    def initialize(base_url:, grant_signer:, result_verifier: nil)
+    def initialize(base_url:, grant_signer:, result_verifier: nil, fetch_grant_signer: nil, fetch_result_verifier: nil)
       @base_url = URI(base_url)
       raise ArgumentError, "source gateway URL must use HTTPS" if Rails.env.production? && @base_url.scheme != "https"
       raise ArgumentError, "source gateway URL must be an HTTP origin" unless @base_url.is_a?(URI::HTTP) && @base_url.path.in?([ "", "/" ])
 
       @grant_signer = grant_signer
       @result_verifier = result_verifier
+      @fetch_grant_signer = fetch_grant_signer
+      @fetch_result_verifier = fetch_result_verifier
     end
 
     def create_session(session)
@@ -35,15 +37,22 @@ module SourceIngestion
       @result_verifier.verify!(payload, expected_session: session)
     end
 
+    def fetch(fetch)
+      raise ArgumentError, "source fetch signer and verifier are required" unless @fetch_grant_signer && @fetch_result_verifier
+
+      payload = request_json(fetch, "/v1/fetches", nil, signer: @fetch_grant_signer)
+      @fetch_result_verifier.verify!(payload, expected_fetch: fetch)
+    end
+
     private
 
-    def request_json(session, path, body)
+    def request_json(resource, path, body, signer: @grant_signer)
       request = Net::HTTP::Post.new(path)
-      request["Authorization"] = "Bearer #{@grant_signer.sign(session)}"
+      request["Authorization"] = "Bearer #{signer.sign(resource)}"
       request["Content-Type"] = "application/json"
       request["Accept"] = "application/json"
       request["X-Request-ID"] = Current.request_id if Current.request_id.present?
-      request.body = JSON.generate(body)
+      request.body = JSON.generate(body) unless body.nil?
 
       response = Net::HTTP.start(
         @base_url.host,

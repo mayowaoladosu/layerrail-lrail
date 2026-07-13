@@ -51,6 +51,7 @@ func SignFetchGrantAt(secret []byte, grant FetchGrant, now time.Time) (string, e
 	if len(secret) < 32 {
 		return "", fmt.Errorf("%w: signing key is shorter than 32 bytes", ErrInvalidFetchGrant)
 	}
+	grant.ExpiresAt = grant.ExpiresAt.UTC().Truncate(time.Second)
 	if err := validateFetchGrant(grant, now.UTC(), true); err != nil {
 		return "", err
 	}

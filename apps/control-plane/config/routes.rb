@@ -1,5 +1,6 @@
 Rails.application.routes.draw do
   post "/webhooks/resend", to: "webhooks/resend#create"
+  post "/webhooks/github", to: "webhooks/github#create"
 
     # Define your application routes per the DSL in https://guides.rubyonrails.org/routing.html
 

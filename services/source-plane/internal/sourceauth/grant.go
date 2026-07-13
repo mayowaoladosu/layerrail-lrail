@@ -55,6 +55,7 @@ func SignGrantAt(secret []byte, grant UploadGrant, now time.Time) (string, error
 	if len(secret) < 32 {
 		return "", fmt.Errorf("%w: signing key is shorter than 32 bytes", ErrInvalidGrant)
 	}
+	grant.ExpiresAt = grant.ExpiresAt.UTC().Truncate(time.Second)
 	if err := validateGrant(grant, now.UTC(), true); err != nil {
 		return "", err
 	}

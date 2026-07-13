@@ -11,6 +11,7 @@ RSpec.describe PlatformId do
     expect(described_class.valid?(first, prefix: :prj)).to be(true)
     expect(described_class.valid?(first, prefix: :org)).to be(false)
     expect(described_class.generate(:fet, now:, random: "\x22" * 10)).to start_with("fet_")
+    expect(described_class.generate(:psb, now:, random: "\x33" * 10)).to start_with("psb_")
   end
 
   it "rejects unsupported prefixes and malformed entropy" do

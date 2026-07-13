@@ -9,13 +9,18 @@ module SourceIngestion
   LOCAL_OBJECT_PREFIX = "s3://lrail-source/"
 
   def self.gateway_client
+    grant_key = ENV.fetch("LRAIL_SOURCE_GRANT_KEY") { local_value(LOCAL_GRANT_KEY) }
+    keys = signing_keys
+    object_prefix = ENV.fetch("LRAIL_SOURCE_OBJECT_PREFIX") { local_value(LOCAL_OBJECT_PREFIX) }
     GatewayClient.new(
       base_url: ENV.fetch("LRAIL_SOURCE_GATEWAY_URL") { local_value(LOCAL_GATEWAY_URL) },
-      grant_signer: GrantSigner.new(key: ENV.fetch("LRAIL_SOURCE_GRANT_KEY") { local_value(LOCAL_GRANT_KEY) }),
+      grant_signer: GrantSigner.new(key: grant_key),
       result_verifier: ResultVerifier.new(
-        keys: signing_keys,
-        object_prefix: ENV.fetch("LRAIL_SOURCE_OBJECT_PREFIX") { local_value(LOCAL_OBJECT_PREFIX) },
+        keys:,
+        object_prefix:,
       ),
+      fetch_grant_signer: FetchGrantSigner.new(key: grant_key),
+      fetch_result_verifier: FetchResultVerifier.new(keys:, object_prefix:),
     )
   end
 

@@ -21,10 +21,13 @@ All host ports bind to `127.0.0.1`:
 | Valkey          | `127.0.0.1:56379`        |
 | Object API      | `http://127.0.0.1:59000` |
 | Object console  | `http://127.0.0.1:59001` |
+| Source gateway  | `http://127.0.0.1:58080` |
 | Mail SMTP       | `127.0.0.1:51025`        |
 | Mail UI         | `http://127.0.0.1:58025` |
 
 The literal `local-only-not-a-secret` is intentionally public, accepted only by this loopback development stack, and prohibited in any production configuration.
+
+`bin/dev` also starts the Solid Queue supervisor that processes durable GitHub source deliveries. Real GitHub acquisition is disabled unless a separately isolated provider-token broker is configured with a GitHub App ID, private-key secret file, controlled egress proxy, and matching source grant key. Those credentials are runtime secrets and must never be written to this repository or Rails. Hermetic provider conformance uses fake installations and fixed cryptographic fixtures; it does not require a real GitHub credential.
 
 ## Reset
 

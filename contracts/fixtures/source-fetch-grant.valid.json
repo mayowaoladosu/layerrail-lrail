@@ -1,0 +1,36 @@
+{
+  "key_base64url": "ZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmZmY",
+  "grant": {
+    "version": 1,
+    "audience": "lrail-source-gateway",
+    "fetch_id": "fet_019b01da-7e31-7000-8000-000000000001",
+    "organization_id": "org_019b01da-7e31-7000-8000-000000000002",
+    "project_id": "prj_019b01da-7e31-7000-8000-000000000003",
+    "creator_id": "acct_019b01da-7e31-7000-8000-000000000004",
+    "source_connection_id": "src_019b01da-7e31-7000-8000-000000000005",
+    "provider": "github",
+    "installation_id": "123456",
+    "repository": "example/repository",
+    "commit_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "root_directory": "",
+    "expires_at": "2026-07-13T01:15:00Z"
+  },
+  "token_chunks": [
+    "f1.eyJhdWRpZW5jZSI6ImxyYWlsLXNvdXJjZS1nYXRld2F5Iiw",
+    "iY29tbWl0X3NoYSI6ImFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhY",
+    "WFhYWFhYWFhYWFhYWFhYWEiLCJjcmVhdG9yX2lkIjoiYWNjdF8",
+    "wMTliMDFkYS03ZTMxLTcwMDAtODAwMC0wMDAwMDAwMDAwMDQiL",
+    "CJleHBpcmVzX2F0IjoiMjAyNi0wNy0xM1QwMToxNTowMFoiLCJ",
+    "mZXRjaF9pZCI6ImZldF8wMTliMDFkYS03ZTMxLTcwMDAtODAwM",
+    "C0wMDAwMDAwMDAwMDEiLCJpbnN0YWxsYXRpb25faWQiOiIxMjM",
+    "0NTYiLCJvcmdhbml6YXRpb25faWQiOiJvcmdfMDE5YjAxZGEtN",
+    "2UzMS03MDAwLTgwMDAtMDAwMDAwMDAwMDAyIiwicHJvamVjdF9",
+    "pZCI6InByal8wMTliMDFkYS03ZTMxLTcwMDAtODAwMC0wMDAwM",
+    "DAwMDAwMDMiLCJwcm92aWRlciI6ImdpdGh1YiIsInJlcG9zaXR",
+    "vcnkiOiJleGFtcGxlL3JlcG9zaXRvcnkiLCJyb290X2RpcmVjd",
+    "G9yeSI6IiIsInNvdXJjZV9jb25uZWN0aW9uX2lkIjoic3JjXzA",
+    "xOWIwMWRhLTdlMzEtNzAwMC04MDAwLTAwMDAwMDAwMDAwNSIsI",
+    "nZlcnNpb24iOjF9.xJlcxphX2msvw3luGLwuW2Gc_hDAEgtz4h",
+    "78_GxYN2U"
+  ]
+}

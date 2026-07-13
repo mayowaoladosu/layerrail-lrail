@@ -12,7 +12,9 @@ class Project < ApplicationRecord
   has_many :domains, dependent: :restrict_with_error
   has_many :addons, dependent: :restrict_with_error
   has_many :source_upload_sessions, dependent: :destroy
+  has_many :source_fetches, dependent: :restrict_with_error
   has_many :source_snapshots, dependent: :restrict_with_error
+  has_one :project_source_binding, dependent: :restrict_with_error
 
   normalizes :slug, with: ->(value) { value.to_s.strip.downcase }
 

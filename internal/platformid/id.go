@@ -26,7 +26,7 @@ var (
 		"key": {}, "evt": {}, "tgt": {}, "edg": {}, "cell": {}, "pop": {},
 		"use": {}, "sec": {}, "var": {}, "vol": {}, "job": {}, "run": {},
 		"pol": {}, "inc": {}, "ses": {}, "tok": {},
-		"upl": {}, "fet": {},
+		"upl": {}, "fet": {}, "psb": {},
 	}
 )
 

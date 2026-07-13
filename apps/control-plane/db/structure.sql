@@ -116,6 +116,245 @@ $$;
 
 
 --
+-- Name: lrail_apply_github_provider_delivery(text, text, text, text, text, text, text, text, text, integer, boolean, boolean, text, text, text, bigint, text, text, jsonb, text, text, text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.lrail_apply_github_provider_delivery(installation_id text, delivery_id text, delivery_event text, delivery_action text, payload_sha256 text, repository_name text, git_ref text, head_commit text, base_commit text, pr_number integer, was_forced boolean, was_deleted boolean, processing_state text, next_connection_status text, account_login text, account_id bigint, repository_selection_value text, repositories_mode text, repository_values jsonb, delivery_public_id text, event_public_id text, audit_public_id text, request_id text) RETURNS jsonb
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    SET row_security TO 'off'
+    AS $_$
+DECLARE
+  connection_row source_connections%ROWTYPE;
+  existing_digest text;
+  existing_delivery_public_id text;
+  existing_delivery_state text;
+  existing_processing_started_at timestamptz;
+  next_repositories jsonb;
+  organization_public_id_value text;
+  actor_public_id_value text;
+BEGIN
+  IF delivery_event NOT IN ('push', 'pull_request', 'installation', 'installation_repositories')
+     OR processing_state NOT IN ('received', 'processed', 'ignored')
+      OR installation_id !~ '^[1-9][0-9]{0,19}$'
+     OR delivery_id !~ '^[0-9A-Za-z-]{8,128}$'
+     OR payload_sha256 !~ '^sha256:[0-9a-f]{64}$'
+     OR delivery_public_id !~ '^[a-z]{2,5}_[0-9a-f-]{36}$'
+     OR event_public_id !~ '^[a-z]{2,5}_[0-9a-f-]{36}$'
+     OR audit_public_id !~ '^[a-z]{2,5}_[0-9a-f-]{36}$'
+     OR request_id !~ '^req_[0-9a-f]{32}$'
+     OR char_length(delivery_action) > 64
+     OR char_length(account_login) > 255
+     OR (account_id IS NOT NULL AND account_id < 1)
+     OR (head_commit IS NOT NULL AND head_commit !~ '^[0-9a-f]{40}([0-9a-f]{24})?$')
+     OR (base_commit IS NOT NULL AND base_commit !~ '^[0-9a-f]{40}([0-9a-f]{24})?$')
+     OR (repository_name <> '' AND repository_name !~ '^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}/[A-Za-z0-9_.-]{1,100}$')
+     OR char_length(git_ref) > 512
+     OR (pr_number IS NOT NULL AND pr_number < 1)
+     OR next_connection_status NOT IN ('', 'active', 'suspended', 'revoked')
+     OR repository_selection_value NOT IN ('', 'all', 'selected')
+     OR repositories_mode NOT IN ('none', 'replace', 'add', 'remove')
+     OR (repository_values IS NOT NULL AND jsonb_typeof(repository_values) <> 'array')
+     OR EXISTS (
+       SELECT 1 FROM jsonb_array_elements_text(COALESCE(repository_values, '[]'::jsonb)) AS repository(value)
+       WHERE value !~ '^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}/[A-Za-z0-9_.-]{1,100}$'
+     )
+     OR (
+       delivery_event = 'push' AND (
+         COALESCE(repository_name, '') = '' OR COALESCE(git_ref, '') = '' OR
+         pr_number IS NOT NULL OR repositories_mode <> 'none' OR
+         (was_deleted AND head_commit IS NOT NULL) OR
+         (NOT was_deleted AND head_commit IS NULL) OR
+         (was_deleted AND processing_state <> 'ignored') OR
+         (NOT was_deleted AND processing_state <> 'received')
+       )
+     )
+     OR (
+       delivery_event = 'pull_request' AND (
+         COALESCE(repository_name, '') = '' OR COALESCE(git_ref, '') = '' OR
+         head_commit IS NULL OR base_commit IS NULL OR pr_number IS NULL OR
+         was_forced OR repositories_mode <> 'none' OR
+         (delivery_action IN ('opened', 'reopened', 'synchronize') AND processing_state <> 'received') OR
+         (delivery_action NOT IN ('opened', 'reopened', 'synchronize') AND processing_state <> 'ignored')
+       )
+     )
+     OR (
+       delivery_event = 'installation' AND (
+         COALESCE(delivery_action, '') = '' OR COALESCE(account_login, '') = '' OR account_id IS NULL OR
+         processing_state NOT IN ('processed', 'ignored') OR
+         repository_name IS NOT NULL OR git_ref IS NOT NULL OR head_commit IS NOT NULL OR
+         base_commit IS NOT NULL OR pr_number IS NOT NULL OR was_forced OR was_deleted
+       )
+     )
+     OR (
+       delivery_event = 'installation_repositories' AND (
+         delivery_action NOT IN ('added', 'removed') OR
+         repository_selection_value NOT IN ('all', 'selected') OR
+         repositories_mode NOT IN ('add', 'remove') OR
+         processing_state <> 'processed' OR
+         repository_name IS NOT NULL OR git_ref IS NOT NULL OR head_commit IS NOT NULL OR
+         base_commit IS NOT NULL OR pr_number IS NOT NULL OR was_forced OR was_deleted
+       )
+     ) THEN
+    RAISE EXCEPTION 'invalid GitHub provider delivery' USING ERRCODE = '22023';
+  END IF;
+
+  SELECT * INTO connection_row
+  FROM source_connections
+  WHERE provider = 'github' AND installation_external_id = installation_id
+  LIMIT 1;
+  IF connection_row.id IS NULL THEN
+    RETURN jsonb_build_object('outcome', 'unknown_installation', 'work_pending', false);
+  END IF;
+  SELECT public_id INTO organization_public_id_value FROM organizations WHERE id = connection_row.organization_id;
+  SELECT account.public_id INTO actor_public_id_value
+  FROM memberships AS membership
+  JOIN accounts AS account ON account.id = membership.account_id
+  WHERE membership.organization_id = connection_row.organization_id
+    AND membership.status = 'active'
+  ORDER BY
+    CASE WHEN membership.account_id = connection_row.connected_by_account_id THEN 0 ELSE 1 END,
+    CASE membership.role WHEN 'owner' THEN 0 WHEN 'admin' THEN 1 WHEN 'developer' THEN 2 ELSE 3 END,
+    membership.id
+  LIMIT 1;
+  IF actor_public_id_value IS NULL THEN
+    RETURN jsonb_build_object('outcome', 'unknown_installation', 'work_pending', false);
+  END IF;
+
+  PERFORM pg_advisory_xact_lock(hashtextextended('github:' || delivery_id, 0));
+
+  SELECT payload_digest, public_id, state, processing_started_at
+  INTO existing_digest, existing_delivery_public_id, existing_delivery_state, existing_processing_started_at
+  FROM source_provider_deliveries
+  WHERE provider = 'github' AND external_delivery_id = delivery_id;
+  IF existing_digest IS NOT NULL THEN
+    RETURN jsonb_build_object(
+      'outcome', CASE WHEN existing_digest = payload_sha256 THEN 'duplicate' ELSE 'mismatch' END,
+      'delivery_public_id', existing_delivery_public_id,
+      'organization_public_id', organization_public_id_value,
+      'actor_public_id', actor_public_id_value,
+      'work_pending', connection_row.status = 'active' AND existing_digest = payload_sha256 AND (
+        existing_delivery_state IN ('received', 'failed') OR
+        (existing_delivery_state = 'processing' AND existing_processing_started_at < clock_timestamp() - interval '20 minutes')
+      )
+    );
+  END IF;
+
+  IF delivery_event IN ('push', 'pull_request') AND connection_row.status <> 'active' THEN
+    processing_state := 'ignored';
+  END IF;
+
+  next_repositories := connection_row.selected_repositories;
+  IF repositories_mode = 'replace' THEN
+    next_repositories := COALESCE(repository_values, '[]'::jsonb);
+  ELSIF repositories_mode = 'add' THEN
+    SELECT COALESCE(jsonb_agg(value ORDER BY value), '[]'::jsonb) INTO next_repositories
+    FROM (
+      SELECT DISTINCT value
+      FROM jsonb_array_elements_text(connection_row.selected_repositories || COALESCE(repository_values, '[]'::jsonb))
+    ) AS values;
+  ELSIF repositories_mode = 'remove' THEN
+    SELECT COALESCE(jsonb_agg(value ORDER BY value), '[]'::jsonb) INTO next_repositories
+    FROM jsonb_array_elements_text(connection_row.selected_repositories) AS values(value)
+    WHERE NOT COALESCE(repository_values, '[]'::jsonb) ? value;
+  ELSIF repositories_mode <> 'none' THEN
+    RAISE EXCEPTION 'invalid GitHub repository update mode' USING ERRCODE = '22023';
+  END IF;
+
+  INSERT INTO source_provider_deliveries(
+    public_id, organization_id, source_connection_id, provider, external_delivery_id,
+    event_type, action, payload_digest, state, repository, ref, commit_sha,
+    base_commit_sha, pull_request_number, forced, deleted, processed_at, created_at, updated_at
+  ) VALUES (
+    delivery_public_id, connection_row.organization_id, connection_row.id, 'github', delivery_id,
+    delivery_event, NULLIF(delivery_action, ''), payload_sha256, processing_state,
+    NULLIF(repository_name, ''), NULLIF(git_ref, ''), head_commit,
+    base_commit, pr_number, was_forced, was_deleted,
+    CASE WHEN processing_state IN ('processed', 'ignored') THEN clock_timestamp() END,
+    clock_timestamp(), clock_timestamp()
+  );
+
+  UPDATE source_connections
+  SET status = COALESCE(NULLIF(next_connection_status, ''), status),
+      revoked_at = CASE
+        WHEN next_connection_status = 'revoked' THEN clock_timestamp()
+        WHEN next_connection_status = 'active' THEN NULL
+        ELSE revoked_at
+      END,
+      provider_account_login = COALESCE(NULLIF(account_login, ''), provider_account_login),
+      provider_account_id = COALESCE(account_id, provider_account_id),
+      repository_selection = COALESCE(NULLIF(repository_selection_value, ''), repository_selection),
+      selected_repositories = next_repositories,
+      last_webhook_at = clock_timestamp(),
+      updated_at = clock_timestamp()
+  WHERE id = connection_row.id;
+
+  IF repositories_mode = 'remove' THEN
+    UPDATE project_source_bindings
+    SET automatic_deployments = false,
+        generation = generation + 1,
+        updated_at = clock_timestamp()
+    WHERE source_connection_id = connection_row.id
+      AND repository IN (SELECT jsonb_array_elements_text(COALESCE(repository_values, '[]'::jsonb)));
+  END IF;
+  IF next_connection_status IN ('suspended', 'revoked') THEN
+    UPDATE project_source_bindings
+    SET automatic_deployments = false,
+        generation = generation + 1,
+        updated_at = clock_timestamp()
+    WHERE source_connection_id = connection_row.id
+      AND automatic_deployments = true;
+    UPDATE source_provider_deliveries
+    SET state = 'ignored',
+        processed_at = clock_timestamp(),
+        processing_token = NULL,
+        processing_started_at = NULL,
+        last_error = NULL,
+        updated_at = clock_timestamp()
+    WHERE source_connection_id = connection_row.id
+      AND state IN ('received', 'failed');
+  END IF;
+
+  INSERT INTO outbox_events(
+    public_id, organization_id, event_type, schema_version, resource_type,
+    resource_public_id, resource_version, actor_type, actor_public_id, correlation_id, data,
+    occurred_at, publish_attempts, organization_public_id, created_at, updated_at
+  ) VALUES (
+    event_public_id, connection_row.organization_id, 'source.provider.' || delivery_event, 1,
+    'source_connection', connection_row.public_id, 1, 'system', NULL, request_id,
+    jsonb_strip_nulls(jsonb_build_object(
+      'delivery_id', delivery_id, 'event_type', delivery_event, 'action', NULLIF(delivery_action, ''),
+      'repository', NULLIF(repository_name, ''), 'ref', NULLIF(git_ref, ''),
+      'commit_sha', head_commit, 'base_commit_sha', base_commit,
+      'pull_request_number', pr_number, 'forced', was_forced, 'deleted', was_deleted
+    )),
+    clock_timestamp(), 0, organization_public_id_value, clock_timestamp(), clock_timestamp()
+  );
+
+  INSERT INTO audit_events(
+    public_id, organization_id, actor_type, authentication_method, action,
+    resource_type, resource_public_id, request_id, outcome, policy_version,
+    metadata, occurred_at
+  ) VALUES (
+    audit_public_id, connection_row.organization_id, 'system', 'provider_webhook',
+    'source.provider.webhook', 'source_connection', connection_row.public_id,
+    request_id, 'succeeded', '2026-07-12.v1',
+    jsonb_build_object('delivery_id', delivery_id, 'event_type', delivery_event),
+    clock_timestamp()
+  );
+
+  RETURN jsonb_build_object(
+    'outcome', processing_state,
+    'delivery_public_id', delivery_public_id,
+    'organization_public_id', organization_public_id_value,
+    'actor_public_id', actor_public_id_value,
+    'work_pending', processing_state = 'received'
+  );
+END;
+$_$;
+
+
+--
 -- Name: lrail_block_mutation(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -198,6 +437,61 @@ CREATE FUNCTION public.lrail_claim_email(worker_name text, requested_limit integ
   WHERE intent.id = candidates.id
   RETURNING intent.*;
 $$;
+
+
+--
+-- Name: lrail_claim_github_provider_delivery(text, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.lrail_claim_github_provider_delivery(delivery_public_id text, lease_token text) RETURNS text
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    SET row_security TO 'off'
+    AS $_$
+DECLARE
+  claimed_state text;
+  current_state text;
+BEGIN
+  IF delivery_public_id !~ '^[a-z]{2,5}_[0-9a-f-]{36}$' OR lease_token !~ '^[0-9A-Za-z-]{8,128}$' THEN
+    RAISE EXCEPTION 'invalid provider delivery lease' USING ERRCODE = '22023';
+  END IF;
+
+  UPDATE source_provider_deliveries
+  SET state = 'processing',
+      attempt_count = CASE
+        WHEN state = 'processing' AND processing_token = lease_token THEN attempt_count
+        ELSE attempt_count + 1
+      END,
+      processing_token = lease_token,
+      processing_started_at = clock_timestamp(),
+      last_error = NULL,
+      updated_at = clock_timestamp()
+  WHERE public_id = delivery_public_id
+    AND organization_id::text = current_setting('lrail.organization_id', true)
+    AND lrail_account_has_membership(organization_id)
+    AND (
+      state IN ('received', 'failed') OR
+      (state = 'processing' AND (
+        processing_token = lease_token OR processing_started_at < clock_timestamp() - interval '20 minutes'
+      ))
+    )
+  RETURNING state INTO claimed_state;
+  IF claimed_state IS NOT NULL THEN
+    RETURN 'claimed';
+  END IF;
+
+  SELECT state INTO current_state
+  FROM source_provider_deliveries
+  WHERE public_id = delivery_public_id
+    AND organization_id::text = current_setting('lrail.organization_id', true)
+    AND lrail_account_has_membership(organization_id);
+  RETURN CASE
+    WHEN current_state IN ('processed', 'ignored') THEN 'complete'
+    WHEN current_state = 'processing' THEN 'busy'
+    ELSE 'unknown'
+  END;
+END;
+$_$;
 
 
 --
@@ -353,6 +647,41 @@ BEGIN
   RETURN COALESCE(updated, false);
 END;
 $$;
+
+
+--
+-- Name: lrail_finish_github_provider_delivery(text, text, boolean, text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.lrail_finish_github_provider_delivery(delivery_public_id text, lease_token text, succeeded boolean, error_code text) RETURNS boolean
+    LANGUAGE plpgsql SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    SET row_security TO 'off'
+    AS $_$
+DECLARE
+  updated_id bigint;
+BEGIN
+  IF delivery_public_id !~ '^[a-z]{2,5}_[0-9a-f-]{36}$' OR lease_token !~ '^[0-9A-Za-z-]{8,128}$'
+     OR char_length(error_code) > 128 THEN
+    RAISE EXCEPTION 'invalid provider delivery completion' USING ERRCODE = '22023';
+  END IF;
+
+  UPDATE source_provider_deliveries
+  SET state = CASE WHEN succeeded THEN 'processed' ELSE 'failed' END,
+      processed_at = CASE WHEN succeeded THEN clock_timestamp() ELSE NULL END,
+      processing_token = NULL,
+      processing_started_at = NULL,
+      last_error = CASE WHEN succeeded THEN NULL ELSE NULLIF(error_code, '') END,
+      updated_at = clock_timestamp()
+  WHERE public_id = delivery_public_id
+    AND organization_id::text = current_setting('lrail.organization_id', true)
+    AND lrail_account_has_membership(organization_id)
+    AND state = 'processing'
+    AND processing_token = lease_token
+  RETURNING id INTO updated_id;
+  RETURN updated_id IS NOT NULL;
+END;
+$_$;
 
 
 --
@@ -2058,6 +2387,56 @@ ALTER SEQUENCE public.ownership_challenges_id_seq OWNED BY public.ownership_chal
 
 
 --
+-- Name: project_source_bindings; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.project_source_bindings (
+    id bigint NOT NULL,
+    public_id character varying(64) NOT NULL,
+    organization_id bigint NOT NULL,
+    project_id bigint NOT NULL,
+    source_connection_id bigint NOT NULL,
+    created_by_account_id bigint NOT NULL,
+    current_source_fetch_id bigint,
+    last_provider_delivery_id bigint,
+    repository character varying(201) NOT NULL,
+    production_branch character varying(255) DEFAULT 'main'::character varying NOT NULL,
+    root_directory character varying(512) DEFAULT ''::character varying NOT NULL,
+    automatic_deployments boolean DEFAULT true NOT NULL,
+    current_ref character varying(512),
+    requested_commit_sha character varying(64),
+    generation bigint DEFAULT 1 NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT project_source_bindings_commit CHECK (((requested_commit_sha IS NULL) OR ((requested_commit_sha)::text ~ '^[0-9a-f]{40}([0-9a-f]{24})?$'::text))),
+    CONSTRAINT project_source_bindings_generation CHECK ((generation > 0)),
+    CONSTRAINT project_source_bindings_public_id_format CHECK (((public_id)::text ~ '^[a-z]{2,5}_[0-9a-f-]{36}$'::text)),
+    CONSTRAINT project_source_bindings_repository CHECK (((repository)::text ~ '^[A-Za-z0-9][A-Za-z0-9_.-]{0,99}/[A-Za-z0-9_.-]{1,100}$'::text))
+);
+
+ALTER TABLE ONLY public.project_source_bindings FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: project_source_bindings_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.project_source_bindings_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: project_source_bindings_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.project_source_bindings_id_seq OWNED BY public.project_source_bindings.id;
+
+
+--
 -- Name: projects; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2428,7 +2807,20 @@ CREATE TABLE public.source_connections (
     last_webhook_at timestamp(6) without time zone,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT source_connections_public_id_format CHECK (((public_id)::text ~ '^[a-z]{2,5}_[0-9a-f-]{36}$'::text))
+    provider_account_login character varying(255) NOT NULL,
+    provider_account_id bigint,
+    repository_selection character varying(16) DEFAULT 'selected'::character varying NOT NULL,
+    selected_repositories jsonb DEFAULT '[]'::jsonb NOT NULL,
+    token_expires_at timestamp(6) without time zone,
+    revoked_at timestamp(6) without time zone,
+    connected_by_account_id bigint NOT NULL,
+    CONSTRAINT source_connections_installation CHECK (((installation_external_id)::text ~ '^[1-9][0-9]{0,19}$'::text)),
+    CONSTRAINT source_connections_provider CHECK (((provider)::text = 'github'::text)),
+    CONSTRAINT source_connections_public_id_format CHECK (((public_id)::text ~ '^[a-z]{2,5}_[0-9a-f-]{36}$'::text)),
+    CONSTRAINT source_connections_repositories_array CHECK ((jsonb_typeof(selected_repositories) = 'array'::text)),
+    CONSTRAINT source_connections_repository_selection CHECK (((repository_selection)::text = ANY ((ARRAY['all'::character varying, 'selected'::character varying])::text[]))),
+    CONSTRAINT source_connections_scopes_array CHECK ((jsonb_typeof(scopes) = 'array'::text)),
+    CONSTRAINT source_connections_status CHECK (((status)::text = ANY ((ARRAY['active'::character varying, 'suspended'::character varying, 'revoked'::character varying])::text[])))
 );
 
 ALTER TABLE ONLY public.source_connections FORCE ROW LEVEL SECURITY;
@@ -2451,6 +2843,142 @@ CREATE SEQUENCE public.source_connections_id_seq
 --
 
 ALTER SEQUENCE public.source_connections_id_seq OWNED BY public.source_connections.id;
+
+
+--
+-- Name: source_fetches; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.source_fetches (
+    id bigint NOT NULL,
+    public_id character varying(64) NOT NULL,
+    organization_id bigint NOT NULL,
+    project_id bigint NOT NULL,
+    source_connection_id bigint NOT NULL,
+    created_by_account_id bigint NOT NULL,
+    source_snapshot_id bigint,
+    state character varying(32) DEFAULT 'authorized'::character varying NOT NULL,
+    repository character varying(201) NOT NULL,
+    requested_commit_sha character varying(64) NOT NULL,
+    resolved_commit_sha character varying(64),
+    tree_sha character varying(64),
+    root_directory character varying(512) DEFAULT ''::character varying NOT NULL,
+    attempt_count integer DEFAULT 0 NOT NULL,
+    snapshot_sha256 character varying(71),
+    manifest_sha256 character varying(71),
+    archive_sha256 character varying(71),
+    manifest_ref character varying,
+    archive_ref character varying,
+    signing_key_id character varying(128),
+    author character varying(512),
+    authored_at timestamp(6) without time zone,
+    policy_version character varying(128),
+    warnings jsonb DEFAULT '[]'::jsonb NOT NULL,
+    submodules jsonb DEFAULT '[]'::jsonb NOT NULL,
+    lfs_digests jsonb DEFAULT '[]'::jsonb NOT NULL,
+    token_expires_at timestamp(6) without time zone,
+    expires_at timestamp(6) without time zone NOT NULL,
+    finalized_at timestamp(6) without time zone,
+    last_error text,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    project_source_binding_id bigint,
+    source_provider_delivery_id bigint,
+    superseded_by_source_fetch_id bigint,
+    superseded_at timestamp(6) without time zone,
+    CONSTRAINT source_fetches_attempts CHECK ((attempt_count >= 0)),
+    CONSTRAINT source_fetches_lfs_array CHECK ((jsonb_typeof(lfs_digests) = 'array'::text)),
+    CONSTRAINT source_fetches_policy_version CHECK (((policy_version IS NULL) OR ((char_length((policy_version)::text) >= 1) AND (char_length((policy_version)::text) <= 128)))),
+    CONSTRAINT source_fetches_public_id_format CHECK (((public_id)::text ~ '^[a-z]{2,5}_[0-9a-f-]{36}$'::text)),
+    CONSTRAINT source_fetches_requested_commit CHECK (((requested_commit_sha)::text ~ '^[0-9a-f]{40}([0-9a-f]{24})?$'::text)),
+    CONSTRAINT source_fetches_resolved_commit CHECK (((resolved_commit_sha IS NULL) OR ((resolved_commit_sha)::text ~ '^[0-9a-f]{40}([0-9a-f]{24})?$'::text))),
+    CONSTRAINT source_fetches_snapshot_digest CHECK (((snapshot_sha256 IS NULL) OR ((snapshot_sha256)::text ~ '^sha256:[0-9a-f]{64}$'::text))),
+    CONSTRAINT source_fetches_state CHECK (((state)::text = ANY ((ARRAY['authorized'::character varying, 'fetching'::character varying, 'complete'::character varying, 'failed'::character varying, 'expired'::character varying, 'canceled'::character varying])::text[]))),
+    CONSTRAINT source_fetches_submodules_array CHECK ((jsonb_typeof(submodules) = 'array'::text)),
+    CONSTRAINT source_fetches_tree CHECK (((tree_sha IS NULL) OR ((tree_sha)::text ~ '^[0-9a-f]{40}([0-9a-f]{24})?$'::text))),
+    CONSTRAINT source_fetches_warnings_array CHECK ((jsonb_typeof(warnings) = 'array'::text))
+);
+
+ALTER TABLE ONLY public.source_fetches FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: source_fetches_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.source_fetches_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: source_fetches_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.source_fetches_id_seq OWNED BY public.source_fetches.id;
+
+
+--
+-- Name: source_provider_deliveries; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.source_provider_deliveries (
+    id bigint NOT NULL,
+    public_id character varying(64) NOT NULL,
+    organization_id bigint NOT NULL,
+    source_connection_id bigint NOT NULL,
+    provider character varying(32) NOT NULL,
+    external_delivery_id character varying(128) NOT NULL,
+    event_type character varying(64) NOT NULL,
+    action character varying(64),
+    payload_digest character varying(71) NOT NULL,
+    state character varying(32) DEFAULT 'received'::character varying NOT NULL,
+    repository character varying(201),
+    ref character varying(512),
+    commit_sha character varying(64),
+    base_commit_sha character varying(64),
+    pull_request_number integer,
+    forced boolean DEFAULT false NOT NULL,
+    deleted boolean DEFAULT false NOT NULL,
+    processed_at timestamp(6) without time zone,
+    attempt_count integer DEFAULT 0 NOT NULL,
+    processing_token character varying(128),
+    processing_started_at timestamp(6) without time zone,
+    last_error text,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT source_provider_deliveries_attempts CHECK ((attempt_count >= 0)),
+    CONSTRAINT source_provider_deliveries_base_commit CHECK (((base_commit_sha IS NULL) OR ((base_commit_sha)::text ~ '^[0-9a-f]{40}([0-9a-f]{24})?$'::text))),
+    CONSTRAINT source_provider_deliveries_commit CHECK (((commit_sha IS NULL) OR ((commit_sha)::text ~ '^[0-9a-f]{40}([0-9a-f]{24})?$'::text))),
+    CONSTRAINT source_provider_deliveries_digest CHECK (((payload_digest)::text ~ '^sha256:[0-9a-f]{64}$'::text)),
+    CONSTRAINT source_provider_deliveries_provider CHECK (((provider)::text = 'github'::text)),
+    CONSTRAINT source_provider_deliveries_public_id_format CHECK (((public_id)::text ~ '^[a-z]{2,5}_[0-9a-f-]{36}$'::text)),
+    CONSTRAINT source_provider_deliveries_state CHECK (((state)::text = ANY ((ARRAY['received'::character varying, 'processing'::character varying, 'processed'::character varying, 'ignored'::character varying, 'failed'::character varying])::text[])))
+);
+
+ALTER TABLE ONLY public.source_provider_deliveries FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: source_provider_deliveries_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.source_provider_deliveries_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: source_provider_deliveries_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.source_provider_deliveries_id_seq OWNED BY public.source_provider_deliveries.id;
 
 
 --
@@ -3015,6 +3543,13 @@ ALTER TABLE ONLY public.ownership_challenges ALTER COLUMN id SET DEFAULT nextval
 
 
 --
+-- Name: project_source_bindings id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.project_source_bindings ALTER COLUMN id SET DEFAULT nextval('public.project_source_bindings_id_seq'::regclass);
+
+
+--
 -- Name: projects id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -3075,6 +3610,20 @@ ALTER TABLE ONLY public.services ALTER COLUMN id SET DEFAULT nextval('public.ser
 --
 
 ALTER TABLE ONLY public.source_connections ALTER COLUMN id SET DEFAULT nextval('public.source_connections_id_seq'::regclass);
+
+
+--
+-- Name: source_fetches id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.source_fetches ALTER COLUMN id SET DEFAULT nextval('public.source_fetches_id_seq'::regclass);
+
+
+--
+-- Name: source_provider_deliveries id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.source_provider_deliveries ALTER COLUMN id SET DEFAULT nextval('public.source_provider_deliveries_id_seq'::regclass);
 
 
 --
@@ -3472,6 +4021,14 @@ ALTER TABLE ONLY public.ownership_challenges
 
 
 --
+-- Name: project_source_bindings project_source_bindings_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.project_source_bindings
+    ADD CONSTRAINT project_source_bindings_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: projects projects_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3549,6 +4106,22 @@ ALTER TABLE ONLY public.services
 
 ALTER TABLE ONLY public.source_connections
     ADD CONSTRAINT source_connections_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: source_fetches source_fetches_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.source_fetches
+    ADD CONSTRAINT source_fetches_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: source_provider_deliveries source_provider_deliveries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.source_provider_deliveries
+    ADD CONSTRAINT source_provider_deliveries_pkey PRIMARY KEY (id);
 
 
 --
@@ -4440,6 +5013,55 @@ CREATE INDEX index_ownership_challenges_on_organization_id ON public.ownership_c
 
 
 --
+-- Name: index_project_source_bindings_on_created_by_account_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_project_source_bindings_on_created_by_account_id ON public.project_source_bindings USING btree (created_by_account_id);
+
+
+--
+-- Name: index_project_source_bindings_on_current_source_fetch_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_project_source_bindings_on_current_source_fetch_id ON public.project_source_bindings USING btree (current_source_fetch_id);
+
+
+--
+-- Name: index_project_source_bindings_on_last_provider_delivery_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_project_source_bindings_on_last_provider_delivery_id ON public.project_source_bindings USING btree (last_provider_delivery_id);
+
+
+--
+-- Name: index_project_source_bindings_on_organization_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_project_source_bindings_on_organization_id ON public.project_source_bindings USING btree (organization_id);
+
+
+--
+-- Name: index_project_source_bindings_on_project_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_project_source_bindings_on_project_id ON public.project_source_bindings USING btree (project_id);
+
+
+--
+-- Name: index_project_source_bindings_on_public_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_project_source_bindings_on_public_id ON public.project_source_bindings USING btree (public_id);
+
+
+--
+-- Name: index_project_source_bindings_on_source_connection_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_project_source_bindings_on_source_connection_id ON public.project_source_bindings USING btree (source_connection_id);
+
+
+--
 -- Name: index_projects_on_organization_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4692,6 +5314,13 @@ CREATE UNIQUE INDEX index_services_on_public_id ON public.services USING btree (
 
 
 --
+-- Name: index_source_connections_on_connected_by_account_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_source_connections_on_connected_by_account_id ON public.source_connections USING btree (connected_by_account_id);
+
+
+--
 -- Name: index_source_connections_on_organization_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4703,6 +5332,90 @@ CREATE INDEX index_source_connections_on_organization_id ON public.source_connec
 --
 
 CREATE UNIQUE INDEX index_source_connections_on_public_id ON public.source_connections USING btree (public_id);
+
+
+--
+-- Name: index_source_fetches_on_created_by_account_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_source_fetches_on_created_by_account_id ON public.source_fetches USING btree (created_by_account_id);
+
+
+--
+-- Name: index_source_fetches_on_organization_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_source_fetches_on_organization_id ON public.source_fetches USING btree (organization_id);
+
+
+--
+-- Name: index_source_fetches_on_project_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_source_fetches_on_project_id ON public.source_fetches USING btree (project_id);
+
+
+--
+-- Name: index_source_fetches_on_project_source_binding_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_source_fetches_on_project_source_binding_id ON public.source_fetches USING btree (project_source_binding_id);
+
+
+--
+-- Name: index_source_fetches_on_public_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_source_fetches_on_public_id ON public.source_fetches USING btree (public_id);
+
+
+--
+-- Name: index_source_fetches_on_source_connection_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_source_fetches_on_source_connection_id ON public.source_fetches USING btree (source_connection_id);
+
+
+--
+-- Name: index_source_fetches_on_source_provider_delivery_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_source_fetches_on_source_provider_delivery_id ON public.source_fetches USING btree (source_provider_delivery_id);
+
+
+--
+-- Name: index_source_fetches_on_source_snapshot_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_source_fetches_on_source_snapshot_id ON public.source_fetches USING btree (source_snapshot_id);
+
+
+--
+-- Name: index_source_fetches_on_superseded_by_source_fetch_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_source_fetches_on_superseded_by_source_fetch_id ON public.source_fetches USING btree (superseded_by_source_fetch_id);
+
+
+--
+-- Name: index_source_provider_deliveries_on_organization_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_source_provider_deliveries_on_organization_id ON public.source_provider_deliveries USING btree (organization_id);
+
+
+--
+-- Name: index_source_provider_deliveries_on_public_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_source_provider_deliveries_on_public_id ON public.source_provider_deliveries USING btree (public_id);
+
+
+--
+-- Name: index_source_provider_deliveries_on_source_connection_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_source_provider_deliveries_on_source_connection_id ON public.source_provider_deliveries USING btree (source_connection_id);
 
 
 --
@@ -4860,6 +5573,13 @@ CREATE INDEX outbox_unpublished_age ON public.outbox_events USING btree (publish
 
 
 --
+-- Name: project_source_provider_lookup; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX project_source_provider_lookup ON public.project_source_bindings USING btree (source_connection_id, repository, automatic_deployments);
+
+
+--
 -- Name: releases_monotonic_generation; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4874,10 +5594,52 @@ CREATE UNIQUE INDEX service_routes_unique_match ON public.service_routes USING b
 
 
 --
+-- Name: source_connections_global_provider_identity; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX source_connections_global_provider_identity ON public.source_connections USING btree (provider, installation_external_id);
+
+
+--
 -- Name: source_connections_provider_identity; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE UNIQUE INDEX source_connections_provider_identity ON public.source_connections USING btree (organization_id, provider, installation_external_id);
+
+
+--
+-- Name: source_fetch_expiry_queue; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX source_fetch_expiry_queue ON public.source_fetches USING btree (state, expires_at);
+
+
+--
+-- Name: source_fetch_provider_commit; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX source_fetch_provider_commit ON public.source_fetches USING btree (source_connection_id, repository, requested_commit_sha);
+
+
+--
+-- Name: source_fetch_provider_effect; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX source_fetch_provider_effect ON public.source_fetches USING btree (project_source_binding_id, source_provider_delivery_id) WHERE ((project_source_binding_id IS NOT NULL) AND (source_provider_delivery_id IS NOT NULL));
+
+
+--
+-- Name: source_provider_delivery_dedupe; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX source_provider_delivery_dedupe ON public.source_provider_deliveries USING btree (provider, external_delivery_id);
+
+
+--
+-- Name: source_provider_delivery_timeline; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX source_provider_delivery_timeline ON public.source_provider_deliveries USING btree (source_connection_id, repository, event_type, created_at);
 
 
 --
@@ -4993,6 +5755,14 @@ ALTER TABLE ONLY public.attachments
 
 
 --
+-- Name: project_source_bindings fk_rails_12dd1a7a77; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.project_source_bindings
+    ADD CONSTRAINT fk_rails_12dd1a7a77 FOREIGN KEY (source_connection_id) REFERENCES public.source_connections(id) ON DELETE RESTRICT;
+
+
+--
 -- Name: certificates fk_rails_13b0a6586c; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5014,6 +5784,14 @@ ALTER TABLE ONLY public.environments
 
 ALTER TABLE ONLY public.idempotency_keys
     ADD CONSTRAINT fk_rails_149452d765 FOREIGN KEY (organization_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: source_fetches fk_rails_16d5af904e; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.source_fetches
+    ADD CONSTRAINT fk_rails_16d5af904e FOREIGN KEY (superseded_by_source_fetch_id) REFERENCES public.source_fetches(id) ON DELETE RESTRICT;
 
 
 --
@@ -5062,6 +5840,14 @@ ALTER TABLE ONLY public.dns_changes
 
 ALTER TABLE ONLY public.account_webauthn_keys
     ADD CONSTRAINT fk_rails_2586b16017 FOREIGN KEY (account_id) REFERENCES public.accounts(id);
+
+
+--
+-- Name: source_fetches fk_rails_27f5c59167; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.source_fetches
+    ADD CONSTRAINT fk_rails_27f5c59167 FOREIGN KEY (project_source_binding_id) REFERENCES public.project_source_bindings(id) ON DELETE RESTRICT;
 
 
 --
@@ -5121,11 +5907,27 @@ ALTER TABLE ONLY public.addons
 
 
 --
+-- Name: source_fetches fk_rails_36ea8a7104; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.source_fetches
+    ADD CONSTRAINT fk_rails_36ea8a7104 FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE RESTRICT;
+
+
+--
 -- Name: releases fk_rails_38dafe0d7b; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.releases
     ADD CONSTRAINT fk_rails_38dafe0d7b FOREIGN KEY (organization_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: source_fetches fk_rails_3ee6483ee8; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.source_fetches
+    ADD CONSTRAINT fk_rails_3ee6483ee8 FOREIGN KEY (created_by_account_id) REFERENCES public.accounts(id) ON DELETE RESTRICT;
 
 
 --
@@ -5142,6 +5944,14 @@ ALTER TABLE ONLY public.account_previous_password_hashes
 
 ALTER TABLE ONLY public.inbox_messages
     ADD CONSTRAINT fk_rails_44b9c9a240 FOREIGN KEY (organization_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: source_fetches fk_rails_4718abb6ed; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.source_fetches
+    ADD CONSTRAINT fk_rails_4718abb6ed FOREIGN KEY (organization_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
 
 
 --
@@ -5201,6 +6011,14 @@ ALTER TABLE ONLY public.schedules
 
 
 --
+-- Name: project_source_bindings fk_rails_4effcdcb0e; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.project_source_bindings
+    ADD CONSTRAINT fk_rails_4effcdcb0e FOREIGN KEY (project_id) REFERENCES public.projects(id) ON DELETE CASCADE;
+
+
+--
 -- Name: certificates fk_rails_52c9fb3a0a; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5246,6 +6064,14 @@ ALTER TABLE ONLY public.ownership_challenges
 
 ALTER TABLE ONLY public.revisions
     ADD CONSTRAINT fk_rails_57d7afc21f FOREIGN KEY (service_id) REFERENCES public.services(id);
+
+
+--
+-- Name: source_provider_deliveries fk_rails_59d46eaf4e; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.source_provider_deliveries
+    ADD CONSTRAINT fk_rails_59d46eaf4e FOREIGN KEY (organization_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
 
 
 --
@@ -5321,6 +6147,14 @@ ALTER TABLE ONLY public.deployment_transitions
 
 
 --
+-- Name: source_fetches fk_rails_6fc5edd6e1; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.source_fetches
+    ADD CONSTRAINT fk_rails_6fc5edd6e1 FOREIGN KEY (source_provider_delivery_id) REFERENCES public.source_provider_deliveries(id) ON DELETE RESTRICT;
+
+
+--
 -- Name: services fk_rails_71cce407f9; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5334,6 +6168,14 @@ ALTER TABLE ONLY public.services
 
 ALTER TABLE ONLY public.invitations
     ADD CONSTRAINT fk_rails_7480156672 FOREIGN KEY (inviter_id) REFERENCES public.accounts(id);
+
+
+--
+-- Name: project_source_bindings fk_rails_7641f1d1da; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.project_source_bindings
+    ADD CONSTRAINT fk_rails_7641f1d1da FOREIGN KEY (current_source_fetch_id) REFERENCES public.source_fetches(id) ON DELETE SET NULL;
 
 
 --
@@ -5366,6 +6208,14 @@ ALTER TABLE ONLY public.email_intents
 
 ALTER TABLE ONLY public.credential_versions
     ADD CONSTRAINT fk_rails_8000ea4236 FOREIGN KEY (addon_id) REFERENCES public.addons(id) ON DELETE CASCADE;
+
+
+--
+-- Name: project_source_bindings fk_rails_80ad9cb3c5; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.project_source_bindings
+    ADD CONSTRAINT fk_rails_80ad9cb3c5 FOREIGN KEY (last_provider_delivery_id) REFERENCES public.source_provider_deliveries(id) ON DELETE SET NULL;
 
 
 --
@@ -5417,6 +6267,14 @@ ALTER TABLE ONLY public.domains
 
 
 --
+-- Name: project_source_bindings fk_rails_8ee7b5ca37; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.project_source_bindings
+    ADD CONSTRAINT fk_rails_8ee7b5ca37 FOREIGN KEY (created_by_account_id) REFERENCES public.accounts(id) ON DELETE RESTRICT;
+
+
+--
 -- Name: organizations fk_rails_8f18379d7a; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5457,6 +6315,14 @@ ALTER TABLE ONLY public.releases
 
 
 --
+-- Name: source_fetches fk_rails_9836fb3ed8; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.source_fetches
+    ADD CONSTRAINT fk_rails_9836fb3ed8 FOREIGN KEY (source_connection_id) REFERENCES public.source_connections(id) ON DELETE RESTRICT;
+
+
+--
 -- Name: addons fk_rails_99b6240dc9; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5478,6 +6344,14 @@ ALTER TABLE ONLY public.projects
 
 ALTER TABLE ONLY public.account_remember_keys
     ADD CONSTRAINT fk_rails_9b2f6d8501 FOREIGN KEY (id) REFERENCES public.accounts(id);
+
+
+--
+-- Name: project_source_bindings fk_rails_9d47847d4d; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.project_source_bindings
+    ADD CONSTRAINT fk_rails_9d47847d4d FOREIGN KEY (organization_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
 
 
 --
@@ -5561,6 +6435,22 @@ ALTER TABLE ONLY public.attachments
 
 
 --
+-- Name: source_fetches fk_rails_b3236608f1; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.source_fetches
+    ADD CONSTRAINT fk_rails_b3236608f1 FOREIGN KEY (source_snapshot_id) REFERENCES public.source_snapshots(id) ON DELETE RESTRICT;
+
+
+--
+-- Name: source_provider_deliveries fk_rails_b44274f5c2; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.source_provider_deliveries
+    ADD CONSTRAINT fk_rails_b44274f5c2 FOREIGN KEY (source_connection_id) REFERENCES public.source_connections(id) ON DELETE RESTRICT;
+
+
+--
 -- Name: outbox_events fk_rails_b6cb24ddb3; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5614,6 +6504,14 @@ ALTER TABLE ONLY public.workflow_runs
 
 ALTER TABLE ONLY public.webhook_deliveries
     ADD CONSTRAINT fk_rails_bed195a05d FOREIGN KEY (webhook_id) REFERENCES public.webhooks(id) ON DELETE CASCADE;
+
+
+--
+-- Name: source_connections fk_rails_c27db5df08; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.source_connections
+    ADD CONSTRAINT fk_rails_c27db5df08 FOREIGN KEY (connected_by_account_id) REFERENCES public.accounts(id) ON DELETE RESTRICT;
 
 
 --
@@ -6138,6 +7036,19 @@ CREATE POLICY ownership_challenges_tenant_policy ON public.ownership_challenges 
 
 
 --
+-- Name: project_source_bindings; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.project_source_bindings ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: project_source_bindings project_source_bindings_tenant_policy; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY project_source_bindings_tenant_policy ON public.project_source_bindings USING ((((organization_id)::text = current_setting('lrail.organization_id'::text, true)) AND public.lrail_account_has_membership(organization_id))) WITH CHECK ((((organization_id)::text = current_setting('lrail.organization_id'::text, true)) AND public.lrail_account_has_membership(organization_id)));
+
+
+--
 -- Name: projects; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -6255,6 +7166,32 @@ CREATE POLICY source_connections_tenant_policy ON public.source_connections USIN
 
 
 --
+-- Name: source_fetches; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.source_fetches ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: source_fetches source_fetches_tenant_policy; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY source_fetches_tenant_policy ON public.source_fetches USING ((((organization_id)::text = current_setting('lrail.organization_id'::text, true)) AND public.lrail_account_has_membership(organization_id))) WITH CHECK ((((organization_id)::text = current_setting('lrail.organization_id'::text, true)) AND public.lrail_account_has_membership(organization_id)));
+
+
+--
+-- Name: source_provider_deliveries; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.source_provider_deliveries ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: source_provider_deliveries source_provider_deliveries_tenant_policy; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY source_provider_deliveries_tenant_policy ON public.source_provider_deliveries FOR SELECT USING ((((organization_id)::text = current_setting('lrail.organization_id'::text, true)) AND public.lrail_account_has_membership(organization_id)));
+
+
+--
 -- Name: source_snapshots; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -6345,7 +7282,8 @@ INSERT INTO "schema_migrations" (version) VALUES
 ('20260712204512'),
 ('20260712221000'),
 ('20260712233000'),
-('20260713001500')
+('20260713001500'),
+('20260713013000')
 ON CONFLICT DO NOTHING;
 
 -- LRAIL_RUNTIME_GRANTS_BEGIN
@@ -6364,6 +7302,9 @@ REVOKE ALL ON FUNCTION lrail_finish_email(bigint, text, text, text, text, text, 
 REVOKE ALL ON FUNCTION lrail_apply_email_provider_event(text, text, text, text, timestamptz) FROM PUBLIC;
 REVOKE ALL ON FUNCTION lrail_expire_source_upload_sessions(integer) FROM PUBLIC;
 REVOKE ALL ON FUNCTION lrail_find_api_key(text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION lrail_apply_github_provider_delivery(text, text, text, text, text, text, text, text, text, integer, boolean, boolean, text, text, text, bigint, text, text, jsonb, text, text, text, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION lrail_claim_github_provider_delivery(text, text) FROM PUBLIC;
+REVOKE ALL ON FUNCTION lrail_finish_github_provider_delivery(text, text, boolean, text) FROM PUBLIC;
 
 DO $runtime_grants$
 BEGIN
@@ -6378,6 +7319,9 @@ BEGIN
     GRANT EXECUTE ON FUNCTION rodauth_previous_password_hash_match(bigint, text) TO lrail_web;
     GRANT EXECUTE ON FUNCTION lrail_apply_email_provider_event(text, text, text, text, timestamptz) TO lrail_web;
     GRANT EXECUTE ON FUNCTION lrail_find_api_key(text) TO lrail_web;
+    GRANT EXECUTE ON FUNCTION lrail_apply_github_provider_delivery(text, text, text, text, text, text, text, text, text, integer, boolean, boolean, text, text, text, bigint, text, text, jsonb, text, text, text, text) TO lrail_web;
+    GRANT EXECUTE ON FUNCTION lrail_claim_github_provider_delivery(text, text) TO lrail_web;
+    GRANT EXECUTE ON FUNCTION lrail_finish_github_provider_delivery(text, text, boolean, text) TO lrail_web;
 
     REVOKE ALL ON schema_migrations, ar_internal_metadata FROM lrail_web;
     REVOKE ALL ON account_password_hashes FROM lrail_web;
@@ -6388,6 +7332,9 @@ BEGIN
     GRANT SELECT (id, account_id) ON account_previous_password_hashes TO lrail_web;
     REVOKE ALL ON email_provider_events FROM lrail_web;
     REVOKE ALL ON SEQUENCE email_provider_events_id_seq FROM lrail_web;
+    REVOKE ALL ON source_provider_deliveries FROM lrail_web;
+    GRANT SELECT ON source_provider_deliveries TO lrail_web;
+    REVOKE ALL ON SEQUENCE source_provider_deliveries_id_seq FROM lrail_web;
     REVOKE UPDATE, DELETE ON outbox_events, email_intents FROM lrail_web;
     REVOKE DELETE ON inbox_messages, dead_letter_messages FROM lrail_web;
   END IF;

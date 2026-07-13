@@ -63,6 +63,11 @@ module Internal
       def scoped_deployment(payload)
         deployment = current_organization.deployments.find_by_public_id!(params[:id])
         raise ActiveRecord::RecordNotFound unless deployment.operation.public_id == payload.fetch("operation_id")
+        generation = Integer(payload.fetch("generation"))
+        expected_workflow_id = "deployment/#{deployment.public_id}/build/#{generation}"
+        raise ActiveRecord::RecordNotFound unless generation.positive? &&
+          deployment.operation.workflow_id == payload.fetch("workflow_id") &&
+          deployment.operation.workflow_id == expected_workflow_id
 
         deployment
       end

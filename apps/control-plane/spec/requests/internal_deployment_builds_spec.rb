@@ -191,4 +191,21 @@ RSpec.describe "internal deployment build callbacks", type: :request do
     post_internal "/internal/v1/deployments/#{foreign_deployment.public_id}/builds:prepare", body
     expect(response).to have_http_status(:not_found)
   end
+
+  it "rejects callbacks outside the deployment's exact workflow generation" do
+    account, organization, _project, deployment = deployment_fixture
+    path = "/internal/v1/deployments/#{deployment.public_id}/builds:prepare"
+    context = context_body(account:, organization:, deployment:)
+
+    post_internal path, context.merge(workflow_id: "deployment/#{deployment.public_id}/build/2", generation: 2)
+    expect(response).to have_http_status(:not_found)
+
+    post_internal path, context.merge(generation: 2)
+    expect(response).to have_http_status(:not_found)
+
+    within_organization(account, organization) do
+      expect(deployment.builds).to be_empty
+      expect(WorkflowRun.where(resource_public_id: deployment.public_id)).to be_empty
+    end
+  end
 end

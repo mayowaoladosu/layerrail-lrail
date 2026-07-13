@@ -42,6 +42,8 @@ def validate_rendered_manifests() -> None:
         "spiffe://lrail.internal/control-worker",
         "name: LRAIL_ASSIGNMENT_OPENBAO_JWT_FILE",
         "name: LRAIL_ALLOWED_CLIENT_URIS",
+        "name: LRAIL_S3_CA_FILE",
+        "name: lrail-s3-ca",
         "name: lrail-build-egress",
         "app.kubernetes.io/component: policy-proxy",
         "image: ghcr.io/mayowaoladosu/layerrail-lrail/build-egress-proxy@sha256:",

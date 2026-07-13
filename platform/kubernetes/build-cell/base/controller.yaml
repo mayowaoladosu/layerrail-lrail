@@ -87,7 +87,7 @@ spec:
             - {name: tmp, mountPath: /tmp}
       containers:
         - name: controller
-          image: ghcr.io/mayowaoladosu/layerrail-lrail/buildcell-controller@sha256:ecc4bbdf6be01d56af3e79b67b60dad33915531c9d8d9892121918802f6f2937
+          image: ghcr.io/mayowaoladosu/layerrail-lrail/buildcell-controller@sha256:6ff5cb967b1da771a865f454c6eab14f32cee847d1c36718572bbf6abd9ac876
           imagePullPolicy: IfNotPresent
           securityContext:
             runAsNonRoot: true
@@ -128,6 +128,8 @@ spec:
               valueFrom: {configMapKeyRef: {name: lrail-build-cell-site, key: s3-region}}
             - name: LRAIL_S3_SECURE
               value: "true"
+            - name: LRAIL_S3_CA_FILE
+              value: /etc/lrail/s3/ca.pem
             - name: LRAIL_S3_ACCESS_KEY_FILE
               value: /run/lrail-s3/access-key
             - name: LRAIL_S3_SECRET_KEY_FILE
@@ -247,6 +249,7 @@ spec:
             - {name: assignment-keys, mountPath: /etc/lrail/assignment-keys, readOnly: true}
             - {name: static, mountPath: /etc/lrail/static, readOnly: true}
             - {name: openbao-ca, mountPath: /etc/lrail/openbao, readOnly: true}
+            - {name: s3-ca, mountPath: /etc/lrail/s3, readOnly: true}
             - {name: s3-credentials, mountPath: /run/lrail-s3, readOnly: true}
             - {name: server-tls, mountPath: /run/lrail-server, readOnly: true}
             - {name: residue-client-tls, mountPath: /run/lrail-residue-client, readOnly: true}
@@ -271,6 +274,8 @@ spec:
           configMap: {name: lrail-build-cell-static, defaultMode: 0444}
         - name: openbao-ca
           configMap: {name: lrail-openbao-ca, defaultMode: 0444}
+        - name: s3-ca
+          configMap: {name: lrail-s3-ca, defaultMode: 0444}
         - name: s3-credentials
           secret: {secretName: lrail-build-s3, defaultMode: 0440}
         - name: server-tls

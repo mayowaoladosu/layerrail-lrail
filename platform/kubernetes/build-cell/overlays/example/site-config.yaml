@@ -54,6 +54,17 @@ data:
     -----END CERTIFICATE-----
 ---
 apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lrail-s3-ca
+  namespace: lrail-build-control
+data:
+  ca.pem: |
+    -----BEGIN CERTIFICATE-----
+    REPLACE_WITH_S3_CA_CERTIFICATE
+    -----END CERTIFICATE-----
+---
+apiVersion: v1
 kind: Secret
 metadata:
   name: lrail-harbor-admin

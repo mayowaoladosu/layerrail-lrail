@@ -21,6 +21,8 @@ The build cell is a dedicated execution boundary. The base manifests are intenti
 
 The example overlay contains only non-authentic placeholders. Replace its public keys, CAs, endpoints, object credentials, Harbor administrator credential, storage-class names, and `lrail-build-images` Docker config through the production secret/configuration workflow. The component package token needs read-only access to these eight private packages and no repository or write scope. Never commit real credentials or private key material.
 
+`lrail-s3-ca` is an explicit PEM trust bundle for BuildCell object storage. Include every CA root needed by that endpoint; the controller enforces TLS 1.3 and does not fall back to ambient host roots. The broker uses the equivalent site bundle for both split S3 identities, and that bundle may contain distinct roots when source and cell endpoints differ.
+
 ## Durable BuildService boundary
 
 `lrail-build-broker` is a singleton because generation fencing, exact signed-assignment checkpoints, and retained events use one Bolt volume. `Recreate` plus a `ReadWriteOnce` claim prevents concurrent writers. It runs as UID/GID 65532 with a read-only root filesystem and no Kubernetes API, PostgreSQL, source-provider, Harbor-administration, or evidence-signing authority.

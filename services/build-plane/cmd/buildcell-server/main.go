@@ -333,7 +333,14 @@ func contentAdapters(objectPrefix string) (*buildcontent.Store, buildcontent.Sou
 	if err != nil {
 		return nil, buildcontent.SourceStore{}, buildcontent.ArtifactStore{}, nil, "", "", errors.New("LRAIL_S3_SECURE is invalid")
 	}
-	client, err := minio.New(os.Getenv("LRAIL_S3_ENDPOINT"), &minio.Options{Creds: credentials.NewStaticV4(accessKey, secretKey, ""), Secure: secure, Region: os.Getenv("LRAIL_S3_REGION")})
+	transport, err := s3HTTPTransport(os.Getenv("LRAIL_S3_CA_FILE"), secure)
+	if err != nil {
+		return nil, buildcontent.SourceStore{}, buildcontent.ArtifactStore{}, nil, "", "", err
+	}
+	client, err := minio.New(os.Getenv("LRAIL_S3_ENDPOINT"), &minio.Options{
+		Creds: credentials.NewStaticV4(accessKey, secretKey, ""), Secure: secure,
+		Region: os.Getenv("LRAIL_S3_REGION"), Transport: transport,
+	})
 	if err != nil {
 		return nil, buildcontent.SourceStore{}, buildcontent.ArtifactStore{}, nil, "", "", errors.New("create S3 content client")
 	}
@@ -342,6 +349,27 @@ func contentAdapters(objectPrefix string) (*buildcontent.Store, buildcontent.Sou
 		return nil, buildcontent.SourceStore{}, buildcontent.ArtifactStore{}, nil, "", "", err
 	}
 	return store, buildcontent.SourceStore{Store: store}, buildcontent.ArtifactStore{Store: store}, client, parsed.Host, strings.Trim(parsed.Path, "/"), nil
+}
+
+func s3HTTPTransport(caPath string, secure bool) (*http.Transport, error) {
+	transport := &http.Transport{
+		DialContext:       (&net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+		ForceAttemptHTTP2: true, MaxIdleConns: 16, MaxIdleConnsPerHost: 8, IdleConnTimeout: 30 * time.Second,
+		TLSHandshakeTimeout: 10 * time.Second, ResponseHeaderTimeout: 30 * time.Second, ExpectContinueTimeout: time.Second,
+	}
+	if !secure {
+		return transport, nil
+	}
+	contents, err := os.ReadFile(caPath)
+	if err != nil || len(contents) == 0 || len(contents) > 1<<20 {
+		return nil, errors.New("read S3 CA")
+	}
+	roots := x509.NewCertPool()
+	if !roots.AppendCertsFromPEM(contents) {
+		return nil, errors.New("parse S3 CA")
+	}
+	transport.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS13, RootCAs: roots}
+	return transport, nil
 }
 
 func registryHTTPClient(caPath string) (*http.Client, error) {

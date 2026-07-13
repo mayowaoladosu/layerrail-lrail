@@ -1,0 +1,45 @@
+{
+  "api_version": "lrail.build-policy/v1",
+  "id": "pol_019b01da-7e31-7000-8000-000000000001",
+  "revision": "1.0.0",
+  "base": {
+    "allowed_registries": ["docker.io"],
+    "curated_digests": [],
+    "allow_customer_bases": true,
+    "allowed_signature_identities": ["upstream-unverified:docker.io/library/golang"],
+    "require_sbom": false,
+    "require_provenance": false
+  },
+  "network": {
+    "allowed_profiles": ["none", "packages"],
+    "package_hosts": ["proxy.golang.org", "storage.googleapis.com", "sum.golang.org"],
+    "external_hosts": [],
+    "package_gateway_id": "gateway.packages.v1",
+    "allowlist_gateway_id": "",
+    "private_gateway_id": ""
+  },
+  "cache": {
+    "scope": "project",
+    "trust_domain": "trusted-builds-v1",
+    "allow_shared": false,
+    "allow_shared_with_secrets": false
+  },
+  "secrets": {
+    "allowed_names": []
+  },
+  "build_arguments": {
+    "allowed_names": []
+  },
+  "supply_chain": {
+    "version": 1,
+    "syft_version": "1.46.0",
+    "trivy_version": "0.72.0",
+    "signer_key_id": "lrail-build-evidence",
+    "allowed_signer_public_key_digests": ["sha256:0000000000000000000000000000000000000000000000000000000000000000"],
+    "denied_vulnerability_severities": ["CRITICAL"],
+    "denied_configuration_severities": ["CRITICAL", "HIGH"],
+    "denied_license_classifications": ["Forbidden"],
+    "require_secret_free": true,
+    "require_image_configuration_scan": true
+  }
+}

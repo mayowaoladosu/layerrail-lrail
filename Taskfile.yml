@@ -13,6 +13,7 @@ vars:
   DETECTOR: services/detector
   SOURCE_GATEWAY_IMAGE: lrail-source-gateway:local
   BUILD_CELL_CONTROLLER_IMAGE: lrail-buildcell-controller:wp040-final
+  BUILD_BROKER_IMAGE: lrail-build-broker:mb
   BUILD_CELL_WORKER_IMAGE: lrail-buildkit-worker:wp040-final
   BUILD_CELL_RESIDUE_IMAGE: lrail-residue-agent:wp040-final
   BUILD_CELL_EGRESS_IMAGE: lrail-build-egress-proxy:wp040-final
@@ -121,10 +122,11 @@ tasks:
         --entrypoint /bin/sh "{{.ALPINE_IMAGE}}" -n /update-trivy-db.sh
 
   build-cell:images:
-    desc: Build final-source controller, worker, egress, registry broker, signer, DB updater, and residue images
+    desc: Build final-source broker, controller, worker, egress, registry broker, signer, DB updater, and residue images
     deps: [build-trivy-db-updater:image]
     cmds:
       - docker build --pull=false --provenance=false -f services/build-plane/Dockerfile.controller -t "{{.BUILD_CELL_CONTROLLER_IMAGE}}" .
+      - docker build --pull=false --provenance=false -f services/build-plane/Dockerfile.broker -t "{{.BUILD_BROKER_IMAGE}}" .
       - docker build --pull=false --provenance=false -f services/build-plane/Dockerfile.worker -t "{{.BUILD_CELL_WORKER_IMAGE}}" .
       - docker build --pull=false --provenance=false -f services/build-plane/Dockerfile.egress-proxy -t "{{.BUILD_CELL_EGRESS_IMAGE}}" .
       - docker build --pull=false --provenance=false -f services/build-plane/Dockerfile.registry-broker -t "{{.BUILD_REGISTRY_BROKER_IMAGE}}" .
@@ -206,6 +208,12 @@ tasks:
         -v lrail-trivy-cache:/root/.cache/
         "{{.TRIVY_IMAGE}}" image --skip-version-check --scanners vuln
         --severity HIGH,CRITICAL --exit-code 1 "{{.BUILD_CELL_CONTROLLER_IMAGE}}"
+      - >-
+        docker run --rm
+        -v /var/run/docker.sock:/var/run/docker.sock
+        -v lrail-trivy-cache:/root/.cache/
+        "{{.TRIVY_IMAGE}}" image --skip-version-check --scanners vuln
+        --severity HIGH,CRITICAL --exit-code 1 "{{.BUILD_BROKER_IMAGE}}"
       - >-
         docker run --rm
         -v /var/run/docker.sock:/var/run/docker.sock

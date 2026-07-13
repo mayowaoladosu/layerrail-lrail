@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -191,7 +192,7 @@ func TestBuildResourcesEnforcesKataRestrictedWorkerAndNoAPIAuthority(t *testing.
 	for _, variable := range container.Env {
 		environment[variable.Name] = variable.Value
 	}
-	if environment["LRAIL_QUOTA_ROOT"] != "/var/lib/lrail-worker" || environment["XDG_RUNTIME_DIR"] != "/var/lib/lrail-worker/run" || environment["TMPDIR"] != "/var/lib/lrail-worker/tmp" {
+	if environment["LRAIL_QUOTA_ROOT"] != "/var/lib/lrail-worker" || environment["LRAIL_ROOTLESS_PIDNS"] != "true" || environment["XDG_RUNTIME_DIR"] != "/var/lib/lrail-worker/run" || environment["TMPDIR"] != "/var/lib/lrail-worker/tmp" {
 		t.Fatalf("worker writable paths escape quota root: %#v", environment)
 	}
 	if environment["HTTP_PROXY"] != llbcompiler.BuildEgressProxyURL || environment["HTTPS_PROXY"] != llbcompiler.BuildEgressProxyURL ||
@@ -219,6 +220,37 @@ func TestBuildResourcesEnforcesKataRestrictedWorkerAndNoAPIAuthority(t *testing.
 func TestAppArmorProfileSupportsExplicitFunctionalLabDisabledMode(t *testing.T) {
 	if profile := appArmorProfile("Disabled"); profile != nil {
 		t.Fatalf("profile=%#v", profile)
+	}
+}
+
+func TestFunctionalGVisorRootlessBootstrapUsesOnlyRequiredSandboxCapabilities(t *testing.T) {
+	t.Parallel()
+	config := safeConfig()
+	config.RuntimeClass = "gvisor"
+	config.AppArmorProfile = "Disabled"
+	config.FunctionalGVisorRootlessBootstrap = true
+	config.NodeSelector = map[string]string{"lrail.dev/pool": "build", "lrail.dev/gvisor": "true"}
+	resources, err := BuildResources(config, buildcontrol.AllocationRequest{
+		Assignment: kubeAssignment(t, []llbcompiler.NetworkCapability{}), Attempt: 1,
+		LeaseID: "lease-functional", ExpiresAt: kubeNow.Add(30 * time.Minute),
+	}, safeTLSMaterial(), kubeNow)
+	if err != nil {
+		t.Fatalf("BuildResources: %v", err)
+	}
+	security := resources.Job.Spec.Template.Spec.Containers[0].SecurityContext
+	environment := map[string]string{}
+	for _, variable := range resources.Job.Spec.Template.Spec.Containers[0].Env {
+		environment[variable.Name] = variable.Value
+	}
+	if security.AllowPrivilegeEscalation == nil || !*security.AllowPrivilegeEscalation ||
+		!slices.Equal(security.Capabilities.Drop, []corev1.Capability{"ALL"}) ||
+		!slices.Equal(security.Capabilities.Add, []corev1.Capability{"SETGID", "SETUID"}) ||
+		security.AppArmorProfile != nil || environment["LRAIL_ROOTLESS_PIDNS"] != "false" {
+		t.Fatalf("functional rootless bootstrap context = %#v", security)
+	}
+	config.RuntimeClass = "kata-qemu"
+	if _, err := BuildResources(config, buildcontrol.AllocationRequest{}, safeTLSMaterial(), kubeNow); err == nil {
+		t.Fatal("functional rootless bootstrap was accepted outside gVisor")
 	}
 }
 

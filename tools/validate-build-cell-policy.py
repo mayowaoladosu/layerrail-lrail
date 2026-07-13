@@ -28,10 +28,21 @@ def validate_rendered_manifests() -> None:
 
     base = rendered_text(RENDERED_BASE)
     example = rendered_text(RENDERED_EXAMPLE)
+    versions = json.loads(
+        (
+            ROOT / "platform/kubernetes/build-cell/lab/versions.json"
+        ).read_text(encoding="utf-8")
+    )
+    core_images = versions.get("lrail_images", {})
+    for name in ("build_broker", "buildcell_controller", "buildkit_worker"):
+        image = core_images.get(name, "")
+        if not re.fullmatch(r"ghcr\.io/[^@\s]+@sha256:[0-9a-f]{64}", image):
+            raise ValueError(f"immutable image inventory lacks {name!r}")
+        if image not in base:
+            raise ValueError(f"rendered base does not match {name!r} inventory")
     required_base = [
         "name: lrail-build-broker",
         "app.kubernetes.io/component: durable-build-service",
-        "image: ghcr.io/mayowaoladosu/layerrail-lrail/build-broker@sha256:5deb720604c52d6ea7b16d13e65d2851664f1ffd273d8c652fe1e6ccab7ada9d",
         "name: lrail-build-broker-state",
         "secretName: lrail-build-broker-source-s3",
         "secretName: lrail-build-broker-cell-s3",

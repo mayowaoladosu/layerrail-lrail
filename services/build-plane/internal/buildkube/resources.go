@@ -44,28 +44,29 @@ var CiliumNetworkPolicyGVR = schema.GroupVersionResource{Group: "cilium.io", Ver
 var dnsNamePattern = regexp.MustCompile(`^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$`)
 
 type Config struct {
-	Namespace               string
-	ControllerNamespace     string
-	ControllerLabels        map[string]string
-	RuntimeClass            string
-	WorkerImage             string
-	ImagePullSecret         string
-	SeccompProfile          string
-	AppArmorProfile         string
-	NodeSelector            map[string]string
-	Tolerations             []corev1.Toleration
-	PriorityClass           string
-	ClusterDNSCIDR          string
-	AllowedPrivateEndpoints map[string]PrivateEndpoint
-	ScratchBytes            int64
-	ScratchInodes           int64
-	CPURequest              string
-	CPULimit                string
-	MemoryRequest           string
-	MemoryLimit             string
-	EphemeralRequest        string
-	EphemeralLimit          string
-	ActiveDeadline          time.Duration
+	Namespace                         string
+	ControllerNamespace               string
+	ControllerLabels                  map[string]string
+	RuntimeClass                      string
+	WorkerImage                       string
+	ImagePullSecret                   string
+	SeccompProfile                    string
+	AppArmorProfile                   string
+	FunctionalGVisorRootlessBootstrap bool
+	NodeSelector                      map[string]string
+	Tolerations                       []corev1.Toleration
+	PriorityClass                     string
+	ClusterDNSCIDR                    string
+	AllowedPrivateEndpoints           map[string]PrivateEndpoint
+	ScratchBytes                      int64
+	ScratchInodes                     int64
+	CPURequest                        string
+	CPULimit                          string
+	MemoryRequest                     string
+	MemoryLimit                       string
+	EphemeralRequest                  string
+	EphemeralLimit                    string
+	ActiveDeadline                    time.Duration
 }
 
 type PrivateEndpoint = buildegress.PrivateEndpoint
@@ -166,6 +167,9 @@ func normalizeConfig(config Config) (Config, error) {
 		config.ScratchInodes < 1 || config.ScratchInodes > DefaultScratchInodes || config.ActiveDeadline <= 0 || config.ActiveDeadline > DefaultActiveDeadline {
 		return Config{}, errors.New("Kubernetes build-cell configuration is incomplete or unsafe")
 	}
+	if config.FunctionalGVisorRootlessBootstrap && (config.RuntimeClass != "gvisor" || config.AppArmorProfile != "Disabled") {
+		return Config{}, errors.New("functional rootless bootstrap is restricted to the labeled gVisor lab")
+	}
 	workerImage, err := reference.ParseNormalizedNamed(config.WorkerImage)
 	digested, pinned := workerImage.(reference.Digested)
 	if err != nil || !pinned || digested.Digest().Algorithm() != ocidigest.SHA256 || digested.Digest().Validate() != nil {
@@ -229,7 +233,7 @@ func buildJob(config Config, name string, labels, annotations map[string]string,
 	root := int64(1000)
 	group := int64(1000)
 	nonRoot := true
-	allowEscalation := false
+	allowEscalation := config.FunctionalGVisorRootlessBootstrap
 	readOnly := true
 	terminationLog := corev1.TerminationMessageFallbackToLogsOnError
 	stateLimit := *resource.NewQuantity(config.ScratchBytes, resource.BinarySI)
@@ -242,6 +246,10 @@ func buildJob(config Config, name string, labels, annotations map[string]string,
 			corev1.ResourceCPU: resource.MustParse(config.CPULimit), corev1.ResourceMemory: resource.MustParse(config.MemoryLimit),
 			corev1.ResourceEphemeralStorage: resource.MustParse(config.EphemeralLimit),
 		},
+	}
+	capabilities := &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}}
+	if config.FunctionalGVisorRootlessBootstrap {
+		capabilities.Add = []corev1.Capability{"SETGID", "SETUID"}
 	}
 	return &batchv1.Job{
 		ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: config.Namespace, Labels: cloneMap(labels), Annotations: cloneMap(annotations)},
@@ -273,6 +281,7 @@ func buildJob(config Config, name string, labels, annotations map[string]string,
 							{Name: "LRAIL_QUOTA_ROOT", Value: "/var/lib/lrail-worker"},
 							{Name: "LRAIL_SCRATCH_BYTES", Value: fmt.Sprintf("%d", config.ScratchBytes)},
 							{Name: "LRAIL_SCRATCH_INODES", Value: fmt.Sprintf("%d", config.ScratchInodes)},
+							{Name: "LRAIL_ROOTLESS_PIDNS", Value: fmt.Sprintf("%t", !config.FunctionalGVisorRootlessBootstrap)},
 							{Name: "XDG_RUNTIME_DIR", Value: "/var/lib/lrail-worker/run"},
 							{Name: "TMPDIR", Value: "/var/lib/lrail-worker/tmp"},
 							{Name: "HTTP_PROXY", Value: llbcompiler.BuildEgressProxyURL},
@@ -291,7 +300,7 @@ func buildJob(config Config, name string, labels, annotations map[string]string,
 						SecurityContext: &corev1.SecurityContext{
 							RunAsNonRoot: &nonRoot, RunAsUser: &root, RunAsGroup: &group, AllowPrivilegeEscalation: &allowEscalation,
 							ReadOnlyRootFilesystem: &readOnly, Privileged: ptr.To(false), ProcMount: ptr.To(corev1.DefaultProcMount),
-							Capabilities:   &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
+							Capabilities:   capabilities,
 							SeccompProfile: seccompProfile.DeepCopy(), AppArmorProfile: containerAppArmorProfile,
 						},
 						Resources: resources, TerminationMessagePolicy: terminationLog,

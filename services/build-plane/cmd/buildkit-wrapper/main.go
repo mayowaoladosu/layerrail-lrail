@@ -50,10 +50,21 @@ func run() error {
 	if len(os.Args) > 1 && os.Args[1] == "--quota-monitor" {
 		return buildworker.RunScratchQuotaMonitor(ctx, root, readyFile, quota)
 	}
-	arguments := append([]string{
-		"--pidns", "--state-dir=" + root + "/build-rootlesskit",
+	// Production keeps the build in a child PID namespace so it cannot observe
+	// the peer quota monitor. The functional gVisor overlay explicitly disables
+	// unsupported nesting; signed build commands remain non-root there.
+	usePIDNamespace, err := optionalStrictBool("LRAIL_ROOTLESS_PIDNS", true)
+	if err != nil {
+		return err
+	}
+	rootlesskitArguments := []string{"--state-dir=" + root + "/build-rootlesskit"}
+	if usePIDNamespace {
+		rootlesskitArguments = append([]string{"--pidns"}, rootlesskitArguments...)
+	}
+	arguments := append(rootlesskitArguments, []string{
 		"/usr/local/bin/lrail-buildkit-wrapper", "--inside-rootlesskit",
-	}, os.Args[1:]...)
+	}...)
+	arguments = append(arguments, os.Args[1:]...)
 	return buildworker.RunQuotaGuard(ctx, buildworker.GuardOptions{
 		Root: root, Quota: quota,
 		Command: "rootlesskit", Arguments: arguments, Stdout: os.Stdout, Stderr: os.Stderr,
@@ -129,6 +140,19 @@ func requiredPositiveInt64(name string) (int64, error) {
 		return 0, fmt.Errorf("%s must be a positive integer", name)
 	}
 	return value, nil
+}
+
+func optionalStrictBool(name string, fallback bool) (bool, error) {
+	switch os.Getenv(name) {
+	case "":
+		return fallback, nil
+	case "true":
+		return true, nil
+	case "false":
+		return false, nil
+	default:
+		return false, fmt.Errorf("%s must be true or false", name)
+	}
 }
 
 func readBoundedFile(path string) ([]byte, error) {

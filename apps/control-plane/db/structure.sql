@@ -1816,6 +1816,7 @@ CREATE TABLE public.deployments (
     build_mode character varying(16) DEFAULT 'auto'::character varying NOT NULL,
     build_file character varying(1024),
     accept_detected boolean DEFAULT false NOT NULL,
+    source_fetch_id bigint,
     CONSTRAINT deployments_build_configuration CHECK (((((build_mode)::text = 'auto'::text) AND (build_file IS NULL)) OR (((build_mode)::text = 'repository'::text) AND (build_file IS NOT NULL) AND ((char_length((build_file)::text) >= 1) AND (char_length((build_file)::text) <= 1024))))),
     CONSTRAINT deployments_build_mode CHECK (((build_mode)::text = ANY ((ARRAY['auto'::character varying, 'repository'::character varying])::text[]))),
     CONSTRAINT deployments_public_id_format CHECK (((public_id)::text ~ '^[a-z]{2,5}_[0-9a-f-]{36}$'::text)),
@@ -4770,6 +4771,13 @@ CREATE INDEX index_deployments_on_revision_id ON public.deployments USING btree 
 
 
 --
+-- Name: index_deployments_on_source_fetch_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX index_deployments_on_source_fetch_id ON public.deployments USING btree (source_fetch_id);
+
+
+--
 -- Name: index_deployments_on_source_snapshot_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -6829,6 +6837,14 @@ ALTER TABLE ONLY public.account_password_hashes
 
 
 --
+-- Name: deployments fk_rails_ea2b5ce6da; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.deployments
+    ADD CONSTRAINT fk_rails_ea2b5ce6da FOREIGN KEY (source_fetch_id) REFERENCES public.source_fetches(id) ON DELETE RESTRICT;
+
+
+--
 -- Name: webhook_deliveries fk_rails_ea5a0897ac; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -7499,7 +7515,8 @@ INSERT INTO "schema_migrations" (version) VALUES
 ('20260712233000'),
 ('20260713001500'),
 ('20260713013000'),
-('20260713160000')
+('20260713160000'),
+('20260713170000')
 ON CONFLICT DO NOTHING;
 
 -- LRAIL_RUNTIME_GRANTS_BEGIN

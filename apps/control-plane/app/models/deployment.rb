@@ -29,6 +29,7 @@ class Deployment < ApplicationRecord
   belongs_to :project
   belongs_to :environment
   belongs_to :source_snapshot, optional: true
+  belongs_to :source_fetch, optional: true
   belongs_to :revision, optional: true
   belongs_to :operation
   has_many :deployment_transitions, dependent: :destroy

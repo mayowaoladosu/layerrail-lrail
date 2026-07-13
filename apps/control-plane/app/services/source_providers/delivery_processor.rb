@@ -51,7 +51,7 @@ module SourceProviders
       if binding.current_source_fetch&.state == "complete" &&
           binding.current_source_fetch.requested_commit_sha == delivery.commit_sha
         binding.update!(last_provider_delivery: delivery, current_ref: delivery.ref)
-        return
+        return binding.current_source_fetch
       end
 
       fetch = fetch_for(binding:, delivery:) || authorize_fetch(account:, organization:, delivery:, binding:)
@@ -77,7 +77,7 @@ module SourceProviders
       ).where.not(source_provider_delivery_id: delivery.id)
       latest = prior_fetches.order("source_provider_deliveries.created_at DESC", "source_provider_deliveries.id DESC").first
       return if latest && newer_delivery?(latest.source_provider_delivery, delivery)
-      return if latest&.state == "complete" && latest.requested_commit_sha == delivery.commit_sha
+      return latest if latest&.state == "complete" && latest.requested_commit_sha == delivery.commit_sha
 
       fetch = fetch_for(binding:, delivery:) || authorize_fetch(account:, organization:, delivery:, binding:)
       supersede(latest, with: fetch)

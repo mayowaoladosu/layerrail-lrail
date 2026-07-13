@@ -51,10 +51,13 @@ class ProcessGithubDeliveryJob < ApplicationJob
     end
 
     completion_error = nil
-    in_context(organization_public_id:, actor_public_id:) do |account, _organization|
+    in_context(organization_public_id:, actor_public_id:) do |account, organization|
       acquisitions.each do |fetch_public_id, acquisition|
         fetch = SourceFetch.find_by!(public_id: fetch_public_id)
-        next if fetch.state == "complete"
+        if fetch.state == "complete"
+          Deployments::CreateFromSourceFetch.call(account:, organization:, fetch:)
+          next
+        end
 
         if acquisition.fetch(:error)
           processor.fail(fetch:, error: acquisition.fetch(:error))
@@ -63,7 +66,11 @@ class ProcessGithubDeliveryJob < ApplicationJob
         end
 
         result = processor.complete(fetch:, result: acquisition.fetch(:result), account:)
-        completion_error ||= result.error unless result.success?
+        if result.success?
+          Deployments::CreateFromSourceFetch.call(account:, organization:, fetch: result.fetch)
+        else
+          completion_error ||= result.error
+        end
       rescue StandardError => error
         processor.fail(fetch:, error:) if fetch && !fetch.terminal?
         completion_error ||= error

@@ -15,6 +15,7 @@ class SourceFetch < ApplicationRecord
   belongs_to :project_source_binding, optional: true
   belongs_to :source_provider_delivery, optional: true
   belongs_to :superseded_by_source_fetch, class_name: "SourceFetch", optional: true
+  has_one :deployment, dependent: :restrict_with_error
 
   validates :state, inclusion: { in: STATES }
   validates :repository, format: { with: REPOSITORY_PATTERN }

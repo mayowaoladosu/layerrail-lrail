@@ -60,6 +60,14 @@ RSpec.describe ProcessGithubDeliveryJob do
       root_directory: "apps/web",
     )
     expect(first_fetch.source_snapshot.commit_sha).to eq("a" * 40)
+    first_deployment = first_fetch.deployment
+    expect(first_deployment).to have_attributes(
+      source_snapshot: first_fetch.source_snapshot,
+      environment: project.environments.find_by!(slug: "production"),
+      build_mode: "auto",
+      accept_detected: true,
+    )
+    expect(first_deployment.source.fetch("commit")).to eq("a" * 40)
 
     replay = receive_push(commit: "a" * 40, before: "0" * 40, delivery_id: "aaaaaaaa-9100-4000-8000-000000000001")
     expect(replay.outcome).to eq("duplicate")
@@ -69,7 +77,9 @@ RSpec.describe ProcessGithubDeliveryJob do
         replay.organization_public_id,
         replay.actor_public_id,
       )
-    end.to change(SourceFetch, :count).by(0).and change(SourceSnapshot, :count).by(0)
+    end.to change(SourceFetch, :count).by(0)
+      .and change(SourceSnapshot, :count).by(0)
+      .and change(Deployment, :count).by(0)
 
     branch = receive_push(
       commit: "f" * 40,
@@ -83,7 +93,9 @@ RSpec.describe ProcessGithubDeliveryJob do
         branch.organization_public_id,
         branch.actor_public_id,
       )
-    end.to change(SourceFetch, :count).by(0).and change(SourceSnapshot, :count).by(0)
+    end.to change(SourceFetch, :count).by(0)
+      .and change(SourceSnapshot, :count).by(0)
+      .and change(Deployment, :count).by(0)
     expect(SourceProviderDelivery.find_by!(public_id: branch.delivery_public_id).state).to eq("processed")
 
     forced = receive_push(
@@ -116,6 +128,11 @@ RSpec.describe ProcessGithubDeliveryJob do
     )
     expect(SourceFetch.where(project_source_binding: binding).count).to eq(2)
     expect(SourceSnapshot.where(project:).count).to eq(2)
+    expect(Deployment.where(project:).count).to eq(2)
+    expect(second_fetch.deployment).to have_attributes(
+      source_snapshot: second_fetch.source_snapshot,
+      environment: project.environments.find_by!(slug: "production"),
+    )
   end
 
   it "records a failed lease and retries the same fetch identity to completion" do
@@ -155,6 +172,8 @@ RSpec.describe ProcessGithubDeliveryJob do
     expect(delivery.reload).to have_attributes(state: "processed", attempt_count: 2, last_error: nil)
     expect(fetch.reload).to have_attributes(state: "complete", attempt_count: 2)
     expect(SourceFetch.where(source_provider_delivery: delivery).count).to eq(1)
+    expect(fetch.deployment).to be_present
+    expect(Deployment.where(source_fetch: fetch).count).to eq(1)
   end
 
   it "supersedes only the same pull-request preview without replacing production" do
@@ -204,6 +223,9 @@ RSpec.describe ProcessGithubDeliveryJob do
     expect(first_preview.reload).to have_attributes(superseded_by_source_fetch_id: second_preview.id)
     expect(first_preview.superseded_at).to be_present
     expect(second_preview).to have_attributes(state: "complete", requested_commit_sha: "e" * 40)
+    expect(production_fetch.deployment.environment.slug).to eq("production")
+    expect(first_preview.deployment.environment.slug).to eq("preview")
+    expect(second_preview.deployment.environment.slug).to eq("preview")
   end
 
   it "routes new work through an active owner after the original connector leaves" do

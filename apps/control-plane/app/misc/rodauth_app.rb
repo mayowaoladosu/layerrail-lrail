@@ -12,7 +12,7 @@ class RodauthApp < Rodauth::Rails::App
 
     r.rodauth # route rodauth requests
 
-    if r.path.start_with?("/console", "/v1", "/operator")
+    if r.path.start_with?("/console", "/operator")
       rodauth.require_account
     end
 

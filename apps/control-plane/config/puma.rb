@@ -31,6 +31,15 @@ threads threads_count, threads_count
 # Specifies the `port` that Puma will listen on to receive requests; default is 3000.
 port ENV.fetch("PORT", 3000)
 
+if (internal_tls_port = ENV["LRAIL_INTERNAL_TLS_PORT"]).to_s != ""
+  ssl_bind ENV.fetch("LRAIL_INTERNAL_TLS_HOST", "127.0.0.1"), internal_tls_port, {
+    cert: ENV.fetch("LRAIL_INTERNAL_TLS_CERT"),
+    key: ENV.fetch("LRAIL_INTERNAL_TLS_KEY"),
+    ca: ENV.fetch("LRAIL_INTERNAL_TLS_CA"),
+    verify_mode: "force_peer"
+  }
+end
+
 # Allow puma to be restarted by `bin/rails restart` command.
 plugin :tmp_restart
 

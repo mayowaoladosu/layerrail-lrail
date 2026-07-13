@@ -113,6 +113,33 @@ OrganizationContext.with(account: demo, organization: demo_org) do
       size_bytes: 1_048_576,
       retention_until: 30.days.from_now,
     )
+    source_fetch = SourceFetch.create!(
+      organization: demo_org,
+      project:,
+      source_connection: connection,
+      created_by_account: demo,
+      source_snapshot: snapshot,
+      state: "complete",
+      repository: snapshot.repository,
+      requested_commit_sha: snapshot.commit_sha,
+      resolved_commit_sha: snapshot.commit_sha,
+      tree_sha: "b" * 40,
+      snapshot_sha256: snapshot.digest,
+      manifest_sha256: "sha256:" + ("d" * 64),
+      archive_sha256: "sha256:" + ("e" * 64),
+      manifest_ref: "local://fixtures/checkout-manifest",
+      archive_ref: snapshot.object_ref,
+      signing_key_id: "source-finalizer-local-v1",
+      author: "Lrail fixture",
+      authored_at: 1.day.ago,
+      policy_version: "source-v1",
+      warnings: [],
+      submodules: [],
+      lfs_digests: [],
+      token_expires_at: 30.minutes.from_now,
+      expires_at: 15.minutes.from_now,
+      finalized_at: Time.current,
+    )
     build = Build.create!(
       organization: demo_org,
       source_snapshot: snapshot,
@@ -144,12 +171,19 @@ OrganizationContext.with(account: demo, organization: demo_org) do
         environment_id: production.public_id,
         manifest_revision: project.manifest_revision,
         reason: "Ship checkout reliability update",
-        source: { kind: "git", repository: "northstar/checkout", commit: snapshot.commit_sha }
+        source: {
+          kind: "git",
+          connection_id: connection.public_id,
+          repository: snapshot.repository,
+          commit: snapshot.commit_sha
+        }
       },
+      source_snapshot: snapshot,
+      source_fetch:,
     )
     deployment = deployment_result.deployment
-    deployment.update!(source_snapshot: snapshot, revision:)
-    %w[sourcing detecting queued building scanning publishing scheduling starting verifying ready promoted].each do |state|
+    deployment.update!(revision:)
+    %w[sourcing detecting queued building scanning publishing artifact_ready scheduling starting verifying ready promoted].each do |state|
       Deployments::Transition.call(deployment:, to: state, reason: "local fixture advanced to #{state}", actor: nil)
     end
     deployment.operation.update!(state: "succeeded", stage: "promoted", completed_steps: 11)

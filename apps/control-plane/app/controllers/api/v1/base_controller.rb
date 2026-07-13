@@ -18,6 +18,7 @@ module Api
         "deployments#create" => "deployment.write",
         "deployments#destroy" => "deployment.write",
         "operations#show" => "operation.read",
+        "operations#events" => "operation.read",
         "domains#index" => "domain.read",
         "addons#index" => "addon.read",
         "source_uploads#create" => "source.write",
@@ -43,8 +44,9 @@ module Api
       end
 
       def authenticate_principal
-        token = request.authorization.to_s.delete_prefix("Bearer ")
-        if request.authorization.to_s.start_with?("Bearer lrail_key_")
+        authorization = request.headers["Authorization"].to_s
+        token = authorization.delete_prefix("Bearer ")
+        if authorization.start_with?("Bearer lrail_key_")
           @api_key_authentication = ApiKeys::Authenticate.call(token:, remote_ip: request.remote_ip)
           unless @api_key_authentication
             render_error(

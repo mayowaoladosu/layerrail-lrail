@@ -5,10 +5,13 @@ import (
 	"crypto/ecdsa"
 	"crypto/elliptic"
 	"crypto/rand"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/hex"
 	"encoding/pem"
+	"io"
 	"math/big"
 	"net"
 	"net/http"
@@ -84,6 +87,34 @@ func TestRealDistributionPublishesPullsAndDeduplicatesByDigest(t *testing.T) {
 	found, err := distribution.ManifestExists(t.Context(), capability, projectName, identity)
 	if err != nil || !found {
 		t.Fatalf("digest pull found=%v error=%v", found, err)
+	}
+	assertRegistryBlob(t, httpClient, registryURL, fullRepositoryPath(projectName, repository), identity.Config)
+	for _, layer := range identity.Layers {
+		assertRegistryBlob(t, httpClient, registryURL, fullRepositoryPath(projectName, repository), layer)
+	}
+}
+
+func fullRepositoryPath(projectName, repository string) string {
+	fullName, _ := fullRepository(projectName, repository)
+	return fullName
+}
+
+func assertRegistryBlob(t *testing.T, client *http.Client, registryURL, repository string, descriptor buildworker.OCIArtifactDescriptor) {
+	t.Helper()
+	request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, registryURL+"/v2/"+repository+"/blobs/"+descriptor.Digest, nil)
+	if err != nil {
+		t.Fatalf("create blob pull: %v", err)
+	}
+	response, err := client.Do(request)
+	if err != nil {
+		t.Fatalf("pull blob %s: %v", descriptor.Digest, err)
+	}
+	contents, readErr := io.ReadAll(io.LimitReader(response.Body, descriptor.Size+1))
+	closeErr := response.Body.Close()
+	hash := sha256.Sum256(contents)
+	if readErr != nil || closeErr != nil || response.StatusCode != http.StatusOK || int64(len(contents)) != descriptor.Size ||
+		"sha256:"+hex.EncodeToString(hash[:]) != descriptor.Digest || response.Header.Get("Docker-Content-Digest") != descriptor.Digest {
+		t.Fatalf("pulled blob %s did not preserve its identity", descriptor.Digest)
 	}
 }
 

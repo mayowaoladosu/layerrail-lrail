@@ -25,10 +25,12 @@ func (backend *deletionBackend) DeleteArtifact(_ context.Context, projectName, r
 type deletionJournal struct {
 	records []DeletionRecord
 	failAt  int
+	failed  bool
 }
 
 func (journal *deletionJournal) Record(_ context.Context, record DeletionRecord) error {
-	if journal.failAt > 0 && len(journal.records)+1 == journal.failAt {
+	if journal.failAt > 0 && !journal.failed && len(journal.records)+1 == journal.failAt {
+		journal.failed = true
 		return errors.New("journal unavailable")
 	}
 	if err := validateDeletionRecord(record); err != nil {
@@ -90,6 +92,24 @@ func TestRetentionCoordinatorFailsBeforeDeleteWhenAuthorizationCannotPersist(t *
 	protections, _ := NewProtectionSet(nil)
 	if err := coordinator.Delete(t.Context(), validRetentionCandidate(), protections); err == nil || len(backend.calls) != 0 {
 		t.Fatalf("error=%v backend=%#v", err, backend.calls)
+	}
+}
+
+func TestRetentionCoordinatorRecoversAfterTombstoneWriteFailure(t *testing.T) {
+	t.Parallel()
+	backend := new(deletionBackend)
+	journal := &deletionJournal{failAt: 2}
+	coordinator, _ := NewRetentionCoordinator(backend, journal, func() time.Time { return registryNow })
+	protections, _ := NewProtectionSet(nil)
+	candidate := validRetentionCandidate()
+	if err := coordinator.Delete(t.Context(), candidate, protections); err == nil || len(backend.calls) != 1 || len(journal.records) != 1 {
+		t.Fatalf("first delete error=%v backend=%#v journal=%#v", err, backend.calls, journal.records)
+	}
+	if err := coordinator.Delete(t.Context(), candidate, protections); err != nil {
+		t.Fatalf("recovery delete: %v", err)
+	}
+	if len(backend.calls) != 2 || len(journal.records) != 3 || journal.records[2].State != "artifact_deleted" {
+		t.Fatalf("recovery backend=%#v journal=%#v", backend.calls, journal.records)
 	}
 }
 
@@ -178,6 +198,10 @@ func TestS3DeletionJournalAppendsAuthorizationAndTombstoneImmutably(t *testing.T
 	}
 	if err := journal.Record(t.Context(), record); err != nil {
 		t.Fatalf("idempotent Record: %v", err)
+	}
+	record.OccurredAt = registryNow.Add(time.Minute).Format(time.RFC3339Nano)
+	if err := journal.Record(t.Context(), record); err != nil {
+		t.Fatalf("idempotent Record after retry: %v", err)
 	}
 	record.State = "artifact_deleted"
 	if err := journal.Record(t.Context(), record); err != nil {

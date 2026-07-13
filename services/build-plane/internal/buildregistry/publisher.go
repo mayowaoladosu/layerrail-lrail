@@ -142,15 +142,18 @@ func (publisher *Publisher) Commit(ctx context.Context, artifact buildworker.Exp
 	if err != nil {
 		return buildworker.CommittedArtifact{}, err
 	}
+	if err := buildworker.VisitOCIArtifactBlobs(ctx, publicationPath, identity, func(descriptor buildworker.OCIArtifactDescriptor, reader io.Reader) error {
+		return publisher.registry.EnsureBlob(ctx, capability, projectName, descriptor, reader)
+	}); err != nil {
+		return buildworker.CommittedArtifact{}, fmt.Errorf("%w: publish OCI blobs: %v", ErrRegistry, err)
+	}
 	if !exists {
-		if err := buildworker.VisitOCIArtifactBlobs(ctx, publicationPath, identity, func(descriptor buildworker.OCIArtifactDescriptor, reader io.Reader) error {
-			return publisher.registry.EnsureBlob(ctx, capability, projectName, descriptor, reader)
-		}); err != nil {
-			return buildworker.CommittedArtifact{}, fmt.Errorf("%w: publish OCI blobs: %v", ErrRegistry, err)
-		}
 		if err := publisher.registry.PutManifest(ctx, capability, projectName, identity); err != nil {
 			return buildworker.CommittedArtifact{}, err
 		}
+	}
+	if err := buildworker.ValidateExportedArtifact(artifact, publisher.maxBytes); err != nil {
+		return buildworker.CommittedArtifact{}, errors.New("build output changed during registry publication")
 	}
 	fullName, _ := fullRepository(projectName, capability.Repository)
 	reference := strings.TrimPrefix(capability.Registry, "https://") + "/" + fullName + "@" + identity.ManifestDigest

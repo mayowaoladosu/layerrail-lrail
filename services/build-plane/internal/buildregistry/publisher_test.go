@@ -178,6 +178,30 @@ func TestPublisherPushesAndVerifiesOCIByDigestIdempotently(t *testing.T) {
 	}
 }
 
+func TestPublisherRecoversWhenBlobsExistBeforeManifest(t *testing.T) {
+	t.Parallel()
+	artifact, expectedManifest := registryOCIFixture(t)
+	projectName, _ := ProjectName(artifact.OrganizationID)
+	repository, _ := RepositoryName(artifact.ProjectID, artifact.OutputName)
+	fullName, _ := fullRepository(projectName, repository)
+	registry := newFakeDistribution(t, fullName, "scoped-token")
+	broker := &publisherBroker{registry: registry.server.URL, repository: repository, token: registry.token}
+	distribution, _ := NewDistributionClient(registry.server.Client())
+	publisher, _ := NewPublisher(PublisherConfig{Broker: broker, Registry: distribution, Clock: func() time.Time { return registryNow }})
+	if _, err := publisher.Commit(t.Context(), artifact); err != nil {
+		t.Fatalf("initial Commit: %v", err)
+	}
+	registry.mu.Lock()
+	delete(registry.manifests, expectedManifest)
+	registry.mu.Unlock()
+	if _, err := publisher.Commit(t.Context(), artifact); err != nil {
+		t.Fatalf("recovery Commit: %v", err)
+	}
+	if registry.blobPuts != 2 || registry.manifestPuts != 2 || broker.revokes != 2 {
+		t.Fatalf("registry blobs=%d manifests=%d broker=%#v", registry.blobPuts, registry.manifestPuts, broker)
+	}
+}
+
 func TestPublisherFailsClosedOnRegistryOrCapabilityMismatch(t *testing.T) {
 	t.Parallel()
 	artifact, _ := registryOCIFixture(t)

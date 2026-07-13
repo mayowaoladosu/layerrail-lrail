@@ -28,6 +28,7 @@ import (
 	"github.com/mayowaoladosu/layerrail-lrail/services/build-plane/internal/buildcontrol"
 	"github.com/mayowaoladosu/layerrail-lrail/services/build-plane/internal/buildegress"
 	"github.com/mayowaoladosu/layerrail-lrail/services/build-plane/internal/buildkube"
+	"github.com/mayowaoladosu/layerrail-lrail/services/build-plane/internal/buildregistry"
 	"github.com/mayowaoladosu/layerrail-lrail/services/build-plane/internal/buildtransport"
 	"github.com/mayowaoladosu/layerrail-lrail/services/build-plane/internal/buildworker"
 	"github.com/minio/minio-go/v7"
@@ -81,7 +82,7 @@ func run() error {
 	}
 	defer replayStore.Close()
 
-	contentStore, sourceStore, artifactStore, err := contentAdapters(objectPrefix)
+	contentStore, sourceStore, artifactStore, objectClient, objectBucket, objectPath, err := contentAdapters(objectPrefix)
 	if err != nil {
 		return err
 	}
@@ -94,7 +95,41 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	committer, err := buildworker.NewDirectoryArtifactCommitter(os.Getenv("LRAIL_ARTIFACT_ROOT"), 0)
+	registryTLS, err := buildtransport.NewReloadingClientTLSConfig(
+		os.Getenv("LRAIL_REGISTRY_CLIENT_CERT"), os.Getenv("LRAIL_REGISTRY_CLIENT_KEY"), os.Getenv("LRAIL_REGISTRY_BROKER_CA"),
+		os.Getenv("LRAIL_REGISTRY_BROKER_SERVER_NAME"), splitCSV(os.Getenv("LRAIL_REGISTRY_BROKER_SERVER_URIS")),
+	)
+	if err != nil {
+		return err
+	}
+	registryConnection, err := grpc.NewClient(
+		os.Getenv("LRAIL_REGISTRY_BROKER_ADDRESS"), grpc.WithTransportCredentials(grpccredentials.NewTLS(registryTLS)),
+		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(128<<10), grpc.MaxCallSendMsgSize(128<<10)),
+	)
+	if err != nil {
+		return errors.New("connect to registry capability broker")
+	}
+	defer registryConnection.Close()
+	registryBroker, err := buildregistry.NewGRPCCapabilityBroker(lrailv1.NewBuildRegistryCapabilityServiceClient(registryConnection), clock)
+	if err != nil {
+		return err
+	}
+	distributionHTTP, err := registryHTTPClient(os.Getenv("LRAIL_HARBOR_CA_FILE"))
+	if err != nil {
+		return err
+	}
+	distribution, err := buildregistry.NewDistributionClient(distributionHTTP)
+	if err != nil {
+		return err
+	}
+	staticStore, err := buildregistry.NewS3StaticManifestStore(objectClient, objectBucket, objectPath+"/static-publications/v1")
+	if err != nil {
+		return err
+	}
+	committer, err := buildregistry.NewPublisher(buildregistry.PublisherConfig{
+		Broker: registryBroker, Registry: distribution, Clock: clock,
+		StagingRoot: os.Getenv("LRAIL_REGISTRY_STAGING_ROOT"), StaticStore: staticStore,
+	})
 	if err != nil {
 		return err
 	}
@@ -235,32 +270,47 @@ func run() error {
 	}
 }
 
-func contentAdapters(objectPrefix string) (*buildcontent.Store, buildcontent.SourceStore, buildcontent.ArtifactStore, error) {
+func contentAdapters(objectPrefix string) (*buildcontent.Store, buildcontent.SourceStore, buildcontent.ArtifactStore, *minio.Client, string, string, error) {
 	parsed, err := url.Parse(objectPrefix)
 	if err != nil || parsed.Scheme != "s3" || parsed.Host == "" || parsed.Path == "" {
-		return nil, buildcontent.SourceStore{}, buildcontent.ArtifactStore{}, errors.New("object prefix is invalid")
+		return nil, buildcontent.SourceStore{}, buildcontent.ArtifactStore{}, nil, "", "", errors.New("object prefix is invalid")
 	}
 	accessKey, err := readRequiredFile(os.Getenv("LRAIL_S3_ACCESS_KEY_FILE"))
 	if err != nil {
-		return nil, buildcontent.SourceStore{}, buildcontent.ArtifactStore{}, err
+		return nil, buildcontent.SourceStore{}, buildcontent.ArtifactStore{}, nil, "", "", err
 	}
 	secretKey, err := readRequiredFile(os.Getenv("LRAIL_S3_SECRET_KEY_FILE"))
 	if err != nil {
-		return nil, buildcontent.SourceStore{}, buildcontent.ArtifactStore{}, err
+		return nil, buildcontent.SourceStore{}, buildcontent.ArtifactStore{}, nil, "", "", err
 	}
 	secure, err := strconv.ParseBool(os.Getenv("LRAIL_S3_SECURE"))
 	if err != nil {
-		return nil, buildcontent.SourceStore{}, buildcontent.ArtifactStore{}, errors.New("LRAIL_S3_SECURE is invalid")
+		return nil, buildcontent.SourceStore{}, buildcontent.ArtifactStore{}, nil, "", "", errors.New("LRAIL_S3_SECURE is invalid")
 	}
 	client, err := minio.New(os.Getenv("LRAIL_S3_ENDPOINT"), &minio.Options{Creds: credentials.NewStaticV4(accessKey, secretKey, ""), Secure: secure, Region: os.Getenv("LRAIL_S3_REGION")})
 	if err != nil {
-		return nil, buildcontent.SourceStore{}, buildcontent.ArtifactStore{}, errors.New("create S3 content client")
+		return nil, buildcontent.SourceStore{}, buildcontent.ArtifactStore{}, nil, "", "", errors.New("create S3 content client")
 	}
 	store, err := buildcontent.NewStore(client, parsed.Host, strings.Trim(parsed.Path, "/"))
 	if err != nil {
-		return nil, buildcontent.SourceStore{}, buildcontent.ArtifactStore{}, err
+		return nil, buildcontent.SourceStore{}, buildcontent.ArtifactStore{}, nil, "", "", err
 	}
-	return store, buildcontent.SourceStore{Store: store}, buildcontent.ArtifactStore{Store: store}, nil
+	return store, buildcontent.SourceStore{Store: store}, buildcontent.ArtifactStore{Store: store}, client, parsed.Host, strings.Trim(parsed.Path, "/"), nil
+}
+
+func registryHTTPClient(caPath string) (*http.Client, error) {
+	contents, err := os.ReadFile(caPath)
+	if err != nil || len(contents) == 0 || len(contents) > 1<<20 {
+		return nil, errors.New("read Harbor CA")
+	}
+	roots := x509.NewCertPool()
+	if !roots.AppendCertsFromPEM(contents) {
+		return nil, errors.New("parse Harbor CA")
+	}
+	return &http.Client{
+		Timeout:   2 * time.Minute,
+		Transport: &http.Transport{TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS13, RootCAs: roots}, ForceAttemptHTTP2: true},
+	}, nil
 }
 
 func kubernetesAllocatorConfig() (buildkube.Config, error) {

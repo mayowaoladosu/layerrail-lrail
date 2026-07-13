@@ -33,13 +33,25 @@ def validate_rendered_manifests() -> None:
         "name: LRAIL_EGRESS_CLIENT_CA_KEY",
         "name: LRAIL_EGRESS_SERVER_CA",
         "name: LRAIL_DNS_SERVER",
+        "name: lrail-build-registry-broker",
+        "app.kubernetes.io/component: credential-broker",
+        "image: ghcr.io/mayowaoladosu/layerrail-lrail/registry-broker@sha256:",
+        "name: LRAIL_REGISTRY_BROKER_ADDRESS",
+        "name: LRAIL_HARBOR_CA_FILE",
+        "name: lrail-build-registry-client",
         "port: 8443",
+        "port: 9445",
         "169.254.0.0/16",
         "fe80::/10",
     ]
     for value in required_base:
         if value not in base:
             raise ValueError(f"rendered base lacks {value!r}")
+    if base.count('port: "9445"') < 2:
+        raise ValueError("rendered base lacks both registry-broker ingress and controller egress")
+    for forbidden in ["name: lrail-build-artifacts", "name: LRAIL_ARTIFACT_ROOT"]:
+        if forbidden in base:
+            raise ValueError(f"rendered base retains obsolete local artifact authority {forbidden!r}")
 
     dynamic_policy = (ROOT / "services/build-plane/internal/buildkube/resources.go").read_text(
         encoding="utf-8"
@@ -61,9 +73,16 @@ def validate_rendered_manifests() -> None:
         "name: build-egress-private-example",
         "cidr: 10.20.30.40/32",
         'port: "443"',
+        "harbor-api-endpoint: https://harbor.example.invalid",
+        "matchName: harbor.example.invalid",
+        "name: lrail-harbor-admin",
     ]:
         if value not in example:
             raise ValueError(f"example private proxy mapping lacks {value!r}")
+    if example.count("matchName: harbor.example.invalid") != 2:
+        raise ValueError("example must grant exact Harbor HTTPS egress to controller and registry broker")
+    if example.count('port: "9445"') < 2:
+        raise ValueError("example overlay dropped the controller-to-registry-broker route")
 
 
 def apply(fixture: str) -> subprocess.CompletedProcess[str]:

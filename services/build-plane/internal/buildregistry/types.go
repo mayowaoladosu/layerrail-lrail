@@ -17,10 +17,11 @@ import (
 )
 
 const (
-	CurrentLeaseVersion = 1
-	MaxCapabilityTTL    = 15 * time.Minute
-	MaxHarborBodyBytes  = 1 << 20
-	DefaultHTTPTimeout  = 20 * time.Second
+	CurrentLeaseVersion   = 1
+	MaxPublicationAttempt = 5
+	MaxCapabilityTTL      = 15 * time.Minute
+	MaxHarborBodyBytes    = 1 << 20
+	DefaultHTTPTimeout    = 20 * time.Second
 )
 
 var digestPattern = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
@@ -100,7 +101,7 @@ func ValidatePublicationScope(scope PublicationScope, now time.Time) error {
 	build, buildErr := platformid.Parse(scope.BuildID)
 	expiresAt := scope.ExpiresAt.UTC()
 	if organizationErr != nil || organization.Prefix() != "org" || projectErr != nil || project.Prefix() != "prj" ||
-		buildErr != nil || build.Prefix() != "bld" || scope.Attempt == 0 || !outputNamePattern.MatchString(scope.OutputName) ||
+		buildErr != nil || build.Prefix() != "bld" || scope.Attempt == 0 || scope.Attempt > MaxPublicationAttempt || !outputNamePattern.MatchString(scope.OutputName) ||
 		!expiresAt.After(now.UTC()) || expiresAt.Sub(now.UTC()) > MaxCapabilityTTL {
 		return errors.New("registry publication scope is invalid")
 	}
@@ -121,7 +122,7 @@ func validatePushCapability(capability PushCapability, scope PublicationScope, n
 }
 
 func businessKey(scope PublicationScope) string {
-	return fmt.Sprintf("%s:%d:%s", scope.BuildID, scope.Attempt, scope.OutputName)
+	return fmt.Sprintf("%s:%s:%s:%d:%s", scope.OrganizationID, scope.ProjectID, scope.BuildID, scope.Attempt, scope.OutputName)
 }
 
 func fullRepository(projectName, repository string) (string, error) {

@@ -10,6 +10,9 @@ data:
   s3-region: us-east-1
   openbao-address: https://openbao.example.invalid
   openbao-role: build-cell
+  harbor-api-endpoint: https://harbor.example.invalid
+  harbor-registry: https://harbor.example.invalid
+  harbor-project-storage-limit: "107374182400"
   cluster-dns-cidr: 10.96.0.10/32
   cluster-dns-address: 10.96.0.10:53
   residue-server-name: lrail-residue-agent.lrail-build-system.svc.cluster.local
@@ -35,6 +38,27 @@ data:
     -----BEGIN CERTIFICATE-----
     REPLACE_WITH_SITE_CA_CERTIFICATE
     -----END CERTIFICATE-----
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lrail-harbor-ca
+  namespace: lrail-build-control
+data:
+  ca.pem: |
+    -----BEGIN CERTIFICATE-----
+    REPLACE_WITH_HARBOR_CA_CERTIFICATE
+    -----END CERTIFICATE-----
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: lrail-harbor-admin
+  namespace: lrail-build-control
+type: Opaque
+stringData:
+  username: EXAMPLE_NON_AUTHENTIC_ADMIN
+  password: EXAMPLE_NON_AUTHENTIC_PASSWORD
 ---
 apiVersion: v1
 kind: ConfigMap

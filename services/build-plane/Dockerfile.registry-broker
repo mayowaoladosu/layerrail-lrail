@@ -1,0 +1,17 @@
+# syntax=docker/dockerfile:1.12
+FROM golang:1.26.5-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2 AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY gen ./gen
+COPY internal ./internal
+COPY services/build-plane ./services/build-plane
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags='-s -w' -o /out/lrail-registry-broker ./services/build-plane/cmd/registry-broker
+
+FROM gcr.io/distroless/static-debian12:nonroot@sha256:b7bb25d9f7c31d2bdd1982feb4dafcaf137703c7075dbe2febb41c24212b946f
+COPY --from=build --chown=65532:65532 /out/lrail-registry-broker /usr/local/bin/lrail-registry-broker
+LABEL org.opencontainers.image.source="https://github.com/mayowaoladosu/layerrail-lrail" \
+	org.opencontainers.image.licenses="LicenseRef-Proprietary" \
+	org.opencontainers.image.title="Lrail Harbor capability broker"
+USER 65532:65532
+ENTRYPOINT ["/usr/local/bin/lrail-registry-broker"]

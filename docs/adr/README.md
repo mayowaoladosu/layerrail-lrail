@@ -23,5 +23,6 @@ ADRs are immutable decision history. Superseding decisions link to the prior rec
 | 017 | Deterministic non-executing detector plugins and evidence graph                     |
 | 018 | Starlark v1 bounded modules, execution profile, diagnostics, and Build IR v2        |
 | 019 | Build IR policy lock, capability validation, and deterministic BuildKit LLB         |
+| 020 | Harbor tenant isolation, scoped publication, retention, and replication requests    |
 
 Each record uses: status, context, decision, boundaries, consequences, and supersession.

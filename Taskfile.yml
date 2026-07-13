@@ -12,10 +12,11 @@ vars:
   CONTROL_WORKERS_IMAGE: lrail-control-workers:local
   DETECTOR: services/detector
   SOURCE_GATEWAY_IMAGE: lrail-source-gateway:local
-  BUILD_CELL_CONTROLLER_IMAGE: lrail-buildcell-controller:wp038-final
-  BUILD_CELL_WORKER_IMAGE: lrail-buildkit-worker:wp038-final
-  BUILD_CELL_RESIDUE_IMAGE: lrail-residue-agent:wp038-final
-  BUILD_CELL_EGRESS_IMAGE: lrail-build-egress-proxy:wp038-final
+  BUILD_CELL_CONTROLLER_IMAGE: lrail-buildcell-controller:wp039-final
+  BUILD_CELL_WORKER_IMAGE: lrail-buildkit-worker:wp039-final
+  BUILD_CELL_RESIDUE_IMAGE: lrail-residue-agent:wp039-final
+  BUILD_CELL_EGRESS_IMAGE: lrail-build-egress-proxy:wp039-final
+  BUILD_REGISTRY_BROKER_IMAGE: lrail-registry-broker:wp039-final
   TRIVY_IMAGE: aquasec/trivy@sha256:a22415a38938a56c379387a8163fcb0ce38b10ace73e593475d3658d578b2436
 
 tasks:
@@ -103,7 +104,7 @@ tasks:
       - task: db:verify
 
   build-cell:test:
-    desc: Run WP-038 assignment, execution, transport, Kubernetes, capability, and residue conformance
+    desc: Run WP-039 assignment, execution, registry, transport, Kubernetes, capability, and residue conformance
     cmds:
       - python tools/go-test-race.py ./services/build-plane/...
       - python -c "from pathlib import Path; Path('.work').mkdir(exist_ok=True)"
@@ -112,11 +113,12 @@ tasks:
       - python tools/validate-build-cell-policy.py
 
   build-cell:images:
-    desc: Build final-source WP-038 controller, worker, egress, and residue images
+    desc: Build final-source build controller, worker, egress, registry broker, and residue images
     cmds:
       - docker build --pull=false -f services/build-plane/Dockerfile.controller -t "{{.BUILD_CELL_CONTROLLER_IMAGE}}" .
       - docker build --pull=false -f services/build-plane/Dockerfile.worker -t "{{.BUILD_CELL_WORKER_IMAGE}}" .
       - docker build --pull=false -f services/build-plane/Dockerfile.egress-proxy -t "{{.BUILD_CELL_EGRESS_IMAGE}}" .
+      - docker build --pull=false -f services/build-plane/Dockerfile.registry-broker -t "{{.BUILD_REGISTRY_BROKER_IMAGE}}" .
       - docker build --pull=false -f services/build-plane/Dockerfile.residue-agent -t "{{.BUILD_CELL_RESIDUE_IMAGE}}" .
 
   build-cell:test:egress-real:
@@ -127,6 +129,13 @@ tasks:
       LRAIL_BUILD_WORKER_IMAGE: "{{.BUILD_CELL_WORKER_IMAGE}}"
     cmds:
       - go test ./services/build-plane/integration -run TestRealWorkerRoutesNetworkedSolveThroughPolicyProxy -count=1 -v
+
+  build-registry:test:real:
+    desc: Prove immutable push, digest pull, and duplicate publication against Distribution 3
+    env:
+      LRAIL_REGISTRY_INTEGRATION: "1"
+    cmds:
+      - go test ./services/build-plane/internal/buildregistry -run TestRealDistributionPublishesPullsAndDeduplicatesByDigest -count=1 -v
 
   build-cell:security:
     desc: Fail on any effective high or critical component-image vulnerability
@@ -150,6 +159,12 @@ tasks:
         -v lrail-trivy-cache:/root/.cache/
         "{{.TRIVY_IMAGE}}" image --skip-version-check --scanners vuln
         --severity HIGH,CRITICAL --exit-code 1 "{{.BUILD_CELL_EGRESS_IMAGE}}"
+      - >-
+        docker run --rm
+        -v /var/run/docker.sock:/var/run/docker.sock
+        -v lrail-trivy-cache:/root/.cache/
+        "{{.TRIVY_IMAGE}}" image --skip-version-check --scanners vuln
+        --severity HIGH,CRITICAL --exit-code 1 "{{.BUILD_REGISTRY_BROKER_IMAGE}}"
       - >-
         docker run --rm
         -v /var/run/docker.sock:/var/run/docker.sock

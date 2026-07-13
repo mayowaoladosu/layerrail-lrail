@@ -112,7 +112,11 @@ func terminalTransportResult() buildcontrol.Result {
 		BuildID: transportBuildID, PayloadDigest: transportIR, Phase: buildworker.PhaseComplete, Attempts: 1,
 		WorkerIdentity: "worker-test", StartedAt: transportNow, FinishedAt: transportNow.Add(time.Second), Cleanup: cleanup, LogsDigest: transportIR,
 		Worker: buildworker.Result{BuildID: transportBuildID, Attempt: 1, Phase: buildworker.PhaseComplete, Cleanup: cleanup, LogsDigest: transportIR, Cache: buildworker.CacheStats{Hits: 2, Misses: 3},
-			Outputs: []buildworker.OutputResult{{Name: "site", Kind: "static_bundle", ArtifactRef: "lrail-artifact://org-test/build-test/site", ArtifactDigest: transportIR, ArtifactSize: 10, ConfigDigest: transportConfig}}},
+			Outputs: []buildworker.OutputResult{{
+				Name: "site", Kind: "static_bundle", ArtifactRef: "registry.example.invalid/lrail/site@" + transportIR,
+				ArtifactDigest: transportIR, ArtifactSize: 10, ConfigDigest: transportConfig, ManifestDigest: transportIR,
+				PublicationManifestRef: "s3://build-artifacts/static/site.json",
+			}}},
 	}
 }
 

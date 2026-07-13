@@ -7,6 +7,7 @@ resources:
   - storage-and-quota.yaml
   - certificates.yaml
   - egress-proxy.yaml
+  - registry-broker.yaml
   - controller.yaml
   - residue-agent.yaml
   - network-policy.yaml

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"hash"
 	"slices"
+	"strings"
 	"sync"
 	"time"
 
@@ -518,9 +519,9 @@ func validateSuccessfulResult(assignment buildcell.ResolvedAssignment, result bu
 
 func validOutputContentIdentity(output buildworker.OutputResult) bool {
 	if output.Kind == "static_bundle" {
-		return output.ManifestDigest == "" && len(output.LayerDigests) == 0
+		return runDigestPattern.MatchString(output.ManifestDigest) && strings.HasPrefix(output.PublicationManifestRef, "s3://") && len(output.LayerDigests) == 0
 	}
-	if output.Kind != "oci_image" || !runDigestPattern.MatchString(output.ManifestDigest) || len(output.LayerDigests) == 0 {
+	if output.Kind != "oci_image" || output.PublicationManifestRef != "" || !runDigestPattern.MatchString(output.ManifestDigest) || len(output.LayerDigests) == 0 {
 		return false
 	}
 	seen := make(map[string]struct{}, len(output.LayerDigests))

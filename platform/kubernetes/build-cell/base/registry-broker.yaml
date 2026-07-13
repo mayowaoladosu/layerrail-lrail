@@ -1,0 +1,140 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: lrail-build-registry-broker
+  namespace: lrail-build-control
+automountServiceAccountToken: false
+imagePullSecrets:
+  - name: lrail-build-images
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: lrail-build-registry-broker
+  namespace: lrail-build-control
+  labels:
+    app.kubernetes.io/name: lrail-build-registry-broker
+    app.kubernetes.io/component: credential-broker
+spec:
+  selector:
+    app.kubernetes.io/name: lrail-build-registry-broker
+  ports:
+    - name: grpc
+      port: 9445
+      targetPort: grpc
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lrail-build-registry-broker
+  namespace: lrail-build-control
+  labels:
+    app.kubernetes.io/name: lrail-build-registry-broker
+    app.kubernetes.io/component: credential-broker
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: lrail-build-registry-broker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: lrail-build-registry-broker
+        app.kubernetes.io/component: credential-broker
+    spec:
+      serviceAccountName: lrail-build-registry-broker
+      automountServiceAccountToken: false
+      imagePullSecrets:
+        - name: lrail-build-images
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 20
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+        appArmorProfile:
+          type: RuntimeDefault
+      containers:
+        - name: broker
+          image: ghcr.io/mayowaoladosu/layerrail-lrail/registry-broker@sha256:a9f0035a10c0ebdd6f815b0a7398301b85da1b244591cf77b2b537a4fa68a74c
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+            appArmorProfile:
+              type: RuntimeDefault
+          ports:
+            - name: grpc
+              containerPort: 9445
+              protocol: TCP
+          env:
+            - name: LRAIL_HARBOR_API_ENDPOINT
+              valueFrom: {configMapKeyRef: {name: lrail-build-cell-site, key: harbor-api-endpoint}}
+            - name: LRAIL_HARBOR_REGISTRY
+              valueFrom: {configMapKeyRef: {name: lrail-build-cell-site, key: harbor-registry}}
+            - name: LRAIL_HARBOR_ADMIN_USERNAME_FILE
+              value: /run/lrail-harbor-admin/username
+            - name: LRAIL_HARBOR_ADMIN_PASSWORD_FILE
+              value: /run/lrail-harbor-admin/password
+            - name: LRAIL_HARBOR_CA_FILE
+              value: /etc/lrail/harbor/ca.pem
+            - name: LRAIL_HARBOR_PROJECT_STORAGE_LIMIT
+              valueFrom: {configMapKeyRef: {name: lrail-build-cell-site, key: harbor-project-storage-limit}}
+            - name: LRAIL_REGISTRY_LEASE_STATE_FILE
+              value: /var/lib/lrail-registry/leases.db
+            - name: LRAIL_SERVER_CERT
+              value: /run/lrail-server/tls.crt
+            - name: LRAIL_SERVER_KEY
+              value: /run/lrail-server/tls.key
+            - name: LRAIL_CLIENT_CA
+              value: /run/lrail-server/ca.crt
+            - name: LRAIL_ALLOWED_CONTROLLER_URIS
+              value: spiffe://lrail.internal/build-registry-client
+            - name: LRAIL_LISTEN_ADDRESS
+              value: :9445
+          resources:
+            requests: {cpu: 100m, memory: 128Mi, ephemeral-storage: 64Mi}
+            limits: {cpu: "1", memory: 512Mi, ephemeral-storage: 256Mi}
+          readinessProbe:
+            tcpSocket: {port: grpc}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+            timeoutSeconds: 1
+            failureThreshold: 12
+          livenessProbe:
+            tcpSocket: {port: grpc}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 1
+            failureThreshold: 6
+          volumeMounts:
+            - {name: state, mountPath: /var/lib/lrail-registry}
+            - {name: harbor-admin, mountPath: /run/lrail-harbor-admin, readOnly: true}
+            - {name: harbor-ca, mountPath: /etc/lrail/harbor, readOnly: true}
+            - {name: server-tls, mountPath: /run/lrail-server, readOnly: true}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: state
+          persistentVolumeClaim: {claimName: lrail-build-registry-state}
+        - name: harbor-admin
+          secret: {secretName: lrail-harbor-admin, defaultMode: 0440}
+        - name: harbor-ca
+          configMap: {name: lrail-harbor-ca, defaultMode: 0444}
+        - name: server-tls
+          secret: {secretName: lrail-build-registry-broker-tls, defaultMode: 0440}
+        - name: tmp
+          emptyDir: {medium: Memory, sizeLimit: 32Mi}

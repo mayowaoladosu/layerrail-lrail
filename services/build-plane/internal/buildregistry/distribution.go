@@ -65,7 +65,13 @@ func (client *DistributionClient) EnsureBlob(ctx context.Context, capability Pus
 		return err
 	}
 	if response.StatusCode == http.StatusOK {
-		return verifyBlobHead(response, descriptor)
+		if err := verifyBlobHead(response, descriptor); err != nil {
+			return err
+		}
+		if _, err := io.Copy(io.Discard, reader); err != nil {
+			return errors.New("read existing local OCI blob")
+		}
+		return nil
 	}
 	if response.StatusCode != http.StatusNotFound {
 		return fmt.Errorf("%w: registry blob lookup was rejected", ErrRegistry)

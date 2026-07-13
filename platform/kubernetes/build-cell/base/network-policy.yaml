@@ -5,7 +5,7 @@ metadata:
   namespace: lrail-build-control
 spec:
   podSelector: {}
-  policyTypes: [Ingress, Egress]
+  policyTypes: [Ingress]
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -34,7 +34,7 @@ spec:
   podSelector:
     matchLabels:
       app.kubernetes.io/name: lrail-build-control
-  policyTypes: [Ingress, Egress]
+  policyTypes: [Ingress]
   ingress:
     - from:
         - namespaceSelector:
@@ -45,53 +45,6 @@ spec:
               app.kubernetes.io/name: lrail-build-broker
       ports:
         - {protocol: TCP, port: 9443}
-  egress:
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: kube-system
-          podSelector:
-            matchLabels:
-              k8s-app: kube-dns
-      ports:
-        - {protocol: UDP, port: 53}
-        - {protocol: TCP, port: 53}
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: lrail-build
-          podSelector:
-            matchLabels:
-              app.kubernetes.io/name: lrail-build-worker
-      ports:
-        - {protocol: TCP, port: 1234}
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: lrail-build-system
-          podSelector:
-            matchLabels:
-              app.kubernetes.io/name: lrail-residue-agent
-      ports:
-        - {protocol: TCP, port: 9444}
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: lrail-security
-          podSelector:
-            matchLabels:
-              app.kubernetes.io/name: openbao
-      ports:
-        - {protocol: TCP, port: 8200}
-    - to:
-        - namespaceSelector:
-            matchLabels:
-              kubernetes.io/metadata.name: lrail-storage
-          podSelector:
-            matchLabels:
-              app.kubernetes.io/name: minio
-      ports:
-        - {protocol: TCP, port: 9000}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -160,6 +113,13 @@ spec:
             - {port: "9444", protocol: TCP}
     - toEndpoints:
         - matchLabels:
+            k8s:io.kubernetes.pod.namespace: lrail-build-control
+            k8s:app.kubernetes.io/name: lrail-build-registry-broker
+      toPorts:
+        - ports:
+            - {port: "9445", protocol: TCP}
+    - toEndpoints:
+        - matchLabels:
             k8s:io.kubernetes.pod.namespace: lrail-security
             k8s:app.kubernetes.io/name: openbao
       toPorts:
@@ -172,6 +132,51 @@ spec:
       toPorts:
         - ports:
             - {port: "9000", protocol: TCP}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: build-registry-broker
+  namespace: lrail-build-control
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: lrail-build-registry-broker
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: lrail-build-control
+      ports:
+        - {protocol: TCP, port: 9445}
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: build-registry-broker
+  namespace: lrail-build-control
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: lrail-build-registry-broker
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: lrail-build-control
+            k8s:app.kubernetes.io/name: lrail-build-control
+      toPorts:
+        - ports:
+            - {port: "9445", protocol: TCP}
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s:k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - {port: "53", protocol: UDP}
+            - {port: "53", protocol: TCP}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy

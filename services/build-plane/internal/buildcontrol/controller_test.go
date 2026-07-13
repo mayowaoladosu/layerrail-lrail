@@ -224,14 +224,43 @@ func successWorker(id string) *fakeWorker {
 			return buildworker.Result{
 				BuildID: controlBuildID, Attempt: request.Attempt, Phase: buildworker.PhaseComplete, LogsDigest: controlIRDigest,
 				Outputs: []buildworker.OutputResult{{
-					Name: "site", Kind: "static_bundle", ArtifactRef: "lrail-artifact://org-test/build-test/site",
-					ArtifactDigest: controlIRDigest, ArtifactSize: 10, ConfigDigest: digest([]byte(`{"config":{"Cmd":["true"]}}`)), ExporterResponse: map[string]string{},
+					Name: "site", Kind: "static_bundle", ArtifactRef: "registry.example.invalid/lrail/site@" + controlIRDigest,
+					ArtifactDigest: controlIRDigest, ArtifactSize: 10, ConfigDigest: digest([]byte(`{"config":{"Cmd":["true"]}}`)), ManifestDigest: controlIRDigest,
+					PublicationManifestRef: "s3://build-artifacts/static/site.json", ExporterResponse: map[string]string{},
 				}},
 				StartedAt: controlNow, FinishedAt: controlNow.Add(time.Second), Cleanup: cleanReport(),
 			}, nil
 		},
 		force:   func(context.Context) (buildworker.CleanupReport, error) { return cleanReport(), nil },
 		release: func(context.Context) (buildworker.CleanupReport, error) { return cleanReport(), nil },
+	}
+}
+
+func TestValidOutputContentIdentityRequiresStaticPublicationManifest(t *testing.T) {
+	t.Parallel()
+	valid := buildworker.OutputResult{
+		Kind: "static_bundle", ManifestDigest: controlIRDigest,
+		PublicationManifestRef: "s3://build-artifacts/static/site.json",
+	}
+	if !validOutputContentIdentity(valid) {
+		t.Fatal("complete static publication identity was rejected")
+	}
+	withoutOCI := valid
+	withoutOCI.ManifestDigest = ""
+	if validOutputContentIdentity(withoutOCI) {
+		t.Fatal("static output without OCI manifest digest was accepted")
+	}
+	withoutPublicationManifest := valid
+	withoutPublicationManifest.PublicationManifestRef = ""
+	if validOutputContentIdentity(withoutPublicationManifest) {
+		t.Fatal("static output without immutable publication manifest was accepted")
+	}
+	imageWithStaticManifest := buildworker.OutputResult{
+		Kind: "oci_image", ManifestDigest: controlIRDigest, LayerDigests: []string{controlPolicyDigest},
+		PublicationManifestRef: "s3://build-artifacts/static/site.json",
+	}
+	if validOutputContentIdentity(imageWithStaticManifest) {
+		t.Fatal("image output with a static publication manifest was accepted")
 	}
 }
 

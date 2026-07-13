@@ -30,6 +30,8 @@ type fakeHarbor struct {
 	nextRobot         int64
 	projectCreates    int
 	projectUpdates    int
+	quotaStorage      int64
+	quotaUpdates      int
 	ruleCreates       int
 	robotCreates      int
 	robotDeletes      int
@@ -37,6 +39,7 @@ type fakeHarbor struct {
 	artifactDeletes   int
 	artifactDeleteURI string
 	wrongTokenScope   bool
+	tokenTTL          time.Duration
 	adminUsername     string
 	adminPassword     string
 }
@@ -45,7 +48,7 @@ func newFakeHarbor(t *testing.T) *fakeHarbor {
 	t.Helper()
 	fake := &fakeHarbor{
 		robots: make(map[int64]harborRobotCreated), nextRobot: 40,
-		adminUsername: "admin", adminPassword: "test-admin-password",
+		adminUsername: "admin", adminPassword: "test-admin-password", tokenTTL: 10 * time.Minute,
 	}
 	fake.server = httptest.NewTLSServer(http.HandlerFunc(fake.handle))
 	t.Cleanup(fake.server.Close)
@@ -93,6 +96,7 @@ func (fake *fakeHarbor) handle(response http.ResponseWriter, request *http.Reque
 			return
 		}
 		fake.project = &harborProject{ProjectID: 7, Name: projectName, Metadata: cloneMetadata(body.Metadata)}
+		fake.quotaStorage = body.Storage
 		response.WriteHeader(http.StatusCreated)
 	case request.Method == http.MethodGet && request.URL.Path == "/api/v2.0/projects/"+projectName:
 		if request.Header.Get("X-Is-Resource-Name") != "true" || fake.project == nil {
@@ -107,6 +111,21 @@ func (fake *fakeHarbor) handle(response http.ResponseWriter, request *http.Reque
 		}
 		fake.project.Metadata = cloneMetadata(body.Metadata)
 		fake.projectUpdates++
+		response.WriteHeader(http.StatusOK)
+	case request.Method == http.MethodGet && request.URL.Path == "/api/v2.0/quotas":
+		if fake.project == nil || request.URL.Query().Get("reference") != "project" || request.URL.Query().Get("reference_id") != "7" ||
+			request.URL.Query().Get("page") != "1" || request.URL.Query().Get("page_size") != "100" {
+			response.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		writeTestJSON(response, http.StatusOK, []harborQuota{{ID: 11, Hard: map[string]int64{"storage": fake.quotaStorage}}})
+	case request.Method == http.MethodPut && request.URL.Path == "/api/v2.0/quotas/11":
+		var body harborQuotaUpdate
+		if !decodeRequest(response, request, &body) || len(body.Hard) != 1 || body.Hard["storage"] != 10<<30 {
+			return
+		}
+		fake.quotaStorage = body.Hard["storage"]
+		fake.quotaUpdates++
 		response.WriteHeader(http.StatusOK)
 	case request.Method == http.MethodGet && request.URL.Path == "/api/v2.0/projects/"+projectName+"/immutabletagrules":
 		if fake.rule == nil {
@@ -189,11 +208,11 @@ func (fake *fakeHarbor) handleToken(response http.ResponseWriter, request *http.
 		fullRepository += "-foreign"
 	}
 	claims := map[string]any{
-		"iss": fake.server.URL, "sub": robot.Name, "aud": "harbor-registry", "iat": registryNow.Unix(), "exp": registryNow.Add(10 * time.Minute).Unix(),
+		"iss": fake.server.URL, "sub": robot.Name, "aud": "harbor-registry", "iat": registryNow.Unix(), "exp": registryNow.Add(fake.tokenTTL).Unix(),
 		"access": []map[string]any{{"type": "repository", "name": fullRepository, "actions": []string{"push", "pull"}}},
 	}
 	fake.tokenRequests++
-	writeTestJSON(response, http.StatusOK, map[string]any{"token": fakeJWT(claims), "expires_in": 600, "issued_at": registryNow.Format(time.RFC3339), "extra": "ignored"})
+	writeTestJSON(response, http.StatusOK, map[string]any{"token": fakeJWT(claims), "expires_in": int64(fake.tokenTTL / time.Second), "issued_at": registryNow.Format(time.RFC3339), "extra": "ignored"})
 }
 
 func fakeJWT(claims any) string {
@@ -213,7 +232,13 @@ func TestHarborClientEnsuresPrivateImmutableProjectAndScopedToken(t *testing.T) 
 	if _, err := client.EnsureProject(t.Context(), registryOrgID); err != nil {
 		t.Fatalf("EnsureProject replay: %v", err)
 	}
-	if fake.projectCreates != 1 || fake.ruleCreates != 1 || fake.project.Metadata["public"] != "false" {
+	fake.mu.Lock()
+	fake.quotaStorage = 1
+	fake.mu.Unlock()
+	if _, err := client.EnsureProject(t.Context(), registryOrgID); err != nil {
+		t.Fatalf("EnsureProject quota repair: %v", err)
+	}
+	if fake.projectCreates != 1 || fake.ruleCreates != 1 || fake.quotaUpdates != 1 || fake.quotaStorage != 10<<30 || fake.project.Metadata["public"] != "false" {
 		t.Fatalf("project state: %#v", fake)
 	}
 	robot, err := client.CreatePushRobot(t.Context(), projectName, registryBuildID)
@@ -246,6 +271,19 @@ func TestHarborClientRejectsBroaderTokenScope(t *testing.T) {
 	}
 }
 
+func TestHarborClientRejectsTokenLifetimeBeyondRequestedScope(t *testing.T) {
+	t.Parallel()
+	fake := newFakeHarbor(t)
+	fake.tokenTTL = 11 * time.Minute
+	client := fake.client(t)
+	projectName, _ := client.EnsureProject(t.Context(), registryOrgID)
+	robot, _ := client.CreatePushRobot(t.Context(), projectName, registryBuildID)
+	repository, _ := RepositoryName(registryProjectID, "api")
+	if _, _, err := client.RepositoryToken(t.Context(), robot, projectName, repository, registryNow.Add(10*time.Minute)); err == nil {
+		t.Fatal("expected excess token lifetime rejection")
+	}
+}
+
 func TestProjectAndRepositoryNamesBindImmutableTenantScope(t *testing.T) {
 	t.Parallel()
 	projectName, err := ProjectName(registryOrgID)
@@ -266,6 +304,31 @@ func TestProjectAndRepositoryNamesBindImmutableTenantScope(t *testing.T) {
 	digest := sha256.Sum256([]byte(registryProjectID))
 	if !strings.Contains(repository, hex.EncodeToString(digest[:16])) {
 		t.Fatal("repository does not bind project identity")
+	}
+}
+
+func TestRobotLeaseBusinessKeyBindsCompleteTenantScope(t *testing.T) {
+	t.Parallel()
+	base := PublicationScope{
+		OrganizationID: registryOrgID, ProjectID: registryProjectID, BuildID: registryBuildID, Attempt: 1, OutputName: "api",
+	}
+	otherOrganization := base
+	otherOrganization.OrganizationID = "org_019b01da-7e31-7000-8000-000000000004"
+	otherProject := base
+	otherProject.ProjectID = "prj_019b01da-7e31-7000-8000-000000000005"
+	if businessKey(base) == businessKey(otherOrganization) || businessKey(base) == businessKey(otherProject) {
+		t.Fatal("registry lease replay key does not bind tenant and project scope")
+	}
+}
+
+func TestPublicationScopeRejectsAttemptsBeyondControllerPolicy(t *testing.T) {
+	t.Parallel()
+	scope := PublicationScope{
+		OrganizationID: registryOrgID, ProjectID: registryProjectID, BuildID: registryBuildID,
+		Attempt: MaxPublicationAttempt + 1, OutputName: "api", ExpiresAt: registryNow.Add(time.Minute),
+	}
+	if err := ValidatePublicationScope(scope, registryNow); err == nil {
+		t.Fatal("registry scope accepted an attempt beyond controller policy")
 	}
 }
 

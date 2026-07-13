@@ -70,6 +70,51 @@ spec:
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
+  name: lrail-build-registry-broker
+  namespace: lrail-build-control
+spec:
+  secretName: lrail-build-registry-broker-tls
+  duration: 24h
+  renewBefore: 8h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  dnsNames:
+    - lrail-build-registry-broker.lrail-build-control.svc
+    - lrail-build-registry-broker.lrail-build-control.svc.cluster.local
+  uris:
+    - spiffe://lrail.internal/build-registry-broker
+  usages: [server auth]
+  issuerRef:
+    group: cert-manager.io
+    kind: ClusterIssuer
+    name: lrail-internal-ca
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: lrail-build-registry-client
+  namespace: lrail-build-control
+spec:
+  secretName: lrail-build-registry-client-tls
+  duration: 24h
+  renewBefore: 8h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  uris:
+    - spiffe://lrail.internal/build-registry-client
+  usages: [client auth]
+  issuerRef:
+    group: cert-manager.io
+    kind: ClusterIssuer
+    name: lrail-internal-ca
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
   name: lrail-residue-client
   namespace: lrail-build-control
 spec:

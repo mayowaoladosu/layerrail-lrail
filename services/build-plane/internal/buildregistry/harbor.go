@@ -54,6 +54,15 @@ type harborProjectRequest struct {
 	Storage     int64             `json:"storage_limit,omitempty"`
 }
 
+type harborQuota struct {
+	ID   int64            `json:"id"`
+	Hard map[string]int64 `json:"hard"`
+}
+
+type harborQuotaUpdate struct {
+	Hard map[string]int64 `json:"hard"`
+}
+
 type immutableRule struct {
 	ID             int64                          `json:"id,omitempty"`
 	Priority       int                            `json:"priority,omitempty"`
@@ -188,7 +197,7 @@ func (client *HarborClient) EnsureProject(ctx context.Context, organizationID st
 		return "", fmt.Errorf("%w: Harbor project identity is unsafe", ErrRegistry)
 	}
 	if !equalMetadata(project.Metadata, expectedProjectMetadata()) {
-		status, err := client.doJSON(ctx, http.MethodPut, "/api/v2.0/projects/"+projectName, harborProjectRequest{Metadata: expectedProjectMetadata()}, nil, map[string]string{"X-Is-Resource-Name": "true"})
+		status, err := client.doJSON(ctx, http.MethodPut, "/api/v2.0/projects/"+projectName, harborProjectRequest{Metadata: expectedProjectMetadata(), Storage: client.storageLimit}, nil, map[string]string{"X-Is-Resource-Name": "true"})
 		if err != nil || status != http.StatusOK {
 			return "", fmt.Errorf("%w: enforce private Harbor project metadata", ErrRegistry)
 		}
@@ -197,10 +206,51 @@ func (client *HarborClient) EnsureProject(ctx context.Context, organizationID st
 			return "", fmt.Errorf("%w: Harbor project metadata did not converge", ErrRegistry)
 		}
 	}
+	if err := client.ensureStorageQuota(ctx, project); err != nil {
+		return "", err
+	}
 	if err := client.ensureImmutability(ctx, projectName); err != nil {
 		return "", err
 	}
 	return projectName, nil
+}
+
+func (client *HarborClient) ensureStorageQuota(ctx context.Context, project harborProject) error {
+	quota, err := client.getProjectQuota(ctx, project.ProjectID)
+	if err != nil {
+		return err
+	}
+	if quota.Hard["storage"] == client.storageLimit {
+		return nil
+	}
+	status, err := client.doJSON(ctx, http.MethodPut, "/api/v2.0/quotas/"+strconv.FormatInt(quota.ID, 10),
+		harborQuotaUpdate{Hard: map[string]int64{"storage": client.storageLimit}}, nil, nil,
+	)
+	if err != nil || status != http.StatusOK {
+		return fmt.Errorf("%w: enforce Harbor project storage quota", ErrRegistry)
+	}
+	quota, err = client.getProjectQuota(ctx, project.ProjectID)
+	if err != nil || quota.Hard["storage"] != client.storageLimit {
+		return fmt.Errorf("%w: Harbor project storage quota did not converge", ErrRegistry)
+	}
+	return nil
+}
+
+func (client *HarborClient) getProjectQuota(ctx context.Context, projectID int64) (harborQuota, error) {
+	if projectID <= 0 {
+		return harborQuota{}, fmt.Errorf("%w: Harbor project quota identity is invalid", ErrRegistry)
+	}
+	query := url.Values{}
+	query.Set("reference", "project")
+	query.Set("reference_id", strconv.FormatInt(projectID, 10))
+	query.Set("page", "1")
+	query.Set("page_size", "100")
+	var quotas []harborQuota
+	status, err := client.doJSON(ctx, http.MethodGet, "/api/v2.0/quotas?"+query.Encode(), nil, &quotas, nil)
+	if err != nil || status != http.StatusOK || len(quotas) != 1 || quotas[0].ID <= 0 || quotas[0].Hard == nil {
+		return harborQuota{}, fmt.Errorf("%w: get Harbor project storage quota", ErrRegistry)
+	}
+	return quotas[0], nil
 }
 
 func (client *HarborClient) getProject(ctx context.Context, projectName string) (harborProject, bool, error) {
@@ -316,19 +366,13 @@ func (client *HarborClient) RepositoryToken(ctx context.Context, robot harborRob
 	if token == "" {
 		token = tokenResponse.AccessToken
 	}
-	expiresAt, err := validateRegistryToken(token, fullName, client.clock().UTC())
+	now := client.clock().UTC()
+	expiresAt, err := validateRegistryToken(token, fullName, now)
 	if err != nil {
 		return "", time.Time{}, err
 	}
-	responseExpiry := client.clock().UTC().Add(time.Duration(tokenResponse.ExpiresIn) * time.Second)
-	if responseExpiry.Before(expiresAt) {
-		expiresAt = responseExpiry
-	}
-	if requestedExpiry.Before(expiresAt) {
-		expiresAt = requestedExpiry.UTC()
-	}
-	if !expiresAt.After(client.clock().UTC()) {
-		return "", time.Time{}, fmt.Errorf("%w: Harbor repository token is expired", ErrRegistry)
+	if requestedExpiry = requestedExpiry.UTC(); !expiresAt.After(now) || expiresAt.After(requestedExpiry) {
+		return "", time.Time{}, fmt.Errorf("%w: Harbor repository token lifetime exceeds requested authority", ErrRegistry)
 	}
 	return token, expiresAt, nil
 }

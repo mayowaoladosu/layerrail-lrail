@@ -96,7 +96,9 @@ func TestRunStorePersistsGenerationBoundCancellation(t *testing.T) {
 		WorkerIdentity: "worker", Worker: buildworker.Result{
 			BuildID: controlBuildID, Attempt: 1, Phase: buildworker.PhaseComplete, LogsDigest: controlIRDigest,
 			Cleanup: noResourceCleanup(controlBuildID), Outputs: []buildworker.OutputResult{{
-				Name: "site", Kind: "static_bundle", ArtifactRef: "lrail-artifact://fake", ArtifactDigest: controlIRDigest, ArtifactSize: 1, ConfigDigest: controlPolicyDigest,
+				Name: "site", Kind: "static_bundle", ArtifactRef: "registry.example.invalid/lrail/site@" + controlIRDigest,
+				ArtifactDigest: controlIRDigest, ArtifactSize: 1, ConfigDigest: controlPolicyDigest, ManifestDigest: controlIRDigest,
+				PublicationManifestRef: "s3://build-artifacts/static/site.json",
 			}},
 		},
 		Cleanup: noResourceCleanup(controlBuildID), LogsDigest: controlIRDigest, StartedAt: controlNow, FinishedAt: resume.Now,

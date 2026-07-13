@@ -63,7 +63,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: controller
-          image: ghcr.io/mayowaoladosu/layerrail-lrail/buildcell-controller@sha256:b0c0e19c048816c8cc73dd4f57c1308bb44975937d3034ac80a65f4bde5cffcc
+          image: ghcr.io/mayowaoladosu/layerrail-lrail/buildcell-controller@sha256:2b7b0414a9d31fa12e16690d36e4f545034bfc1d2a6b68b4f13fb508b1520ae8
           imagePullPolicy: IfNotPresent
           securityContext:
             runAsNonRoot: true
@@ -96,8 +96,6 @@ spec:
               value: /var/lib/lrail/scratch
             - name: LRAIL_QUARANTINE_ROOT
               value: /var/lib/lrail/state/quarantine
-            - name: LRAIL_ARTIFACT_ROOT
-              value: /var/lib/lrail/artifacts
             - name: LRAIL_CACHE_ROOT
               value: /var/lib/lrail/cache
             - name: LRAIL_S3_ENDPOINT
@@ -131,7 +129,7 @@ spec:
             - name: LRAIL_BUILD_RUNTIME_CLASS
               value: kata-qemu
             - name: LRAIL_BUILD_WORKER_IMAGE
-              value: ghcr.io/mayowaoladosu/layerrail-lrail/buildkit-worker@sha256:db3dadfc9736ce70dc499c5bff81c03a1be5310dc8889897af612213b33deeb0
+              value: ghcr.io/mayowaoladosu/layerrail-lrail/buildkit-worker@sha256:006b37a5c1f35f02dea42006169d17320ee9ecaebe6e202d62f3f7746505847e
             - {name: LRAIL_BUILD_IMAGE_PULL_SECRET, value: lrail-build-images}
             - name: LRAIL_BUILD_SECCOMP_PROFILE
               value: RuntimeDefault
@@ -149,6 +147,22 @@ spec:
               value: /run/lrail-egress-issuer/tls.key
             - name: LRAIL_EGRESS_SERVER_CA
               value: /etc/lrail/egress-server-ca/ca.crt
+            - name: LRAIL_REGISTRY_BROKER_ADDRESS
+              value: dns:///lrail-build-registry-broker.lrail-build-control.svc.cluster.local:9445
+            - name: LRAIL_REGISTRY_BROKER_SERVER_NAME
+              value: lrail-build-registry-broker.lrail-build-control.svc.cluster.local
+            - name: LRAIL_REGISTRY_BROKER_SERVER_URIS
+              value: spiffe://lrail.internal/build-registry-broker
+            - name: LRAIL_REGISTRY_CLIENT_CERT
+              value: /run/lrail-registry-client/tls.crt
+            - name: LRAIL_REGISTRY_CLIENT_KEY
+              value: /run/lrail-registry-client/tls.key
+            - name: LRAIL_REGISTRY_BROKER_CA
+              value: /run/lrail-registry-client/ca.crt
+            - name: LRAIL_HARBOR_CA_FILE
+              value: /etc/lrail/harbor/ca.pem
+            - name: LRAIL_REGISTRY_STAGING_ROOT
+              value: /var/lib/lrail/scratch/registry
             - name: LRAIL_RESIDUE_NAMESPACE
               value: lrail-build-system
             - name: LRAIL_RESIDUE_CLIENT_CERT
@@ -188,7 +202,6 @@ spec:
             failureThreshold: 6
           volumeMounts:
             - {name: state, mountPath: /var/lib/lrail/state}
-            - {name: artifacts, mountPath: /var/lib/lrail/artifacts}
             - {name: cache, mountPath: /var/lib/lrail/cache}
             - {name: scratch, mountPath: /var/lib/lrail/scratch}
             - {name: assignment-keys, mountPath: /etc/lrail/assignment-keys, readOnly: true}
@@ -200,12 +213,12 @@ spec:
             - {name: openbao-token, mountPath: /var/run/secrets/lrail-openbao, readOnly: true}
             - {name: egress-client-issuer, mountPath: /run/lrail-egress-issuer, readOnly: true}
             - {name: egress-server-ca, mountPath: /etc/lrail/egress-server-ca, readOnly: true}
+            - {name: registry-client-tls, mountPath: /run/lrail-registry-client, readOnly: true}
+            - {name: harbor-ca, mountPath: /etc/lrail/harbor, readOnly: true}
             - {name: tmp, mountPath: /tmp}
       volumes:
         - name: state
           persistentVolumeClaim: {claimName: lrail-build-state}
-        - name: artifacts
-          persistentVolumeClaim: {claimName: lrail-build-artifacts}
         - name: cache
           persistentVolumeClaim: {claimName: lrail-build-cache}
         - name: scratch
@@ -238,5 +251,9 @@ spec:
             defaultMode: 0444
             items:
               - {key: ca.crt, path: ca.crt}
+        - name: registry-client-tls
+          secret: {secretName: lrail-build-registry-client-tls, defaultMode: 0440}
+        - name: harbor-ca
+          configMap: {name: lrail-harbor-ca, defaultMode: 0444}
         - name: tmp
           emptyDir: {sizeLimit: 64Mi}

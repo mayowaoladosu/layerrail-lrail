@@ -321,14 +321,18 @@ func (orchestrator *Orchestrator) Run(ctx context.Context, request Request, emit
 		return Result{}, errors.New("generate build assignment nonce")
 	}
 	deadline, _ := time.Parse(time.RFC3339Nano, request.Deadline)
-	expiresAt := started.Add(orchestrator.assignmentTTL)
+	issuedAt := started.Truncate(time.Second)
+	expiresAt := issuedAt.Add(orchestrator.assignmentTTL)
 	if deadline.Before(expiresAt) {
-		expiresAt = deadline
+		expiresAt = deadline.Truncate(time.Second)
+	}
+	if !expiresAt.After(issuedAt) {
+		return Result{}, errors.New("build assignment deadline is outside the accepted window")
 	}
 	payload := buildcell.Payload{
 		Version: buildcell.CurrentAssignmentVersion, BuildID: request.BuildID, CellID: orchestrator.cellID,
 		OrganizationID: request.OrganizationID, ProjectID: request.ProjectID, OperationID: request.OperationID,
-		Generation: request.Generation, Nonce: nonce, IssuedAt: started.Format(time.RFC3339Nano), ExpiresAt: expiresAt.Format(time.RFC3339Nano),
+		Generation: request.Generation, Nonce: nonce, IssuedAt: issuedAt.Format(time.RFC3339), ExpiresAt: expiresAt.Format(time.RFC3339),
 		DefinitionDigest: compilation.DefinitionDigest, Lock: compilation.Lock, Source: cellSource, Outputs: assignmentOutputs,
 	}
 	envelope, assignmentDigest, err := orchestrator.sign(ctx, payload)

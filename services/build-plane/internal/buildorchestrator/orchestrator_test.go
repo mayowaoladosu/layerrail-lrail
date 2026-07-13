@@ -273,7 +273,7 @@ func TestOrchestratorRestartReusesExactSignedAssignment(t *testing.T) {
 
 func TestOrchestratorRunsSnapshotThroughRealVerifierAndLLBResolution(t *testing.T) {
 	t.Parallel()
-	now := time.Date(2026, 7, 13, 12, 0, 0, 0, time.UTC)
+	now := time.Date(2026, 7, 13, 12, 0, 0, 123_456_789, time.UTC)
 	content := newFakeContent()
 	detector := &fakeDetector{result: validDetection()}
 	orchestrator, dispatcher, _ := newTestOrchestrator(t, now, content, detector)

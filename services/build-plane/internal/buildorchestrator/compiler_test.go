@@ -96,7 +96,8 @@ func TestGenerateRecipeOwnsDetectorToStarlarkTranslation(t *testing.T) {
 	text := string(program)
 	for _, required := range []string{
 		"source(path = \".\"", "image(ref = \"" + testBaseReference + "\")", "argv = [\"go\", \"mod\", \"download\"]",
-		"network = \"packages\"", "user = \"10001:10001\"", "cmd = [\"/workspace/out/web\"]", "ports = [8080]",
+		"network = \"packages\"", "user = \"10001:10001\"", "\"PATH\": \"/usr/local/go/bin:/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin\"",
+		"cmd = [\"/workspace/out/web\"]", "ports = [8080]",
 	} {
 		if !strings.Contains(text, required) {
 			t.Fatalf("generated recipe lacks %q:\n%s", required, text)

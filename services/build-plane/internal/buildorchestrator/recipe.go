@@ -166,6 +166,7 @@ func recipeEnvironment(language, workdir string) map[string]string {
 	environment := map[string]string{"HOME": workdir + "/.home"}
 	switch language {
 	case "go":
+		environment["PATH"] = "/usr/local/go/bin:/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 		environment["GOCACHE"] = workdir + "/.cache/go-build"
 		environment["GOMODCACHE"] = workdir + "/.cache/go-mod"
 		environment["CGO_ENABLED"] = "0"

@@ -104,6 +104,7 @@ type Result struct {
 	CacheHits         int64          `json:"cache_hits"`
 	CacheMisses       int64          `json:"cache_misses"`
 	DetectorResultRef string         `json:"detector_result_ref,omitempty"`
+	ManifestRef       string         `json:"manifest_ref,omitempty"`
 	GeneratedBuildRef string         `json:"generated_build_ref,omitempty"`
 	BuildIRRef        string         `json:"build_ir_ref,omitempty"`
 	DefinitionLockRef string         `json:"definition_lock_ref,omitempty"`
@@ -219,7 +220,8 @@ func (result Result) Validate() error {
 			!digestPattern.MatchString(result.DetectionDigest) || !digestPattern.MatchString(result.ManifestDigest) ||
 			!digestPattern.MatchString(result.BuildIRDigest) || !digestPattern.MatchString(result.DefinitionDigest) ||
 			!digestPattern.MatchString(result.AssignmentDigest) || !digestPattern.MatchString(result.LogsDigest) ||
-			result.Cleanup.Status != "clean" {
+			result.DetectorResultRef == "" || result.ManifestRef == "" || result.GeneratedBuildRef == "" ||
+			result.BuildIRRef == "" || result.DefinitionLockRef == "" || result.Cleanup.Status != "clean" {
 			return errors.New("complete build result is missing immutable evidence")
 		}
 	} else if !failureCodePattern.MatchString(result.FailureCode) || result.FailureMessage == "" || len(result.FailureMessage) > MaxEventMessageBytes {
@@ -228,7 +230,8 @@ func (result Result) Validate() error {
 	names := make([]string, 0, len(result.Outputs))
 	for _, output := range result.Outputs {
 		if !outputNamePattern.MatchString(output.Name) || !slices.Contains([]string{"oci_image", "static_bundle"}, output.Kind) ||
-			!digestPattern.MatchString(output.ArtifactDigest) || !digestPattern.MatchString(output.ManifestDigest) ||
+			!digestPattern.MatchString(output.ArtifactDigest) || !digestPattern.MatchString(output.ConfigDigest) ||
+			!digestPattern.MatchString(output.ManifestDigest) ||
 			output.ArtifactRef == "" || output.ArtifactSize <= 0 {
 			return errors.New("build output result is invalid")
 		}

@@ -28,6 +28,8 @@ type graphCompiler struct {
 	materials    map[string]BaseMaterial
 }
 
+const DefaultImageUser = "10001:10001"
+
 func (compiler *Compiler) compile(ctx context.Context, request Request) (Result, error) {
 	if ctx == nil {
 		return Result{}, fail("llb.context", "LLB compilation requires a cancellation context.", "")
@@ -357,6 +359,7 @@ func imageConfig(output buildir.Output, platform ocispecs.Platform) ([]byte, err
 		Architecture string `json:"architecture"`
 		OS           string `json:"os"`
 		Config       struct {
+			User         string              `json:"User"`
 			Entrypoint   []string            `json:"Entrypoint"`
 			Cmd          []string            `json:"Cmd"`
 			ExposedPorts map[string]struct{} `json:"ExposedPorts"`
@@ -366,11 +369,13 @@ func imageConfig(output buildir.Output, platform ocispecs.Platform) ([]byte, err
 		Architecture: platform.Architecture,
 		OS:           platform.OS,
 		Config: struct {
+			User         string              `json:"User"`
 			Entrypoint   []string            `json:"Entrypoint"`
 			Cmd          []string            `json:"Cmd"`
 			ExposedPorts map[string]struct{} `json:"ExposedPorts"`
 			Labels       map[string]string   `json:"Labels"`
 		}{
+			User:         DefaultImageUser,
 			Entrypoint:   append([]string(nil), output.Entrypoint...),
 			Cmd:          append([]string(nil), output.Command...),
 			ExposedPorts: exposedPorts,

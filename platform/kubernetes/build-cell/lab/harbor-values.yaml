@@ -1,0 +1,51 @@
+expose:
+  type: clusterIP
+  tls:
+    enabled: true
+    certSource: secret
+    secret:
+      secretName: harbor-server-tls
+  clusterIP:
+    name: harbor
+    ports:
+      httpPort: 80
+      httpsPort: 443
+externalURL: https://harbor.lrail-registry.svc.cluster.local
+existingSecretAdminPassword: lrail-harbor-bootstrap
+existingSecretAdminPasswordKey: HARBOR_ADMIN_PASSWORD
+existingSecretSecretKey: lrail-harbor-bootstrap
+caSecretName: harbor-server-tls
+persistence:
+  enabled: true
+  resourcePolicy: keep
+  persistentVolumeClaim:
+    registry:
+      storageClass: standard
+      size: 20Gi
+    jobservice:
+      jobLog:
+        storageClass: standard
+        size: 1Gi
+    database:
+      storageClass: standard
+      size: 2Gi
+    redis:
+      storageClass: standard
+      size: 1Gi
+updateStrategy:
+  type: Recreate
+trivy:
+  enabled: false
+metrics:
+  enabled: false
+portal:
+  replicas: 1
+core:
+  replicas: 1
+jobservice:
+  replicas: 1
+  jobLoggers: [stdout]
+registry:
+  replicas: 1
+exporter:
+  replicas: 1

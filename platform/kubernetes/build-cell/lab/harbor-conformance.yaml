@@ -1,0 +1,51 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: harbor-conformance
+  namespace: lrail-registry
+  labels:
+    dev.lrail/lab: mb
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 180
+  template:
+    metadata:
+      labels:
+        dev.lrail/lab: mb
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      containers:
+        - name: proof
+          image: curlimages/curl:8.18.0@sha256:d94d07ba9e7d6de898b6d96c1a072f6f8266c687af78a74f380087a0addf5d17
+          command: ["/bin/sh", "-ec"]
+          args:
+            - >-
+              status="$(curl --silent --show-error --output /dev/null --write-out '%{http_code}'
+              --cacert /certs/ca.crt https://harbor.lrail-registry.svc.cluster.local/v2/)";
+              test "$status" = 401;
+              echo harbor-tls-auth-challenge-ok
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 100
+            runAsGroup: 101
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests: { cpu: 10m, memory: 16Mi, ephemeral-storage: 8Mi }
+            limits: { cpu: 100m, memory: 64Mi, ephemeral-storage: 32Mi }
+          volumeMounts:
+            - { name: ca, mountPath: /certs, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: ca
+          secret:
+            secretName: harbor-server-tls
+            defaultMode: 0444
+            items:
+              - { key: ca.crt, path: ca.crt }
+        - name: tmp
+          emptyDir: { medium: Memory, sizeLimit: 8Mi }

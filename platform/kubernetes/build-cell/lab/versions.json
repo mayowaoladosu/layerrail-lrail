@@ -9,29 +9,52 @@
     },
     "cert_manager": {
       "chart": "oci://quay.io/jetstack/charts/cert-manager",
-      "version": "v1.21.0"
+      "version": "v1.21.0",
+      "chart_sha256": "9c2c6fabf3cf8fe14dacb016f37c819b66bc2c79e8b7acde4573d45ec141fb97"
     },
     "kyverno": {
       "repository": "https://kyverno.github.io/kyverno/",
       "chart": "kyverno",
-      "version": "1.18.2"
+      "version": "3.8.2",
+      "application_version": "1.18.2",
+      "chart_sha256": "f4fc787cf1d6781eefb9e9b45837edcddcfae984c872888289914e97207cc5de"
     },
     "openbao": {
       "repository": "https://openbao.github.io/openbao-helm",
       "chart": "openbao",
-      "version": "0.28.4",
-      "application_version": "2.4.1"
+      "version": "0.19.0",
+      "application_version": "2.4.1",
+      "chart_sha256": "5e832520011818d6b0672b1c3eefbe3b02a30584ecd6d72962cbbe9c26d3b590"
     },
     "harbor": {
       "repository": "https://helm.goharbor.io",
       "chart": "harbor",
       "version": "1.19.1",
-      "application_version": "2.14.1"
+      "application_version": "2.15.1",
+      "chart_sha256": "593f47e1ff6cdb58bd571708535ccef436f44ccf842c5f7925cd7b03e827edc1"
     }
   },
   "lrail_images": {
     "build_broker": "ghcr.io/mayowaoladosu/layerrail-lrail/build-broker@sha256:5deb720604c52d6ea7b16d13e65d2851664f1ffd273d8c652fe1e6ccab7ada9d",
     "buildcell_controller": "ghcr.io/mayowaoladosu/layerrail-lrail/buildcell-controller@sha256:6ff5cb967b1da771a865f454c6eab14f32cee847d1c36718572bbf6abd9ac876",
     "buildkit_worker": "ghcr.io/mayowaoladosu/layerrail-lrail/buildkit-worker@sha256:07215eeaaf7732af74474f9c03aad54163989045aad6b795e24692ccbe3394fe"
+  },
+  "dependency_images": {
+    "cert_manager_cainjector": "quay.io/jetstack/cert-manager-cainjector@sha256:ad1dcc5b2fccc420f9b3fbee7ce8a869450c540fd4f2f41de2d95b1ca0c4d701",
+    "cert_manager_controller": "quay.io/jetstack/cert-manager-controller@sha256:e370f7800a53078e9d74324287a7d52b553864e55f5b4e521f911c3f6c7da203",
+    "cert_manager_webhook": "quay.io/jetstack/cert-manager-webhook@sha256:c33cca307541e2d58861a55b1af5f390b7e19c8741e48b433693b73a7cce88b3",
+    "kyverno_admission": "reg.kyverno.io/kyverno/kyverno@sha256:0a540e2ddf74d0d2d3d45f9ef248d7dbc96576accdbcc6a2dd7eaff9fea56504",
+    "kyverno_background": "reg.kyverno.io/kyverno/background-controller@sha256:d62566ce41bd0d4a32bf2cf44b9ebfc02c36374f821f83070890287f62f68671",
+    "kyverno_cleanup": "reg.kyverno.io/kyverno/cleanup-controller@sha256:b0395d29ae332276e6910eb40418be9bc127c068d659f90aa1bcddd6be99ccb4",
+    "kyverno_reports": "reg.kyverno.io/kyverno/reports-controller@sha256:f09cf305170014e191b94e1c54f5be73163d8824eefad49349675c4efe43159a",
+    "openbao": "quay.io/openbao/openbao@sha256:597f62847dd382382056a1d6704d50465908c2040038c4611832a23269a67112",
+    "harbor_core": "docker.io/goharbor/harbor-core@sha256:887a85b8ea98b76bfc9f715f1a0785bb99f9a1034241513902dd6e95be922a83",
+    "harbor_database": "docker.io/goharbor/harbor-db@sha256:7944d8594a48a8d014e1fa440bc788348f2a779fa2c612ed6b79390cd767e6db",
+    "harbor_jobservice": "docker.io/goharbor/harbor-jobservice@sha256:0de4fd2ce3a02d3e6591b439e4674ea085885ddf43652b44004cc67eb19dba12",
+    "harbor_nginx": "docker.io/goharbor/nginx-photon@sha256:1f9d06d040f2478f6cf7f6da0091877bf987a641810f4bfaadb2a87d73dbf4fb",
+    "harbor_portal": "docker.io/goharbor/harbor-portal@sha256:ac55161c57a8351807adf8f8def264bdd52667c371d0436beefebdac4341c9e2",
+    "harbor_redis": "docker.io/goharbor/redis-photon@sha256:5669d4828805d9ed0bbfc18c101c6ec82d26a13cb9242b48f6348a3e3b2e4cca",
+    "harbor_registry": "docker.io/goharbor/registry-photon@sha256:ebf0325c2661729dbb317cbf839608eb8b15cfa158911a94976f2c21563c466e",
+    "harbor_registryctl": "docker.io/goharbor/harbor-registryctl@sha256:554147a956989175f63f8d41573d716c6ddf6052acd1749c88c0f99ce6ee2bff"
   }
 }

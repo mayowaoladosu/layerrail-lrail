@@ -1,0 +1,100 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: lrail-minio-conformance
+  namespace: lrail-storage
+  labels:
+    app.kubernetes.io/name: lrail-minio-conformance
+    dev.lrail/lab: mb
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 300
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: lrail-minio-conformance
+        dev.lrail/lab: mb
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      containers:
+        - name: conformance
+          image: minio/mc:RELEASE.2025-07-21T05-28-08Z@sha256:fb8f773eac8ef9d6da0486d5dec2f42f219358bcb8de579d1623d518c9ebd4cc
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "-ec"]
+          args:
+            - |
+              printf 'lrail-minio-capability-proof' >/tmp/probe
+              mc alias set root https://minio.lrail-storage.svc.cluster.local:9000 "$ROOT_ACCESS" "$ROOT_SECRET" --api S3v4 >/dev/null
+              mc alias set source https://minio.lrail-storage.svc.cluster.local:9000 "$SOURCE_ACCESS" "$SOURCE_SECRET" --api S3v4 >/dev/null
+              mc alias set reader https://minio.lrail-storage.svc.cluster.local:9000 "$READER_ACCESS" "$READER_SECRET" --api S3v4 >/dev/null
+              mc alias set cell https://minio.lrail-storage.svc.cluster.local:9000 "$CELL_ACCESS" "$CELL_SECRET" --api S3v4 >/dev/null
+              mc cp /tmp/probe root/lrail-source/snapshots/conformance/probe >/dev/null
+              mc cp /tmp/probe root/lrail-build/cell-lab/conformance/probe >/dev/null
+              test "$(mc cat reader/lrail-source/snapshots/conformance/probe)" = lrail-minio-capability-proof
+              ! mc cp /tmp/probe reader/lrail-source/snapshots/conformance/denied >/dev/null 2>&1
+              ! mc cat reader/lrail-build/cell-lab/conformance/probe >/dev/null 2>&1
+              test "$(mc cat cell/lrail-build/cell-lab/conformance/probe)" = lrail-minio-capability-proof
+              ! mc cat cell/lrail-source/snapshots/conformance/probe >/dev/null 2>&1
+              mc cp /tmp/probe source/lrail-source/uploads/conformance/probe >/dev/null
+              ! mc cp /tmp/probe source/lrail-build/cell-lab/conformance/denied >/dev/null 2>&1
+              echo object-capabilities-ok
+          env:
+            - { name: MC_CONFIG_DIR, value: /tmp/mc }
+            - { name: SSL_CERT_FILE, value: /certs/ca.crt }
+            - name: ROOT_ACCESS
+              valueFrom:
+                secretKeyRef:
+                  { name: lrail-minio-bootstrap, key: root-access-key }
+            - name: ROOT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  { name: lrail-minio-bootstrap, key: root-secret-key }
+            - name: SOURCE_ACCESS
+              valueFrom:
+                secretKeyRef:
+                  { name: lrail-minio-bootstrap, key: source-access-key }
+            - name: SOURCE_SECRET
+              valueFrom:
+                secretKeyRef:
+                  { name: lrail-minio-bootstrap, key: source-secret-key }
+            - name: READER_ACCESS
+              valueFrom:
+                secretKeyRef:
+                  { name: lrail-minio-bootstrap, key: reader-access-key }
+            - name: READER_SECRET
+              valueFrom:
+                secretKeyRef:
+                  { name: lrail-minio-bootstrap, key: reader-secret-key }
+            - name: CELL_ACCESS
+              valueFrom:
+                secretKeyRef:
+                  { name: lrail-minio-bootstrap, key: cell-access-key }
+            - name: CELL_SECRET
+              valueFrom:
+                secretKeyRef:
+                  { name: lrail-minio-bootstrap, key: cell-secret-key }
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests: { cpu: 10m, memory: 32Mi, ephemeral-storage: 16Mi }
+            limits: { cpu: 250m, memory: 128Mi, ephemeral-storage: 64Mi }
+          volumeMounts:
+            - { name: ca, mountPath: /certs, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: ca
+          secret:
+            secretName: minio-server-tls
+            defaultMode: 0444
+            items:
+              - { key: ca.crt, path: ca.crt }
+        - name: tmp
+          emptyDir: { medium: Memory, sizeLimit: 16Mi }

@@ -1,0 +1,149 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: lrail-security
+  labels:
+    kubernetes.io/metadata.name: lrail-security
+    dev.lrail/lab: mb
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: lrail-registry
+  labels:
+    kubernetes.io/metadata.name: lrail-registry
+    dev.lrail/lab: mb
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: lrail-storage
+  labels:
+    kubernetes.io/metadata.name: lrail-storage
+    dev.lrail/lab: mb
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: lrail-lab-bootstrap
+  namespace: cert-manager
+  labels:
+    dev.lrail/lab: mb
+spec:
+  selfSigned: {}
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: lrail-lab-root-ca
+  namespace: cert-manager
+  labels:
+    dev.lrail/lab: mb
+spec:
+  secretName: lrail-lab-root-ca
+  isCA: true
+  commonName: Lrail M-B lab root CA
+  duration: 168h
+  renewBefore: 24h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  usages: [cert sign, crl sign, digital signature]
+  issuerRef:
+    group: cert-manager.io
+    kind: Issuer
+    name: lrail-lab-bootstrap
+---
+apiVersion: cert-manager.io/v1
+kind: ClusterIssuer
+metadata:
+  name: lrail-internal-ca
+  labels:
+    dev.lrail/lab: mb
+spec:
+  ca:
+    secretName: lrail-lab-root-ca
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: openbao-server
+  namespace: lrail-security
+  labels:
+    dev.lrail/lab: mb
+spec:
+  secretName: openbao-server-tls
+  duration: 24h
+  renewBefore: 8h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  dnsNames:
+    - localhost
+    - openbao
+    - openbao.lrail-security
+    - openbao.lrail-security.svc
+    - openbao.lrail-security.svc.cluster.local
+  uris:
+    - spiffe://lrail.internal/openbao
+  usages: [server auth]
+  issuerRef:
+    group: cert-manager.io
+    kind: ClusterIssuer
+    name: lrail-internal-ca
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: harbor-server
+  namespace: lrail-registry
+  labels:
+    dev.lrail/lab: mb
+spec:
+  secretName: harbor-server-tls
+  duration: 24h
+  renewBefore: 8h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  dnsNames:
+    - localhost
+    - harbor
+    - harbor.lrail-registry
+    - harbor.lrail-registry.svc
+    - harbor.lrail-registry.svc.cluster.local
+  usages: [server auth]
+  issuerRef:
+    group: cert-manager.io
+    kind: ClusterIssuer
+    name: lrail-internal-ca
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: minio-server
+  namespace: lrail-storage
+  labels:
+    dev.lrail/lab: mb
+spec:
+  secretName: minio-server-tls
+  duration: 24h
+  renewBefore: 8h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  dnsNames:
+    - localhost
+    - minio
+    - minio.lrail-storage
+    - minio.lrail-storage.svc
+    - minio.lrail-storage.svc.cluster.local
+  usages: [server auth]
+  issuerRef:
+    group: cert-manager.io
+    kind: ClusterIssuer
+    name: lrail-internal-ca

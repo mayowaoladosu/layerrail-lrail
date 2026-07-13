@@ -127,6 +127,12 @@ tasks:
       - >-
         python tools/mb_lab.py kata
 
+  mb:lab:dependencies:
+    desc: Verify pinned M-B PKI, policy, OpenBao, Harbor, and object-store dependencies
+    cmds:
+      - >-
+        python tools/mb_lab.py dependencies
+
   build-cell:images:
     desc: Build final-source broker, controller, worker, egress, registry broker, signer, DB updater, and residue images
     deps: [build-trivy-db-updater:image]

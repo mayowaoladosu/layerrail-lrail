@@ -1,0 +1,69 @@
+global:
+  tlsDisable: false
+injector:
+  enabled: false
+csi:
+  enabled: false
+server:
+  image:
+    repository: openbao/openbao
+    tag: 2.4.1
+    pullPolicy: IfNotPresent
+  standalone:
+    enabled: true
+    config: |
+      ui = false
+      listener "tcp" {
+        address = "[::]:8200"
+        cluster_address = "[::]:8201"
+        tls_disable = 0
+        tls_cert_file = "/openbao/tls/tls.crt"
+        tls_key_file = "/openbao/tls/tls.key"
+        tls_client_ca_file = "/openbao/tls/ca.crt"
+        tls_min_version = "tls13"
+      }
+      storage "file" {
+        path = "/openbao/data"
+      }
+      audit "file" "lab-file" {
+        description = "M-B lab immutable authority audit"
+        options = {
+          file_path = "/openbao/audit/audit.log"
+          log_raw = "false"
+        }
+      }
+  dataStorage:
+    enabled: true
+    size: 2Gi
+    storageClass: standard
+  auditStorage:
+    enabled: true
+    size: 1Gi
+    storageClass: standard
+  affinity: ""
+  volumes:
+    - name: tls
+      secret:
+        secretName: openbao-server-tls
+        defaultMode: 0440
+  volumeMounts:
+    - name: tls
+      mountPath: /openbao/tls
+      readOnly: true
+  extraEnvironmentVars:
+    BAO_CACERT: /openbao/tls/ca.crt
+  resources:
+    requests:
+      cpu: 100m
+      memory: 256Mi
+    limits:
+      cpu: "1"
+      memory: 1Gi
+  readinessProbe:
+    enabled: true
+    path: /v1/sys/health?standbyok=true&sealedcode=204&uninitcode=204
+  livenessProbe:
+    enabled: true
+    path: /v1/sys/health?standbyok=true&sealedcode=204&uninitcode=204
+ui:
+  enabled: false

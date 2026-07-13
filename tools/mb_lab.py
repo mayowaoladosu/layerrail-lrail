@@ -186,12 +186,117 @@ def kata_probe() -> None:
         delete_probe()
 
 
+def dependency_probe() -> None:
+    require_context()
+    configured = json.loads(VERSIONS.read_text(encoding="utf-8"))
+    releases = {
+        item["name"]: item
+        for item in json.loads(command("helm", "list", "-A", "-o", "json").stdout)
+    }
+    expected_releases = {
+        "cert-manager": (
+            "cert-manager",
+            "cert-manager-" + configured["dependencies"]["cert_manager"]["version"],
+            configured["dependencies"]["cert_manager"]["version"],
+        ),
+        "kyverno": (
+            "kyverno",
+            "kyverno-" + configured["dependencies"]["kyverno"]["version"],
+            "v" + configured["dependencies"]["kyverno"]["application_version"],
+        ),
+        "openbao": (
+            "lrail-security",
+            "openbao-" + configured["dependencies"]["openbao"]["version"],
+            "v" + configured["dependencies"]["openbao"]["application_version"],
+        ),
+        "harbor": (
+            "lrail-registry",
+            "harbor-" + configured["dependencies"]["harbor"]["version"],
+            configured["dependencies"]["harbor"]["application_version"],
+        ),
+        "kata-deploy": (
+            "kata-system",
+            "kata-deploy-" + configured["dependencies"]["kata"]["chart_version"],
+            configured["dependencies"]["kata"]["chart_version"],
+        ),
+    }
+    for name, (namespace, chart, application) in expected_releases.items():
+        release = releases.get(name)
+        if (
+            not release
+            or release.get("status") != "deployed"
+            or release.get("namespace") != namespace
+            or release.get("chart") != chart
+            or release.get("app_version") != application
+        ):
+            raise LabFailure(f"Helm release {name!r} differs from the dependency lock")
+
+    pods = json.loads(command("kubectl", "get", "pods", "-A", "-o", "json").stdout)[
+        "items"
+    ]
+    observed_images: set[str] = set()
+    for pod in pods:
+        for status in pod.get("status", {}).get("containerStatuses", []):
+            image_id = status.get("imageID", "").removeprefix("docker-pullable://")
+            if image_id:
+                observed_images.add(image_id)
+    for name, image in configured["dependency_images"].items():
+        if image not in observed_images:
+            raise LabFailure(
+                f"dependency image {name!r} does not match its runtime digest"
+            )
+
+    status = command(
+        "kubectl",
+        "exec",
+        "-n",
+        "lrail-security",
+        "openbao-0",
+        "--",
+        "env",
+        "BAO_ADDR=https://localhost:8200",
+        "BAO_CACERT=/openbao/tls/ca.crt",
+        "bao",
+        "status",
+        "-format=json",
+    )
+    openbao = json.loads(status.stdout)
+    if not openbao.get("initialized") or openbao.get("sealed"):
+        raise LabFailure("OpenBao is not initialized and unsealed")
+
+    expected_jobs = {
+        ("lrail-storage", "lrail-minio-init"): "",
+        ("lrail-storage", "lrail-minio-conformance"): "object-capabilities-ok",
+        ("lrail-registry", "harbor-conformance"): "harbor-tls-auth-challenge-ok",
+    }
+    for (namespace, name), expected_log in expected_jobs.items():
+        job = json.loads(
+            command("kubectl", "get", "job", name, "-n", namespace, "-o", "json").stdout
+        )
+        if job.get("status", {}).get("succeeded") != 1:
+            raise LabFailure(
+                f"dependency conformance job {namespace}/{name} is not complete"
+            )
+        if expected_log:
+            logs = command("kubectl", "logs", f"job/{name}", "-n", namespace).stdout
+            if expected_log not in logs:
+                raise LabFailure(
+                    f"dependency conformance job {namespace}/{name} lacks proof"
+                )
+    print(
+        "Pinned PKI, policy, OpenBao, Harbor, and object-store dependencies verified."
+    )
+
+
 def main() -> int:
-    if len(sys.argv) != 2 or sys.argv[1] != "kata":
-        sys.stderr.write("usage: mb_lab.py kata\n")
+    if len(sys.argv) != 2 or sys.argv[1] not in {"dependencies", "kata"}:
+        sys.stderr.write("usage: mb_lab.py dependencies|kata\n")
         return 2
     try:
-        kata_probe()
+        if sys.argv[1] == "dependencies":
+            dependency_probe()
+        else:
+            kata_probe()
     except (OSError, json.JSONDecodeError, LabFailure) as error:
         sys.stderr.write(f"M-B lab failed closed: {error}\n")
         return 1

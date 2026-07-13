@@ -1093,13 +1093,13 @@ paths:
       parameters:
         - name: generation
           in: query
-          schema: {type: integer, minimum: 1}
+          schema: { type: integer, minimum: 1 }
         - name: after
           in: query
-          schema: {type: integer, minimum: 0, default: 0}
+          schema: { type: integer, minimum: 0, default: 0 }
         - name: limit
           in: query
-          schema: {type: integer, minimum: 1, maximum: 1000, default: 250}
+          schema: { type: integer, minimum: 1, maximum: 1000, default: 250 }
       responses:
         "200":
           description: Ordered retained events and current operation truth.
@@ -1296,7 +1296,21 @@ components:
     ApiKey:
       type: object
       additionalProperties: false
-      required: [id, organization_id, account_id, name, display_prefix, scopes, constraints, expires_at, last_used_at, revoked_at, created_at, updated_at]
+      required:
+        [
+          id,
+          organization_id,
+          account_id,
+          name,
+          display_prefix,
+          scopes,
+          constraints,
+          expires_at,
+          last_used_at,
+          revoked_at,
+          created_at,
+          updated_at,
+        ]
       properties:
         id:
           $ref: "#/components/schemas/ResourceId"
@@ -1679,11 +1693,15 @@ components:
               $ref: "#/components/schemas/ResourceId"
             repository:
               type: string
-              pattern: "^[^/\\s]+/[^/\\s]+$"
-              maxLength: 512
+              pattern: "^[A-Za-z0-9](?:[A-Za-z0-9_.-]{0,98}[A-Za-z0-9])?/[A-Za-z0-9_.-]{1,100}$"
+              maxLength: 201
             commit:
               type: string
-              pattern: "^[0-9a-f]{40,64}$"
+              pattern: "^[0-9a-f]{40}([0-9a-f]{24})?$"
+            root_directory:
+              type: string
+              maxLength: 512
+              pattern: "^[^/\\\\:]+(?:/[^/\\\\:]+)*$"
         - type: object
           title: Finalized local source
           additionalProperties: false
@@ -1999,24 +2017,33 @@ components:
       type: object
       additionalProperties: false
       required:
-        [generation, sequence, attempt, stage, kind, cached, stream, occurred_at]
+        [
+          generation,
+          sequence,
+          attempt,
+          stage,
+          kind,
+          cached,
+          stream,
+          occurred_at,
+        ]
       properties:
-        generation: {type: integer, minimum: 1}
-        sequence: {type: integer, minimum: 1}
-        attempt: {type: integer, minimum: 1}
-        stage: {type: string, pattern: "^[a-z][a-z0-9_]{0,63}$"}
-        kind: {type: string, pattern: "^[a-z][a-z0-9_.-]{0,63}$"}
-        output: {type: [string, "null"], maxLength: 512}
-        vertex: {type: [string, "null"], maxLength: 512}
-        name: {type: [string, "null"], maxLength: 512}
-        current: {type: [integer, "null"]}
-        total: {type: [integer, "null"]}
-        cached: {type: boolean}
-        stream: {type: integer, minimum: 0}
-        line: {type: [string, "null"], maxLength: 16384}
-        code: {type: [string, "null"], maxLength: 128}
-        message: {type: [string, "null"], maxLength: 4096}
-        occurred_at: {type: string, format: date-time}
+        generation: { type: integer, minimum: 1 }
+        sequence: { type: integer, minimum: 1 }
+        attempt: { type: integer, minimum: 1 }
+        stage: { type: string, pattern: "^[a-z][a-z0-9_]{0,63}$" }
+        kind: { type: string, pattern: "^[a-z][a-z0-9_.-]{0,63}$" }
+        output: { type: [string, "null"], maxLength: 512 }
+        vertex: { type: [string, "null"], maxLength: 512 }
+        name: { type: [string, "null"], maxLength: 512 }
+        current: { type: [integer, "null"] }
+        total: { type: [integer, "null"] }
+        cached: { type: boolean }
+        stream: { type: integer, minimum: 0 }
+        line: { type: [string, "null"], maxLength: 16384 }
+        code: { type: [string, "null"], maxLength: 128 }
+        message: { type: [string, "null"], maxLength: 4096 }
+        occurred_at: { type: string, format: date-time }
     Organization:
       type: object
       additionalProperties: false
@@ -2187,7 +2214,8 @@ components:
         source_upload:
           type: object
           additionalProperties: false
-          required: [expected_archive_bytes, expected_archive_sha256, expected_parts]
+          required:
+            [expected_archive_bytes, expected_archive_sha256, expected_parts]
           properties:
             expected_archive_bytes:
               type: integer
@@ -2243,14 +2271,35 @@ components:
     SourceUploadSession:
       type: object
       additionalProperties: false
-      required: [id, type, state, project_id, expected_archive_bytes, expected_archive_sha256, expected_parts, expires_at, created_at, updated_at]
+      required:
+        [
+          id,
+          type,
+          state,
+          project_id,
+          expected_archive_bytes,
+          expected_archive_sha256,
+          expected_parts,
+          expires_at,
+          created_at,
+          updated_at,
+        ]
       properties:
         id:
           $ref: "#/components/schemas/ResourceId"
         type:
           const: source_upload_session
         state:
-          enum: [authorized, uploading, finalizing, complete, failed, expired, canceled]
+          enum:
+            [
+              authorized,
+              uploading,
+              finalizing,
+              complete,
+              failed,
+              expired,
+              canceled,
+            ]
         project_id:
           $ref: "#/components/schemas/ResourceId"
         expected_archive_bytes:
@@ -2297,7 +2346,19 @@ components:
     SourceSnapshot:
       type: object
       additionalProperties: false
-      required: [id, organization_id, project_id, kind, digest, object_ref, size_bytes, retention_until, created_at, updated_at]
+      required:
+        [
+          id,
+          organization_id,
+          project_id,
+          kind,
+          digest,
+          object_ref,
+          size_bytes,
+          retention_until,
+          created_at,
+          updated_at,
+        ]
       properties:
         id:
           $ref: "#/components/schemas/ResourceId"

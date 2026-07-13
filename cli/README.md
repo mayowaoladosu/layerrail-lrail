@@ -8,6 +8,7 @@ The TypeScript CLI builds deterministic, non-executing source archives and uploa
 - `lrail source:upload --project <prj_...> [--directory .]` — requests a bounded upload session, PUTs archive parts to presigned object URLs, and finalizes the immutable snapshot.
 - `lrail deploy [directory] --project <prj_...> --environment <env_...> --accept-detected` — archives and uploads local source, explicitly accepts an unambiguous detector proposal, creates the deployment, and follows retained build events through immutable signed artifact publication.
 - `lrail deploy [directory] ... --build-file Lrailfile.star` — uses repository Starlark instead of accepting detector-generated configuration. Exactly one of `--accept-detected` and `--build-file` is required.
+- `lrail deploy:git --project <prj_...> --environment <env_...> --connection <src_...> --repository owner/name --commit <exact-sha> --accept-detected` — fetches the exact commit through the authorized GitHub provider boundary, persists the signed immutable snapshot, creates the deployment, and follows the same retained artifact-build events. `--root` selects a canonical monorepo subdirectory.
 - `lrail deploy:watch --operation <op_...> [--after <sequence>]` — resumes retained ordered events after a terminal disconnect without restarting the build.
 - `lrail deploy:cancel --deployment <dep_...> --reason <text>` — requests idempotent cancellation; Temporal and BuildService reconcile the exact active generation and cleanup result.
 

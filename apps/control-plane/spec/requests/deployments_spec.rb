@@ -86,4 +86,108 @@ RSpec.describe "deployments API", type: :request do
       )
     end
   end
+
+  it "acquires an exact authorized Git commit before creating one idempotent deployment" do
+    account = create_account(email: "git-cli@example.test")
+    organization = create_organization(account:, slug: "git-cli")
+    project = within_organization(account, organization) do
+      Projects::Create.call(
+        account:,
+        organization:,
+        attributes: { name: "Git CLI", slug: "git-cli" },
+      ).project
+    end
+    connection = within_organization(account, organization) do
+      SourceConnection.create!(
+        organization:,
+        connected_by_account: account,
+        provider: "github",
+        installation_external_id: "9100001",
+        status: "active",
+        scopes: %w[contents:read metadata:read],
+        provider_account_login: "northstar",
+        repository_selection: "selected",
+        selected_repositories: [ "northstar/checkout" ],
+      )
+    end
+    result = git_result
+    gateway = instance_double(SourceIngestion::GatewayClient, fetch: result)
+    fetcher = SourceIngestion::Fetch.new(gateway:)
+    allow(Deployments::CreateFromGit).to receive(:new).and_return(described_git_service(fetcher))
+    login(account)
+    headers = {
+      "X-Lrail-Organization" => organization.public_id,
+      "Idempotency-Key" => "cli-git-deploy-0001",
+      "Content-Type" => "application/json"
+    }
+    body = {
+      environment_id: project.environments.find_by!(slug: "preview").public_id,
+      source: {
+        kind: "git",
+        connection_id: connection.public_id,
+        repository: "northstar/checkout",
+        commit: "a" * 40,
+        root_directory: "apps/web"
+      },
+      build_mode: "auto",
+      accept_detected: true,
+      manifest_revision: 1,
+      reason: "cli_git_deploy"
+    }
+
+    2.times do
+      post "/v1/projects/#{project.public_id}/deployments", params: body.to_json, headers: headers
+      expect(response).to have_http_status(:accepted)
+    end
+    expect(response.headers["Idempotency-Replayed"]).to eq("true")
+
+    within_organization(account, organization) do
+      expect(SourceFetch.count).to eq(1)
+      fetch = SourceFetch.last
+      expect(fetch).to have_attributes(
+        state: "complete",
+        repository: "northstar/checkout",
+        requested_commit_sha: "a" * 40,
+        resolved_commit_sha: "a" * 40,
+        root_directory: "apps/web",
+      )
+      deployment = Deployment.find_by!(source_fetch: fetch)
+      expect(deployment.source_snapshot).to eq(fetch.source_snapshot)
+      expect(deployment.source).to eq(
+        "kind" => "git",
+        "connection_id" => connection.public_id,
+        "repository" => "northstar/checkout",
+        "commit" => "a" * 40,
+      )
+    end
+    expect(gateway).to have_received(:fetch).once
+  end
+
+  def described_git_service(fetcher)
+    Deployments::CreateFromGit.new(fetcher:)
+  end
+
+  def git_result
+    {
+      "repository" => "northstar/checkout",
+      "requested_commit_sha" => "a" * 40,
+      "resolved_commit_sha" => "a" * 40,
+      "tree_sha" => "b" * 40,
+      "snapshot_sha256" => REQUEST_DIGEST.call("c"),
+      "manifest_sha256" => REQUEST_DIGEST.call("d"),
+      "archive_sha256" => REQUEST_DIGEST.call("e"),
+      "manifest_ref" => "s3://lrail-source/snapshots/c/manifest.json",
+      "archive_ref" => "s3://lrail-source/snapshots/c/source.tar.gz",
+      "size_bytes" => 1_024,
+      "policy_version" => "source-v1",
+      "author" => "Example Author",
+      "authored_at" => 1.day.ago.iso8601,
+      "warnings" => [],
+      "submodules" => [],
+      "lfs_digests" => [],
+      "token_expires_at" => 30.minutes.from_now.iso8601,
+      "finalized_at" => Time.current.iso8601,
+      "_key_id" => "source-finalizer-test-v1"
+    }
+  end
 end

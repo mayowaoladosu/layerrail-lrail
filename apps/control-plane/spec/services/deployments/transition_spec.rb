@@ -10,13 +10,40 @@ RSpec.describe Deployments::Transition do
         organization:,
         attributes: { name: "App", slug: "app" },
       ).project
+      snapshot = SourceSnapshot.create!(
+        organization:,
+        project:,
+        kind: "local",
+        digest: "sha256:#{"a" * 64}",
+        object_ref: "s3://lrail-source/transition/source.tar.gz",
+        size_bytes: 1_024,
+        retention_until: 30.days.from_now,
+      )
+      SourceUploadSession.create!(
+        organization:,
+        project:,
+        created_by_account: account,
+        source_snapshot: snapshot,
+        state: "complete",
+        expected_archive_bytes: 1_024,
+        expected_archive_sha256: "sha256:#{"c" * 64}",
+        expected_parts: 1,
+        snapshot_sha256: snapshot.digest,
+        manifest_sha256: "sha256:#{"b" * 64}",
+        archive_sha256: "sha256:#{"c" * 64}",
+        manifest_ref: "s3://lrail-source/transition/manifest.json",
+        archive_ref: snapshot.object_ref,
+        signing_key_id: "source-test-v1",
+        expires_at: 15.minutes.from_now,
+        finalized_at: Time.current,
+      )
       result = Deployments::Create.call(
         account:,
         organization:,
         project:,
         attributes: {
           environment_id: project.environments.find_by!(slug: "preview").public_id,
-          source: { kind: "git", repository: "owner/app", commit: "a" * 40 },
+          source: { kind: "local", source_snapshot_id: snapshot.public_id },
           manifest_revision: 1,
           reason: "Test deployment"
         },

@@ -81,8 +81,14 @@ program
   .argument("[directory]", "source directory", ".")
   .requiredOption("--project <id>", "project resource ID")
   .requiredOption("--environment <id>", "environment resource ID")
-  .option("--accept-detected", "explicitly accept an unambiguous detector proposal")
-  .option("--build-file <path>", "use a repository Lrailfile.star instead of detector configuration")
+  .option(
+    "--accept-detected",
+    "explicitly accept an unambiguous detector proposal",
+  )
+  .option(
+    "--build-file <path>",
+    "use a repository Lrailfile.star instead of detector configuration",
+  )
   .option("--manifest-revision <number>", "project manifest revision", "1")
   .option("--reason <text>", "deployment reason", "cli_local_deploy")
   .option("--no-wait", "return after the deployment is accepted")
@@ -114,7 +120,9 @@ program
       },
     ) => {
       if (options.acceptDetected === Boolean(options.buildFile)) {
-        throw new Error("choose exactly one of --accept-detected or --build-file");
+        throw new Error(
+          "choose exactly one of --accept-detected or --build-file",
+        );
       }
       const manifestRevision = positiveInteger(
         options.manifestRevision,
@@ -122,7 +130,9 @@ program
       );
       const client = clientFor(options);
       const archive = await createSourceArchive(directory);
-      const expectedParts = Math.ceil(archive.bytes.length / (16 * 1024 * 1024));
+      const expectedParts = Math.ceil(
+        archive.bytes.length / (16 * 1024 * 1024),
+      );
       const upload = await uploadSource(
         client,
         options.project,
@@ -138,6 +148,101 @@ program
         acceptDetected: Boolean(options.acceptDetected),
         ...(options.buildFile ? { buildFile: options.buildFile } : {}),
         idempotencyKey: `cli-deploy-${randomUUID()}`,
+      });
+      if (!options.wait) {
+        process.stdout.write(`${JSON.stringify(deployment)}\n`);
+        return;
+      }
+      const terminal = await followOperation(
+        client,
+        deployment.operation.id,
+        1,
+        Boolean(options.json),
+      );
+      assertSuccessful(terminal);
+    },
+  );
+
+program
+  .command("deploy:git")
+  .description(
+    "Fetch an exact authorized Git commit, create a deployment, and follow retained build events",
+  )
+  .requiredOption("--project <id>", "project resource ID")
+  .requiredOption("--environment <id>", "environment resource ID")
+  .requiredOption("--connection <id>", "source connection resource ID")
+  .requiredOption("--repository <owner/name>", "authorized GitHub repository")
+  .requiredOption("--commit <sha>", "exact 40 or 64 character commit SHA")
+  .option("--root <path>", "canonical repository root directory", "")
+  .option(
+    "--accept-detected",
+    "explicitly accept an unambiguous detector proposal",
+  )
+  .option(
+    "--build-file <path>",
+    "use a repository Lrailfile.star instead of detector configuration",
+  )
+  .option("--manifest-revision <number>", "project manifest revision", "1")
+  .option("--reason <text>", "deployment reason", "cli_git_deploy")
+  .option(
+    "--no-wait",
+    "return after source acquisition and deployment acceptance",
+  )
+  .option("--json", "emit newline-delimited JSON events")
+  .option(
+    "--api-url <url>",
+    "control-plane origin",
+    process.env.LRAIL_API_URL ?? "http://127.0.0.1:3210/",
+  )
+  .option(
+    "--organization <id>",
+    "organization resource ID",
+    process.env.LRAIL_ORGANIZATION,
+  )
+  .action(
+    async (options: {
+      project: string;
+      environment: string;
+      connection: string;
+      repository: string;
+      commit: string;
+      root: string;
+      acceptDetected?: boolean;
+      buildFile?: string;
+      manifestRevision: string;
+      reason: string;
+      wait: boolean;
+      json?: boolean;
+      apiUrl: string;
+      organization?: string;
+    }) => {
+      if (options.acceptDetected === Boolean(options.buildFile)) {
+        throw new Error(
+          "choose exactly one of --accept-detected or --build-file",
+        );
+      }
+      const repository = normalizedRepository(options.repository);
+      const commit = normalizedCommit(options.commit);
+      const root = normalizedRoot(options.root);
+      const client = clientFor(options);
+      const deployment = await client.createDeployment(options.project, {
+        environmentId: options.environment,
+        source: {
+          kind: "git",
+          connection_id: options.connection,
+          repository,
+          commit,
+          ...(root ? { root_directory: root } : {}),
+        },
+        manifestRevision: positiveInteger(
+          options.manifestRevision,
+          "manifest revision",
+        ),
+        reason: options.reason,
+        buildMode: options.buildFile ? "repository" : "auto",
+        acceptDetected: Boolean(options.acceptDetected),
+        ...(options.buildFile ? { buildFile: options.buildFile } : {}),
+        idempotencyKey: `cli-git-deploy-${randomUUID()}`,
       });
       if (!options.wait) {
         process.stdout.write(`${JSON.stringify(deployment)}\n`);
@@ -323,6 +428,45 @@ function nonnegativeInteger(value: string, name: string): number {
   const result = Number(value);
   if (!Number.isSafeInteger(result) || result < 0) {
     throw new Error(`${name} must be a nonnegative integer`);
+  }
+  return result;
+}
+
+function normalizedRepository(value: string): string {
+  const result = value.trim().toLowerCase();
+  if (
+    !/^[a-z0-9](?:[a-z0-9_.-]{0,98}[a-z0-9])?\/[a-z0-9_.-]{1,100}$/u.test(
+      result,
+    )
+  ) {
+    throw new Error("repository must be an owner/name identifier");
+  }
+  return result;
+}
+
+function normalizedCommit(value: string): string {
+  const result = value.trim().toLowerCase();
+  if (
+    !/^[0-9a-f]{40}(?:[0-9a-f]{24})?$/u.test(result) ||
+    /^0+$/u.test(result)
+  ) {
+    throw new Error("commit must be an exact nonzero 40 or 64 character SHA");
+  }
+  return result;
+}
+
+function normalizedRoot(value: string): string {
+  const result = value.trim();
+  const parts = result.split("/");
+  if (
+    result.length > 512 ||
+    result.startsWith("/") ||
+    result.endsWith("/") ||
+    result.includes("\\") ||
+    result.includes(":") ||
+    parts.some((part) => part === "." || part === ".." || part === "")
+  ) {
+    throw new Error("root must be a canonical relative repository path");
   }
   return result;
 }

@@ -33,9 +33,10 @@ module Deployments
             accept_detected: true,
             manifest_revision: fetch.project.manifest_revision,
             reason: delivery.event_type == "push" ? "github_push" : "github_pull_request"
-          }
+          },
+          source_snapshot: fetch.source_snapshot,
+          source_fetch: fetch,
         )
-        result.deployment.update!(source_snapshot: fetch.source_snapshot, source_fetch: fetch)
         result.deployment
       end
     rescue ActiveRecord::RecordNotUnique

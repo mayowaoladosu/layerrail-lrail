@@ -15,7 +15,10 @@ module Console
 
     def create
       environment = @project.environments.find_by_public_id!(params.fetch(:environment_id))
-      result = Deployments::Create.call(
+      binding = @project.project_source_binding
+      raise ActiveRecord::RecordNotFound unless binding&.repository == params.fetch(:repository).to_s.downcase
+
+      result = Deployments::CreateFromGit.new.call(
         account: current_account,
         organization: @organization,
         project: @project,
@@ -23,7 +26,15 @@ module Console
           environment_id: environment.public_id,
           manifest_revision: @project.manifest_revision,
           reason: params.fetch(:reason, "Manual deployment"),
-          source: { kind: "git", repository: params.fetch(:repository), commit: params.fetch(:commit) }
+          build_mode: "auto",
+          accept_detected: true,
+          source: {
+            kind: "git",
+            connection_id: binding.source_connection.public_id,
+            repository: binding.repository,
+            commit: params.fetch(:commit).to_s.downcase,
+            root_directory: binding.root_directory
+          }
         },
       )
       redirect_to console_organization_project_deployment_path(

@@ -20,12 +20,7 @@ module Api
         project = current_organization!.projects.find_by_public_id!(params[:project_id])
         payload = deployment_params.to_h.deep_symbolize_keys
         idempotent(payload:) do
-          result = Deployments::Create.call(
-            account: current_account,
-            organization: current_organization!,
-            project:,
-            attributes: payload,
-          )
+          result = create_deployment(project:, payload:)
           [ 202, { data: ApiResource.deployment(result.deployment), operation: ApiResource.operation(result.operation) } ]
         end
       end
@@ -54,6 +49,24 @@ module Api
           :build_file,
           :accept_detected,
           source: {},
+        )
+      end
+
+      def create_deployment(project:, payload:)
+        if payload.dig(:source, :kind) == "git"
+          return Deployments::CreateFromGit.new.call(
+            account: current_account,
+            organization: current_organization!,
+            project:,
+            attributes: payload,
+          )
+        end
+
+        Deployments::Create.call(
+          account: current_account,
+          organization: current_organization!,
+          project:,
+          attributes: payload,
         )
       end
 

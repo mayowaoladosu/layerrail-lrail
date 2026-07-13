@@ -21,6 +21,7 @@ export declare class LrailClient {
             connection_id: string;
             repository: string;
             commit: string;
+            root_directory?: string;
         };
         manifestRevision: number;
         reason: string;

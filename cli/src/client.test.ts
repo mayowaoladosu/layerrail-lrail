@@ -184,6 +184,66 @@ describe("LrailClient", () => {
     );
   });
 
+  it("creates an exact Git deployment through an authorized source connection", async () => {
+    const fetch = vi.fn<typeof globalThis.fetch>().mockResolvedValueOnce(
+      response(
+        {
+          data: {
+            id: "dep_git",
+            state: "created",
+            source_snapshot_id: "snp_git",
+            operation_id: "op_git",
+            build_mode: "auto",
+            build_file: null,
+            accept_detected: true,
+            artifact_ready_at: null,
+          },
+          operation: {
+            id: "op_git",
+            state: "accepted",
+            stage: "sourcing",
+            waiting_reason: null,
+            progress: { completed: 0, total: 11 },
+            error: null,
+          },
+        },
+        202,
+      ),
+    );
+    const client = new LrailClient({
+      apiUrl: "https://api.example/",
+      token: "test-token",
+      organization: "org_test",
+      fetch,
+    });
+
+    await client.createDeployment("prj_test", {
+      environmentId: "env_test",
+      source: {
+        kind: "git",
+        connection_id: "src_test",
+        repository: "owner/repository",
+        commit: "a".repeat(40),
+        root_directory: "apps/web",
+      },
+      manifestRevision: 1,
+      reason: "cli_git_deploy",
+      buildMode: "auto",
+      acceptDetected: true,
+      idempotencyKey: "cli-git-deploy-test",
+    });
+
+    expect(JSON.parse(String(fetch.mock.calls[0]?.[1]?.body))).toMatchObject({
+      source: {
+        kind: "git",
+        connection_id: "src_test",
+        repository: "owner/repository",
+        commit: "a".repeat(40),
+        root_directory: "apps/web",
+      },
+    });
+  });
+
   it("retries a transient object-store part failure and sends cancellation reason", async () => {
     const fetch = vi
       .fn<typeof globalThis.fetch>()

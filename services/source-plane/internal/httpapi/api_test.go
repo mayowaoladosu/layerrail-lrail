@@ -88,6 +88,82 @@ func TestReadyReflectsObjectStoreFailure(t *testing.T) {
 	}
 }
 
+func TestProviderFetchRequiresFetchGrantAndReturnsSignedResult(t *testing.T) {
+	t.Parallel()
+	api, key, uploadGrant, _ := testAPI(t)
+	now := uploadGrant.ExpiresAt.Add(-15 * time.Minute)
+	fetchGrant := sourceauth.FetchGrant{
+		Version:            1,
+		Audience:           sourceauth.Audience,
+		FetchID:            "fet_019b01da-7e31-7000-8000-000000000010",
+		OrganizationID:     uploadGrant.OrganizationID,
+		ProjectID:          uploadGrant.ProjectID,
+		CreatorID:          uploadGrant.CreatorID,
+		SourceConnectionID: "src_019b01da-7e31-7000-8000-000000000011",
+		Provider:           "github",
+		InstallationID:     "123456",
+		Repository:         "example/repository",
+		CommitSHA:          strings.Repeat("a", 40),
+		ExpiresAt:          now.Add(15 * time.Minute),
+	}
+	provider := &apiProviderFetcher{result: sourceauth.SignedFetchResult{
+		KeyID: "source-test-v1",
+		Result: sourceauth.FetchResult{
+			Version:            1,
+			FetchID:            fetchGrant.FetchID,
+			OrganizationID:     fetchGrant.OrganizationID,
+			ProjectID:          fetchGrant.ProjectID,
+			SourceConnectionID: fetchGrant.SourceConnectionID,
+			Provider:           "github",
+			Repository:         fetchGrant.Repository,
+			RequestedCommitSHA: fetchGrant.CommitSHA,
+			ResolvedCommitSHA:  fetchGrant.CommitSHA,
+		},
+		Signature: "test-signature",
+	}}
+	api.fetcher = provider
+	api.fetching = make(chan struct{}, 1)
+	server := httptest.NewServer(api.Handler())
+	defer server.Close()
+
+	uploadToken, err := sourceauth.SignGrantAt(key, uploadGrant, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wrongRequest, _ := http.NewRequest(http.MethodPost, server.URL+"/v1/fetches", nil)
+	wrongRequest.Header.Set("Authorization", "Bearer "+uploadToken)
+	wrongResponse, err := http.DefaultClient.Do(wrongRequest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = wrongResponse.Body.Close()
+	if wrongResponse.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("upload grant authenticated fetch endpoint: %d", wrongResponse.StatusCode)
+	}
+
+	fetchToken, err := sourceauth.SignFetchGrantAt(key, fetchGrant, now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request, _ := http.NewRequest(http.MethodPost, server.URL+"/v1/fetches", nil)
+	request.Header.Set("Authorization", "Bearer "+fetchToken)
+	response, err := http.DefaultClient.Do(request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		t.Fatalf("fetch status = %d, body = %s", response.StatusCode, readBody(response))
+	}
+	var signed sourceauth.SignedFetchResult
+	if err := json.NewDecoder(response.Body).Decode(&signed); err != nil {
+		t.Fatal(err)
+	}
+	if provider.calls != 1 || provider.grant.FetchID != fetchGrant.FetchID || signed.Result.ResolvedCommitSHA != fetchGrant.CommitSHA {
+		t.Fatalf("unexpected fetch forwarding: calls=%d grant=%#v result=%#v", provider.calls, provider.grant, signed)
+	}
+}
+
 func testAPI(t *testing.T) (*API, []byte, sourceauth.UploadGrant, *apiStore) {
 	t.Helper()
 	now := time.Date(2026, 7, 12, 12, 0, 0, 0, time.UTC)
@@ -163,6 +239,18 @@ func readBody(response *http.Response) string {
 type apiStore struct {
 	presigned int
 	readyErr  error
+}
+
+type apiProviderFetcher struct {
+	result sourceauth.SignedFetchResult
+	grant  sourceauth.FetchGrant
+	calls  int
+}
+
+func (fetcher *apiProviderFetcher) Fetch(_ context.Context, grant sourceauth.FetchGrant) (sourceauth.SignedFetchResult, error) {
+	fetcher.calls++
+	fetcher.grant = grant
+	return fetcher.result, nil
 }
 
 func (store *apiStore) PresignPut(_ context.Context, key string, _ time.Duration) (*url.URL, error) {

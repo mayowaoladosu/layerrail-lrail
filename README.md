@@ -40,6 +40,8 @@ The official Temporal Ruby SDK does not support Windows, so `apps/control-worker
 
 Local source upload is also operational end to end. Rails authorizes an expiring bounded session, clients upload parts directly to the versioned MinIO bucket, and the non-root Go source gateway streams a hostile tar.gz through path/type/size/ratio/credential controls. It stores content-addressed archive and manifest objects, persists a signed replay receipt, deletes temporary parts, and returns an Ed25519 result that Rails verifies before creating the immutable snapshot. No source byte traverses Rails memory.
 
+The provider acquisition plane is split at the credential seam. A dedicated non-root token broker alone holds the GitHub App key and can mint only one-repository, read-only installation tokens from signed fetch grants. The source gateway resolves and verifies an exact commit/tree, follows only approved archive redirects without forwarding the token, verifies Git blob identities, deterministically normalizes the archive, and emits an immutable Ed25519 fetch receipt. Its conformance suite proves exact-commit identity, replay without a second token, force-push divergence, credential absence from objects, and fail-closed submodule/LFS policy.
+
 ## Status
 
 Construction follows dependency-ordered, acceptance-gated vertical slices. A compile or attractive dashboard is not completion; executable positive, negative, recovery, and cleanup evidence is required for each supported capability.

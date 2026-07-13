@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/mayowaoladosu/layerrail-lrail/services/source-plane/internal/objectstore"
+	"github.com/mayowaoladosu/layerrail-lrail/services/source-plane/internal/providerfetch"
 	"github.com/mayowaoladosu/layerrail-lrail/services/source-plane/internal/sourcearchive"
 	"github.com/mayowaoladosu/layerrail-lrail/services/source-plane/internal/sourceauth"
 	"github.com/mayowaoladosu/layerrail-lrail/services/source-plane/internal/sourceupload"
@@ -29,6 +30,12 @@ type API struct {
 	logger     *slog.Logger
 	now        func() time.Time
 	finalizing chan struct{}
+	fetcher    ProviderFetcher
+	fetching   chan struct{}
+}
+
+type ProviderFetcher interface {
+	Fetch(context.Context, sourceauth.FetchGrant) (sourceauth.SignedFetchResult, error)
 }
 
 type Config struct {
@@ -38,6 +45,8 @@ type Config struct {
 	Logger                  *slog.Logger
 	Now                     func() time.Time
 	MaxConcurrentFinalizers int
+	ProviderFetcher         ProviderFetcher
+	MaxConcurrentFetchers   int
 }
 
 func New(config Config) (*API, error) {
@@ -53,6 +62,13 @@ func New(config Config) (*API, error) {
 	if config.MaxConcurrentFinalizers < 1 || config.MaxConcurrentFinalizers > 64 {
 		return nil, errors.New("source finalizer concurrency is outside bounds")
 	}
+	if config.ProviderFetcher != nil && (config.MaxConcurrentFetchers < 1 || config.MaxConcurrentFetchers > 64) {
+		return nil, errors.New("source fetcher concurrency is outside bounds")
+	}
+	maxFetchers := config.MaxConcurrentFetchers
+	if maxFetchers < 1 {
+		maxFetchers = 1
+	}
 	return &API{
 		store:      config.Store,
 		grantKey:   append([]byte(nil), config.GrantKey...),
@@ -60,6 +76,8 @@ func New(config Config) (*API, error) {
 		logger:     config.Logger,
 		now:        config.Now,
 		finalizing: make(chan struct{}, config.MaxConcurrentFinalizers),
+		fetcher:    config.ProviderFetcher,
+		fetching:   make(chan struct{}, maxFetchers),
 	}, nil
 }
 
@@ -69,7 +87,50 @@ func (api *API) Handler() http.Handler {
 	mux.HandleFunc("GET /ready", api.ready)
 	mux.HandleFunc("POST /v1/sessions", api.createSession)
 	mux.HandleFunc("POST /v1/finalizations", api.finalize)
+	mux.HandleFunc("POST /v1/fetches", api.fetch)
 	return api.securityHeaders(mux)
+}
+
+func (api *API) fetch(response http.ResponseWriter, request *http.Request) {
+	grant, ok := api.authenticateFetch(response, request)
+	if !ok {
+		return
+	}
+	if api.fetcher == nil {
+		writeError(response, http.StatusServiceUnavailable, "provider_unavailable", "Provider fetching is not configured.")
+		return
+	}
+	request.Body = http.MaxBytesReader(response, request.Body, 1)
+	if count, err := io.Copy(io.Discard, request.Body); err != nil || count != 0 {
+		writeError(response, http.StatusBadRequest, "invalid_request", "Source fetch requests do not accept a body.")
+		return
+	}
+	select {
+	case api.fetching <- struct{}{}:
+		defer func() { <-api.fetching }()
+	default:
+		response.Header().Set("Retry-After", "2")
+		writeError(response, http.StatusTooManyRequests, "fetcher_busy", "Source fetch capacity is busy.")
+		return
+	}
+
+	signed, err := api.fetcher.Fetch(request.Context(), grant)
+	if err != nil {
+		switch {
+		case errors.Is(err, providerfetch.ErrProviderAuthentication):
+			writeError(response, http.StatusUnprocessableEntity, "provider_authentication_failed", "The provider installation cannot access this repository.")
+		case errors.Is(err, providerfetch.ErrReferenceNotFound):
+			writeError(response, http.StatusUnprocessableEntity, "source_ref_not_found", "The exact provider commit is unavailable.")
+		case errors.Is(err, providerfetch.ErrRepositoryPolicy), errors.Is(err, providerfetch.ErrSubmoduleUnsupported),
+			errors.Is(err, providerfetch.ErrLFSUnsupported), errors.Is(err, sourcearchive.ErrPathUnsafe),
+			errors.Is(err, sourcearchive.ErrSecretMaterial):
+			writeError(response, http.StatusUnprocessableEntity, "unsafe_source", "The provider source did not pass validation.")
+		default:
+			api.internalError(response, request, err)
+		}
+		return
+	}
+	writeJSON(response, http.StatusOK, signed)
 }
 
 func (api *API) live(response http.ResponseWriter, _ *http.Request) {
@@ -168,6 +229,20 @@ func (api *API) authenticate(response http.ResponseWriter, request *http.Request
 	if err != nil {
 		writeError(response, http.StatusUnauthorized, "invalid_grant", "Source upload grant is invalid or expired.")
 		return sourceauth.UploadGrant{}, false
+	}
+	return grant, true
+}
+
+func (api *API) authenticateFetch(response http.ResponseWriter, request *http.Request) (sourceauth.FetchGrant, bool) {
+	authorization := request.Header.Get("Authorization")
+	if !strings.HasPrefix(authorization, "Bearer ") || len(authorization) > 8192 {
+		writeError(response, http.StatusUnauthorized, "invalid_grant", "Source fetch grant is invalid or expired.")
+		return sourceauth.FetchGrant{}, false
+	}
+	grant, err := sourceauth.VerifyFetchGrant(api.grantKey, strings.TrimPrefix(authorization, "Bearer "), api.now().UTC())
+	if err != nil {
+		writeError(response, http.StatusUnauthorized, "invalid_grant", "Source fetch grant is invalid or expired.")
+		return sourceauth.FetchGrant{}, false
 	}
 	return grant, true
 }

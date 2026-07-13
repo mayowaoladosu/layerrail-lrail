@@ -68,12 +68,19 @@ func main() {
 		PrivateKey:   config.privateKey,
 		SigningKeyID: config.signingKeyID,
 	}
+	providerFetcher, err := buildProviderFetcher(config, store)
+	if err != nil {
+		logger.Error("create provider source fetcher", "error", err.Error())
+		os.Exit(1)
+	}
 	api, err := httpapi.New(httpapi.Config{
 		Store:                   store,
 		GrantKey:                config.grantKey,
 		Finalizer:               finalizer,
 		Logger:                  logger,
 		MaxConcurrentFinalizers: config.maxFinalizers,
+		ProviderFetcher:         providerFetcher,
+		MaxConcurrentFetchers:   config.maxFetchers,
 	})
 	if err != nil {
 		logger.Error("create source HTTP API", "error", err.Error())
@@ -130,6 +137,7 @@ type configuration struct {
 	privateKey       ed25519.PrivateKey
 	signingKeyID     string
 	maxFinalizers    int
+	maxFetchers      int
 }
 
 func loadConfig() (configuration, error) {
@@ -157,6 +165,10 @@ func loadConfig() (configuration, error) {
 	if err != nil {
 		return configuration{}, errors.New("LRAIL_SOURCE_MAX_FINALIZERS must be an integer")
 	}
+	maxFetchers, err := strconv.Atoi(envOr("LRAIL_SOURCE_MAX_FETCHERS", "2"))
+	if err != nil {
+		return configuration{}, errors.New("LRAIL_SOURCE_MAX_FETCHERS must be an integer")
+	}
 	config := configuration{
 		listenAddress:    envOr("LRAIL_SOURCE_LISTEN_ADDRESS", ":8080"),
 		internalEndpoint: os.Getenv("LRAIL_SOURCE_S3_INTERNAL_ENDPOINT"),
@@ -172,6 +184,7 @@ func loadConfig() (configuration, error) {
 		privateKey:       ed25519.PrivateKey(privateKey),
 		signingKeyID:     os.Getenv("LRAIL_SOURCE_SIGNING_KEY_ID"),
 		maxFinalizers:    maxFinalizers,
+		maxFetchers:      maxFetchers,
 	}
 	if config.internalEndpoint == "" || config.publicEndpoint == "" || config.accessKey == "" || config.secretKey == "" ||
 		config.bucket == "" || config.scratchDir == "" || config.signingKeyID == "" {

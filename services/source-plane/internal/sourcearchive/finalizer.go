@@ -125,7 +125,7 @@ func readTar(reader *tar.Reader, metadata Metadata, policy Policy) (Manifest, er
 			return Manifest{}, &ValidationError{Kind: ErrEntryLimit}
 		}
 
-		normalized, err := normalizePath(header.Name, header.Typeflag == tar.TypeDir, policy.MaxPathBytes)
+		normalized, err := NormalizePath(header.Name, header.Typeflag == tar.TypeDir, policy.MaxPathBytes)
 		if err != nil {
 			return Manifest{}, err
 		}
@@ -201,7 +201,8 @@ func readTar(reader *tar.Reader, metadata Metadata, policy Policy) (Manifest, er
 	}, nil
 }
 
-func normalizePath(raw string, directory bool, maxBytes int) (string, error) {
+// NormalizePath returns a canonical portable archive path or a typed validation error.
+func NormalizePath(raw string, directory bool, maxBytes int) (string, error) {
 	if !utf8.ValidString(raw) || strings.ContainsRune(raw, '\x00') || strings.Contains(raw, "\\") {
 		return "", &ValidationError{Kind: ErrPathUnsafe, Path: raw, Info: "invalid encoding or separator"}
 	}
@@ -243,7 +244,7 @@ func validateMetadata(metadata Metadata) error {
 		return ErrMetadataInvalid
 	}
 	if metadata.RootDirectory != "" {
-		if _, err := normalizePath(metadata.RootDirectory, false, 512); err != nil {
+		if _, err := NormalizePath(metadata.RootDirectory, false, 512); err != nil {
 			return fmt.Errorf("%w: root directory: %v", ErrMetadataInvalid, err)
 		}
 	}

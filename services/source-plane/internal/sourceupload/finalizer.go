@@ -10,13 +10,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"path"
-	"strings"
 	"time"
 
 	"github.com/mayowaoladosu/layerrail-lrail/internal/canonicaljson"
 	"github.com/mayowaoladosu/layerrail-lrail/services/source-plane/internal/objectstore"
+	"github.com/mayowaoladosu/layerrail-lrail/services/source-plane/internal/snapshotstore"
 	"github.com/mayowaoladosu/layerrail-lrail/services/source-plane/internal/sourcearchive"
 	"github.com/mayowaoladosu/layerrail-lrail/services/source-plane/internal/sourceauth"
 )
@@ -52,18 +51,12 @@ func (finalizer *Finalizer) Finalize(
 	}
 	defer reader.Close()
 
-	temporary, err := os.CreateTemp(finalizer.ScratchDir, "lrail-source-*.tar.gz")
-	if err != nil {
-		return sourceauth.SignedResult{}, fmt.Errorf("create source finalizer scratch file: %w", err)
-	}
-	temporaryPath := temporary.Name()
-	defer os.Remove(temporaryPath)
-	defer temporary.Close()
-	if err := temporary.Chmod(0o600); err != nil {
-		return sourceauth.SignedResult{}, fmt.Errorf("secure source scratch file: %w", err)
-	}
-
-	result, err := sourcearchive.Finalize(io.TeeReader(reader, temporary), sourcearchive.Options{
+	stored, err := (&snapshotstore.Writer{
+		Store:      finalizer.Store,
+		ScratchDir: finalizer.ScratchDir,
+		Policy:     finalizer.Policy,
+	}).Write(ctx, snapshotstore.Input{
+		Reader:                reader,
 		ExpectedArchiveBytes:  grant.ExpectedArchiveBytes,
 		ExpectedArchiveSHA256: grant.ExpectedArchiveSHA256,
 		Metadata: sourcearchive.Metadata{
@@ -72,39 +65,8 @@ func (finalizer *Finalizer) Finalize(
 			CreatorID:     grant.CreatorID,
 			ExcludedCount: grant.ExcludedCount,
 		},
-		Policy: finalizer.Policy,
 	})
 	if err != nil {
-		return sourceauth.SignedResult{}, err
-	}
-	if err := temporary.Sync(); err != nil {
-		return sourceauth.SignedResult{}, fmt.Errorf("sync source scratch file: %w", err)
-	}
-	if _, err := temporary.Seek(0, io.SeekStart); err != nil {
-		return sourceauth.SignedResult{}, fmt.Errorf("rewind source scratch file: %w", err)
-	}
-
-	digestKey := strings.TrimPrefix(result.SnapshotSHA256, "sha256:")
-	archiveKey := path.Join("snapshots", "sha256", digestKey, "source.tar.gz")
-	manifestKey := path.Join("snapshots", "sha256", digestKey, "manifest.json")
-	if err := finalizer.Store.PutImmutable(
-		ctx,
-		archiveKey,
-		temporary,
-		grant.ExpectedArchiveBytes,
-		result.ArchiveSHA256,
-		"application/gzip",
-	); err != nil {
-		return sourceauth.SignedResult{}, err
-	}
-	if err := finalizer.Store.PutImmutable(
-		ctx,
-		manifestKey,
-		bytes.NewReader(result.CanonicalManifest),
-		int64(len(result.CanonicalManifest)),
-		result.ManifestSHA256,
-		"application/json",
-	); err != nil {
 		return sourceauth.SignedResult{}, err
 	}
 
@@ -117,12 +79,12 @@ func (finalizer *Finalizer) Finalize(
 		SessionID:      grant.SessionID,
 		OrganizationID: grant.OrganizationID,
 		ProjectID:      grant.ProjectID,
-		SnapshotSHA256: result.SnapshotSHA256,
-		ManifestSHA256: result.ManifestSHA256,
-		ArchiveSHA256:  result.ArchiveSHA256,
-		ManifestRef:    finalizer.Store.Ref(manifestKey),
-		ArchiveRef:     finalizer.Store.Ref(archiveKey),
-		SizeBytes:      grant.ExpectedArchiveBytes,
+		SnapshotSHA256: stored.Source.SnapshotSHA256,
+		ManifestSHA256: stored.Source.ManifestSHA256,
+		ArchiveSHA256:  stored.Source.ArchiveSHA256,
+		ManifestRef:    stored.ManifestRef,
+		ArchiveRef:     stored.ArchiveRef,
+		SizeBytes:      stored.SizeBytes,
 		PolicyVersion:  finalizer.Policy.Version,
 		FinalizedAt:    now,
 	})

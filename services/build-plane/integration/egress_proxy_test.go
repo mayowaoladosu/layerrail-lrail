@@ -150,11 +150,13 @@ func TestRealWorkerRoutesNetworkedSolveThroughPolicyProxy(t *testing.T) {
 	defer buildkit.Close()
 
 	probe := compileEgressProbe(t, targetPort)
-	state := llb.Scratch().File(llb.Mkfile("/probe", 0o755, probe)).File(llb.Mkfile("/target-ca.pem", 0o444, rootPEM))
+	state := llb.Scratch().File(llb.Mkdir("/tmp", 0o1777)).File(llb.Mkfile("/probe", 0o755, probe)).File(llb.Mkfile("/target-ca.pem", 0o444, rootPEM))
 	state = state.Run(
 		llb.Args([]string{"/probe"}), llb.Network(pb.NetMode_UNSET),
+		llb.User("10001:10001"),
 		llb.WithProxy(llb.ProxyEnv{HTTPProxy: llbcompiler.BuildEgressProxyURL, HTTPSProxy: llbcompiler.BuildEgressProxyURL}),
 	).Root()
+	state = llb.Scratch().File(llb.Copy(state, "/tmp/proof.txt", "/proof.txt"))
 	definition, err := state.Marshal(ctx, llb.Platform(ocispecs.Platform{OS: "linux", Architecture: "amd64"}))
 	if err != nil {
 		t.Fatalf("Marshal: %v", err)
@@ -266,6 +268,9 @@ import (
  "time"
 )
 func main() {
+	if err := os.Mkdir("/tmp/go-build-private", 0700); err != nil { panic(err) }
+	if err := os.WriteFile("/tmp/go-build-private/work", []byte("private"), 0600); err != nil { panic(err) }
+	time.Sleep(1500*time.Millisecond)
  ca, err := os.ReadFile("/target-ca.pem"); if err != nil { panic(err) }
  roots := x509.NewCertPool(); if !roots.AppendCertsFromPEM(ca) { panic("bad CA") }
  transport := &http.Transport{Proxy: http.ProxyFromEnvironment, TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS13, RootCAs: roots}}
@@ -274,7 +279,7 @@ func main() {
  body, err := io.ReadAll(response.Body); response.Body.Close(); if err != nil || response.StatusCode != 200 { panic(fmt.Sprintf("target: %%v %%d", err, response.StatusCode)) }
  if response, err = client.Get("https://169.254.169.254/"); err == nil { response.Body.Close(); panic("metadata reachable") }
  if response, err = client.Get("https://undeclared.integration.test:%d/"); err == nil { response.Body.Close(); panic("undeclared reachable") }
- if err := os.WriteFile("/proof.txt", append(body, []byte("|metadata=blocked|undeclared=blocked")...), 0644); err != nil { panic(err) }
+ if err := os.WriteFile("/tmp/proof.txt", append(body, []byte("|metadata=blocked|undeclared=blocked")...), 0644); err != nil { panic(err) }
 }
 `, targetPort, targetPort)
 	sourcePath := filepath.Join(root, "main.go")

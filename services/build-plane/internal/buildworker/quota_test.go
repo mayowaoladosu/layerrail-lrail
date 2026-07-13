@@ -63,6 +63,42 @@ func TestMonitorScratchCancelsOnByteAndInodeLimits(t *testing.T) {
 	}
 }
 
+func TestScratchQuotaMonitorProvesReadinessThenFailsClosed(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	readyFile := filepath.Join(root, "quota-monitor.ready")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		done <- RunScratchQuotaMonitor(ctx, root, readyFile, ScratchQuota{MaxBytes: 1024, MaxInodes: 100, PollInterval: time.Millisecond})
+	}()
+	monitorExited, err := waitForGuardMonitor(ctx, readyFile, done)
+	if err != nil || monitorExited {
+		t.Fatalf("quota monitor readiness exited=%t error=%v", monitorExited, err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "oversized"), make([]byte, 2048), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	select {
+	case err := <-done:
+		if !errors.Is(err, ErrScratchQuota) {
+			t.Fatalf("quota monitor error = %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("quota monitor did not fail closed")
+	}
+}
+
+func TestScratchQuotaMonitorRejectsEscapedReadinessPath(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	err := RunScratchQuotaMonitor(context.Background(), root, filepath.Join(root, "..", "ready"), ScratchQuota{})
+	if err == nil {
+		t.Fatal("expected escaped readiness path rejection")
+	}
+}
+
 func TestMeasureScratchCountsSymlinkWithoutFollowingIt(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("ordinary Windows test users cannot create symlinks")

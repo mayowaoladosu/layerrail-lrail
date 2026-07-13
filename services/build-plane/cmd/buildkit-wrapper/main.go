@@ -45,11 +45,23 @@ func run() error {
 			return errors.New("LRAIL_QUOTA_INTERVAL is invalid")
 		}
 	}
-	arguments := append([]string{"/usr/local/bin/lrail-buildkit-wrapper", "--inside-rootlesskit"}, os.Args[1:]...)
+	quota := buildworker.ScratchQuota{MaxBytes: maxBytes, MaxInodes: maxInodes, PollInterval: interval}
+	readyFile := root + "/quota-monitor.ready"
+	if len(os.Args) > 1 && os.Args[1] == "--quota-monitor" {
+		return buildworker.RunScratchQuotaMonitor(ctx, root, readyFile, quota)
+	}
+	arguments := append([]string{
+		"--pidns", "--state-dir=" + root + "/build-rootlesskit",
+		"/usr/local/bin/lrail-buildkit-wrapper", "--inside-rootlesskit",
+	}, os.Args[1:]...)
 	return buildworker.RunQuotaGuard(ctx, buildworker.GuardOptions{
-		Root: root, Quota: buildworker.ScratchQuota{MaxBytes: maxBytes, MaxInodes: maxInodes, PollInterval: interval},
+		Root: root, Quota: quota,
 		Command: "rootlesskit", Arguments: arguments, Stdout: os.Stdout, Stderr: os.Stderr,
 		PrepareDirectories: []string{"buildkit", "run", "tmp"},
+		MonitorCommand:     "rootlesskit", MonitorArguments: []string{
+			"--net=none", "--state-dir=" + root + "/quota-rootlesskit",
+			"/usr/local/bin/lrail-buildkit-wrapper", "--quota-monitor",
+		}, MonitorReadyFile: readyFile,
 	})
 }
 

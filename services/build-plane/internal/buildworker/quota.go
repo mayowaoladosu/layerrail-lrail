@@ -75,6 +75,58 @@ func monitorScratch(parent context.Context, root string, quota ScratchQuota) (co
 	return ctx, cancel, violations
 }
 
+func RunScratchQuotaMonitor(ctx context.Context, root, readyFile string, quota ScratchQuota) error {
+	normalized, err := normalizeScratchQuota(quota)
+	if err != nil || root == "" || readyFile == "" || !inside(root, readyFile) {
+		return errors.New("scratch quota monitor configuration is invalid")
+	}
+	if err := os.Remove(readyFile); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return errors.New("clear stale scratch quota readiness proof")
+	}
+	ticker := time.NewTicker(normalized.PollInterval)
+	defer ticker.Stop()
+	ready := false
+	for {
+		usage, err := measureScratchWithRetry(ctx, root)
+		if err != nil {
+			return fmt.Errorf("%w: scratch inspection failed: %v", ErrScratchQuota, err)
+		}
+		if usage.Bytes > normalized.MaxBytes || usage.Inodes > normalized.MaxInodes {
+			return fmt.Errorf("%w: bytes=%d/%d inodes=%d/%d", ErrScratchQuota, usage.Bytes, normalized.MaxBytes, usage.Inodes, normalized.MaxInodes)
+		}
+		if !ready {
+			if err := writeGuardReadyFile(readyFile); err != nil {
+				return err
+			}
+			ready = true
+		}
+		select {
+		case <-ctx.Done():
+			return context.Cause(ctx)
+		case <-ticker.C:
+		}
+	}
+}
+
+func writeGuardReadyFile(path string) error {
+	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	if err != nil {
+		return errors.New("create scratch quota readiness proof")
+	}
+	if _, err := file.WriteString(guardReadyContents); err != nil {
+		_ = file.Close()
+		return errors.New("write scratch quota readiness proof")
+	}
+	if err := file.Sync(); err != nil {
+		_ = file.Close()
+		return errors.New("sync scratch quota readiness proof")
+	}
+	if err := file.Close(); err != nil {
+		return errors.New("close scratch quota readiness proof")
+	}
+	return nil
+}
+
 func measureScratchWithRetry(ctx context.Context, root string) (ScratchUsage, error) {
 	var lastErr error
 	for attempt := range scratchMeasureAttempts {

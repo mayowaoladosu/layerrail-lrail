@@ -1,6 +1,7 @@
 #!/usr/bin/env ruby
 
 require "lrail_control_workers"
+require "temporalio/cancellation"
 
 client = Temporalio::Client.connect(
   ENV.fetch("LRAIL_TEMPORAL_ADDRESS"),
@@ -10,4 +11,17 @@ worker = LrailControlWorkers::WorkerFactory.build(
   client:,
   task_queue: ENV.fetch("LRAIL_TEMPORAL_TASK_QUEUE")
 )
-worker.run(shutdown_signals: %w[SIGINT SIGTERM])
+cancellation, cancel = Temporalio::Cancellation.new
+starter = LrailControlWorkers::DeploymentEventStarter.new(
+  starter: LrailControlWorkers::Starter.new(
+    client:,
+    task_queue: ENV.fetch("LRAIL_TEMPORAL_TASK_QUEUE")
+  )
+)
+starter_thread = Thread.new { starter.run(cancellation:) }
+begin
+  worker.run(shutdown_signals: %w[SIGINT SIGTERM])
+ensure
+  cancel&.call(reason: "worker_shutdown")
+  starter_thread&.join(5)
+  starter&.close

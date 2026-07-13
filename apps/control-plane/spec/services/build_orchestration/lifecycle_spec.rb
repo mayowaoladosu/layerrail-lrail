@@ -1,7 +1,7 @@
 require "rails_helper"
 
 RSpec.describe "deployment build orchestration persistence" do
-  DIGEST = ->(character) { "sha256:#{character * 64}" }
+  LIFECYCLE_DIGEST = ->(character) { "sha256:#{character * 64}" }
 
   def local_deployment_fixture(accept_detected: true)
     account = create_account
@@ -17,7 +17,7 @@ RSpec.describe "deployment build orchestration persistence" do
         organization:,
         project:,
         kind: "local",
-        digest: DIGEST.call("a"),
+        digest: LIFECYCLE_DIGEST.call("a"),
         object_ref: "s3://lrail-source/snapshots/source.tar.gz",
         size_bytes: 1_024,
         retention_until: 30.days.from_now,
@@ -29,12 +29,12 @@ RSpec.describe "deployment build orchestration persistence" do
         source_snapshot: snapshot,
         state: "complete",
         expected_archive_bytes: 1_024,
-        expected_archive_sha256: DIGEST.call("c"),
+        expected_archive_sha256: LIFECYCLE_DIGEST.call("c"),
         expected_parts: 1,
         root_directory: "",
         snapshot_sha256: snapshot.digest,
-        manifest_sha256: DIGEST.call("b"),
-        archive_sha256: DIGEST.call("c"),
+        manifest_sha256: LIFECYCLE_DIGEST.call("b"),
+        archive_sha256: LIFECYCLE_DIGEST.call("c"),
         manifest_ref: "s3://lrail-source/manifests/source.json",
         archive_ref: snapshot.object_ref,
         signing_key_id: "source-test-v1",
@@ -60,7 +60,7 @@ RSpec.describe "deployment build orchestration persistence" do
   end
 
   def complete_result(build:, snapshot:)
-    manifest_digest = DIGEST.call("d")
+    manifest_digest = LIFECYCLE_DIGEST.call("d")
     repository = "registry.example.test/lrail/api"
     evidence = Attestation::KINDS.each_with_index.map do |kind, index|
       digest = "sha256:#{format("%064x", index + 1)}"
@@ -78,12 +78,12 @@ RSpec.describe "deployment build orchestration persistence" do
       state: "complete",
       source_snapshot_id: snapshot.public_id,
       source_digest: snapshot.digest,
-      detection_digest: DIGEST.call("1"),
-      manifest_digest: DIGEST.call("2"),
-      build_ir_digest: DIGEST.call("3"),
-      definition_digest: DIGEST.call("4"),
-      assignment_digest: DIGEST.call("5"),
-      logs_digest: DIGEST.call("6"),
+      detection_digest: LIFECYCLE_DIGEST.call("1"),
+      manifest_digest: LIFECYCLE_DIGEST.call("2"),
+      build_ir_digest: LIFECYCLE_DIGEST.call("3"),
+      definition_digest: LIFECYCLE_DIGEST.call("4"),
+      assignment_digest: LIFECYCLE_DIGEST.call("5"),
+      logs_digest: LIFECYCLE_DIGEST.call("6"),
       detector_result_ref: "s3://lrail-build/detector.json",
       manifest_ref: "s3://lrail-build/manifest.json",
       generated_build_ref: "s3://lrail-build/Lrailfile.star",
@@ -94,18 +94,18 @@ RSpec.describe "deployment build orchestration persistence" do
           name: "api",
           kind: "oci_image",
           artifact_ref: "#{repository}@#{manifest_digest}",
-          artifact_digest: DIGEST.call("e"),
+          artifact_digest: LIFECYCLE_DIGEST.call("e"),
           artifact_size: 4_096,
-          config_digest: DIGEST.call("7"),
+          config_digest: LIFECYCLE_DIGEST.call("7"),
           manifest_digest:,
-          layer_digests: [ DIGEST.call("f") ],
+          layer_digests: [ LIFECYCLE_DIGEST.call("f") ],
           supply_chain: {
             policy_state: "accepted",
             scan_state: "passed",
-            policy_digest: DIGEST.call("8"),
+            policy_digest: LIFECYCLE_DIGEST.call("8"),
             signer_key_id: "lrail-build-evidence",
             signer_key_version: 1,
-            signer_public_key_digest: DIGEST.call("9"),
+            signer_public_key_digest: LIFECYCLE_DIGEST.call("9"),
             evidence:
           }
         }
@@ -157,8 +157,8 @@ RSpec.describe "deployment build orchestration persistence" do
         operation_id: deployment.operation.public_id,
         generation: 1,
       )
-      expect(prepared.plan.dig(:source, :manifest_digest)).to eq(DIGEST.call("b"))
-      expect(prepared.plan.dig(:source, :archive_digest)).to eq(DIGEST.call("c"))
+      expect(prepared.plan.dig(:source, :manifest_digest)).to eq(LIFECYCLE_DIGEST.call("b"))
+      expect(prepared.plan.dig(:source, :archive_digest)).to eq(LIFECYCLE_DIGEST.call("c"))
       expect(prepared.plan.fetch(:configuration)).to eq(mode: "auto", accept_detected: true)
       expect(BuildOrchestration::Prepare.call(deployment:).build).to eq(prepared.build)
     end
@@ -204,8 +204,8 @@ RSpec.describe "deployment build orchestration persistence" do
         .and change(Attestation, :count).by(5)
       expect(build.reload).to have_attributes(
         state: "complete",
-        definition_digest: DIGEST.call("4"),
-        logs_digest: DIGEST.call("6"),
+        definition_digest: LIFECYCLE_DIGEST.call("4"),
+        logs_digest: LIFECYCLE_DIGEST.call("6"),
         cleanup_state: "clean",
       )
       expect(deployment.reload).to have_attributes(state: "artifact_ready")
@@ -247,7 +247,7 @@ RSpec.describe "deployment build orchestration persistence" do
         organization: foreign_organization,
         project: foreign_project,
         kind: "local",
-        digest: DIGEST.call("f"),
+        digest: LIFECYCLE_DIGEST.call("f"),
         object_ref: "s3://foreign/source.tar.gz",
         size_bytes: 100,
         retention_until: 30.days.from_now,

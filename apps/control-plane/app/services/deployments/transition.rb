@@ -26,7 +26,7 @@ module Deployments
           event_type: "deployment.#{to}",
           action: "deployment.transition",
           actor:,
-          data: { from:, to:, reason: },
+          data: { from:, to:, reason:, workflow_id: deployment.operation.workflow_id },
         )
         deployment
       end

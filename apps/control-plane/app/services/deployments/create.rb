@@ -46,7 +46,7 @@ module Deployments
         )
         operation.update!(
           resource_public_id: deployment.public_id,
-          workflow_id: "deployment/#{deployment.public_id}",
+          workflow_id: "deployment/#{deployment.public_id}/build/1",
         )
         DomainRecorder.record!(
           resource: deployment,
@@ -55,7 +55,8 @@ module Deployments
           data: {
             environment_id: environment.public_id,
             operation_id: operation.public_id,
-            source_snapshot_id: source_snapshot&.public_id
+            source_snapshot_id: source_snapshot&.public_id,
+            workflow_id: operation.workflow_id
           }.compact,
         )
         Result.new(deployment, operation)

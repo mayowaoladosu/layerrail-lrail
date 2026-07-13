@@ -1,9 +1,10 @@
-require "rake/testtask"
+require "rake"
 
-Rake::TestTask.new do |task|
-  task.libs << "lib"
-  task.libs << "test"
-  task.pattern = "test/**/*_test.rb"
+desc "Run each test file in an isolated Ruby process"
+task :test do
+  FileList["test/**/*_test.rb"].sort.each do |file|
+    ruby "-Ilib", file
+  end
 end
 
 task default: :test

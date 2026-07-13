@@ -1,4 +1,12 @@
 Rails.application.routes.draw do
+  namespace :internal, defaults: { format: :json } do
+    namespace :v1 do
+      post "deployments/:id/builds:prepare", to: "deployment_builds#prepare"
+      post "deployments/:id/build-events", to: "deployment_builds#events"
+      post "deployments/:id/build-result", to: "deployment_builds#result"
+    end
+  end
+
   post "/webhooks/resend", to: "webhooks/resend#create"
   post "/webhooks/github", to: "webhooks/github#create"
 

@@ -4,8 +4,13 @@ module LrailControlWorkers
       Temporalio::Worker.new(
         client:,
         task_queue:,
-        workflows: [ Workflows::ProjectProvisioning ],
-        activities: [ Activities::IdempotentReceipt ]
+        workflows: [ Workflows::ProjectProvisioning, Workflows::DeploymentBuild ],
+        activities: [
+          Activities::IdempotentReceipt,
+          Activities::PrepareDeploymentBuild,
+          Activities::ExecuteDeploymentBuild,
+          Activities::CancelDeploymentBuild
+        ]
       )
     end
   end

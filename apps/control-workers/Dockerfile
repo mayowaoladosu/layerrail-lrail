@@ -20,7 +20,7 @@ RUN bundle install --jobs 4 --retry 3
 COPY .rubocop.yml Rakefile ./
 COPY lib ./lib
 COPY test ./test
-CMD ["bundle", "exec", "ruby", "-Ilib", "test/temporal_workflow_test.rb"]
+CMD ["bundle", "exec", "rake", "test"]
 
 FROM base AS runtime
 

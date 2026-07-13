@@ -21,6 +21,7 @@ class Organization < ApplicationRecord
   has_many :webhooks, dependent: :destroy
   has_many :source_upload_sessions, dependent: :destroy
   has_many :source_snapshots, dependent: :restrict_with_error
+  has_many :api_keys, dependent: :destroy
 
   normalizes :slug, with: ->(value) { value.to_s.strip.downcase }
 

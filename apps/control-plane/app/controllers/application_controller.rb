@@ -28,6 +28,7 @@ class ApplicationController < ActionController::Base
   def assign_request_context
     Current.request_id = RequestIdentity.request_id(request.request_id)
     Current.traceparent = RequestIdentity.traceparent(request.headers["traceparent"]&.first(128))
+    Current.authentication_method = "session"
     response.set_header("X-Request-ID", Current.request_id)
   end
 

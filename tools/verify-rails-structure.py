@@ -112,6 +112,18 @@ def main() -> None:
         if source_expiry_grants != "t|f":
             raise SystemExit(f"unexpected restored source expiry grants: {source_expiry_grants}")
 
+        api_key_grants = psql(
+            container,
+            DATABASE,
+            """
+            SELECT
+              has_function_privilege('lrail_web', 'lrail_find_api_key(text)', 'EXECUTE'),
+              has_function_privilege('lrail_worker', 'lrail_find_api_key(text)', 'EXECUTE');
+            """,
+        ).stdout.strip()
+        if api_key_grants != "t|f":
+            raise SystemExit(f"unexpected restored API key grants: {api_key_grants}")
+
         print(
             "Verified SQL restore: "
             f"{function_count} functions, {policy_count} tenant policies, "

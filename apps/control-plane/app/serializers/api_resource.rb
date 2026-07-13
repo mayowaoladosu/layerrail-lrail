@@ -82,6 +82,20 @@ class ApiResource
       )
     end
 
+    def api_key(value)
+      base(value).merge(
+        organization_id: value.organization.public_id,
+        account_id: value.account.public_id,
+        name: value.name,
+        display_prefix: "lrail_key_#{value.prefix}_…",
+        scopes: value.scopes,
+        constraints: value.constraints,
+        expires_at: timestamp(value.expires_at),
+        last_used_at: timestamp(value.last_used_at),
+        revoked_at: timestamp(value.revoked_at),
+      )
+    end
+
     def domain(value)
       base(value).merge(
         organization_id: value.organization.public_id,

@@ -9,6 +9,7 @@ class Account < ApplicationRecord
   has_many :memberships, dependent: :destroy
   has_many :organizations, through: :memberships
   has_many :email_intents, dependent: :nullify
+  has_many :api_keys, dependent: :destroy
 
   normalizes :email, with: ->(value) { value.to_s.strip.downcase }
 

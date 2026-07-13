@@ -1,5 +1,5 @@
 class Current < ActiveSupport::CurrentAttributes
-  attribute :account, :organization, :request_id, :traceparent
+  attribute :account, :organization, :api_key, :authentication_method, :request_id, :traceparent
 
   resets do
     RequestStore.clear!

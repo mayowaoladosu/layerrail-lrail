@@ -32,6 +32,7 @@ Rails.application.routes.draw do
         end
         resources :deployments, only: %i[show destroy]
         resources :operations, only: :show
+        resources :api_keys, only: %i[index create destroy]
         post "source_uploads/:id/finalize", to: "source_uploads#finalize", as: :finalize_source_upload
       end
     end

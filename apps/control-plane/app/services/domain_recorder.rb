@@ -27,7 +27,7 @@ class DomainRecorder
       organization:,
       actor_type:,
       actor_public_id:,
-      authentication_method: "session",
+      authentication_method: Current.authentication_method.presence || "system",
       action:,
       resource_type: resource.class.name.underscore,
       resource_public_id: resource.public_id,

@@ -459,6 +459,115 @@ paths:
           $ref: "#/components/responses/RateLimited"
         "503":
           $ref: "#/components/responses/Unavailable"
+  /v1/api_keys:
+    get:
+      tags: [Identity]
+      operationId: listApiKeys
+      summary: List API keys
+      description: Lists API key metadata without secret or verification digests.
+      x-lrail-action: api_key.read
+      parameters:
+        - $ref: "#/components/parameters/Limit"
+      responses:
+        "200":
+          description: API key page.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ListEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: "#/components/schemas/ApiKey"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+    post:
+      tags: [Identity]
+      operationId: createApiKey
+      summary: Create an API key
+      description: Creates an organization-bound API key and returns its secret exactly once.
+      x-lrail-action: api_key.create
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ApiKeyCreate"
+      responses:
+        "201":
+          description: API key created; the secret is not retrievable again.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [data, secret]
+                properties:
+                  data:
+                    $ref: "#/components/schemas/ApiKey"
+                  secret:
+                    type: string
+                    pattern: "^lrail_key_[A-Za-z0-9]{12}_[A-Za-z0-9_-]{43}$"
+                    writeOnly: true
+        "400":
+          $ref: "#/components/responses/InvalidArgument"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "422":
+          $ref: "#/components/responses/PreconditionFailed"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+  /v1/api_keys/{api_key_id}:
+    parameters:
+      - name: api_key_id
+        in: path
+        required: true
+        description: API key resource ID.
+        schema:
+          $ref: "#/components/schemas/ResourceId"
+    delete:
+      tags: [Identity]
+      operationId: revokeApiKey
+      summary: Revoke an API key
+      description: Permanently rejects future authentication with this key.
+      x-lrail-action: api_key.revoke
+      parameters:
+        - $ref: "#/components/parameters/IdempotencyKey"
+      responses:
+        "200":
+          description: Revoked API key metadata.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: "#/components/schemas/ResourceEnvelope"
+                  - type: object
+                    properties:
+                      data:
+                        $ref: "#/components/schemas/ApiKey"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "409":
+          $ref: "#/components/responses/Conflict"
+        "429":
+          $ref: "#/components/responses/RateLimited"
   /v1/projects/{project_id}/environments:
     parameters:
       - $ref: "#/components/parameters/ProjectId"
@@ -1122,6 +1231,104 @@ components:
           schema:
             $ref: "#/components/schemas/ErrorEnvelope"
   schemas:
+    ApiKey:
+      type: object
+      additionalProperties: false
+      required: [id, organization_id, account_id, name, display_prefix, scopes, constraints, expires_at, last_used_at, revoked_at, created_at, updated_at]
+      properties:
+        id:
+          $ref: "#/components/schemas/ResourceId"
+        organization_id:
+          $ref: "#/components/schemas/ResourceId"
+        account_id:
+          $ref: "#/components/schemas/ResourceId"
+        name:
+          type: string
+          minLength: 1
+          maxLength: 100
+        display_prefix:
+          type: string
+          pattern: "^lrail_key_[A-Za-z0-9]{12}_…$"
+        scopes:
+          type: array
+          minItems: 1
+          maxItems: 32
+          uniqueItems: true
+          items:
+            $ref: "#/components/schemas/ApiKeyScope"
+        constraints:
+          $ref: "#/components/schemas/ApiKeyConstraints"
+        expires_at:
+          type: [string, "null"]
+          format: date-time
+        last_used_at:
+          type: [string, "null"]
+          format: date-time
+        revoked_at:
+          type: [string, "null"]
+          format: date-time
+        created_at:
+          type: string
+          format: date-time
+        updated_at:
+          type: string
+          format: date-time
+    ApiKeyCreate:
+      type: object
+      additionalProperties: false
+      required: [api_key]
+      properties:
+        api_key:
+          type: object
+          additionalProperties: false
+          required: [name, scopes]
+          properties:
+            name:
+              type: string
+              minLength: 1
+              maxLength: 100
+            scopes:
+              type: array
+              minItems: 1
+              maxItems: 32
+              uniqueItems: true
+              items:
+                $ref: "#/components/schemas/ApiKeyScope"
+            constraints:
+              $ref: "#/components/schemas/ApiKeyConstraints"
+            expires_at:
+              type: string
+              format: date-time
+    ApiKeyConstraints:
+      type: object
+      additionalProperties: false
+      properties:
+        ip_cidrs:
+          type: array
+          maxItems: 32
+          uniqueItems: true
+          items:
+            type: string
+            maxLength: 64
+    ApiKeyScope:
+      type: string
+      enum:
+        - organization.read
+        - organization.write
+        - project.read
+        - project.write
+        - deployment.read
+        - deployment.write
+        - domain.read
+        - domain.write
+        - addon.read
+        - addon.write
+        - telemetry.read
+        - operation.read
+        - source.read
+        - source.write
+        - api_key.read
+        - api_key.write
     Addon:
       type: object
       additionalProperties: false

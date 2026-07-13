@@ -215,6 +215,53 @@ export interface paths {
     patch?: never;
     trace?: never;
   };
+  "/v1/api_keys": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    /**
+     * List API keys
+     * @description Lists API key metadata without secret or verification digests.
+     */
+    get: operations["listApiKeys"];
+    put?: never;
+    /**
+     * Create an API key
+     * @description Creates an organization-bound API key and returns its secret exactly once.
+     */
+    post: operations["createApiKey"];
+    delete?: never;
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
+  "/v1/api_keys/{api_key_id}": {
+    parameters: {
+      query?: never;
+      header?: never;
+      path: {
+        /** @description API key resource ID. */
+        api_key_id: components["schemas"]["ResourceId"];
+      };
+      cookie?: never;
+    };
+    get?: never;
+    put?: never;
+    post?: never;
+    /**
+     * Revoke an API key
+     * @description Permanently rejects future authentication with this key.
+     */
+    delete: operations["revokeApiKey"];
+    options?: never;
+    head?: never;
+    patch?: never;
+    trace?: never;
+  };
   "/v1/projects/{project_id}/environments": {
     parameters: {
       query?: never;
@@ -465,6 +512,55 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
   schemas: {
+    ApiKey: {
+      id: components["schemas"]["ResourceId"];
+      organization_id: components["schemas"]["ResourceId"];
+      account_id: components["schemas"]["ResourceId"];
+      name: string;
+      display_prefix: string;
+      scopes: components["schemas"]["ApiKeyScope"][];
+      constraints: components["schemas"]["ApiKeyConstraints"];
+      /** Format: date-time */
+      expires_at: string | null;
+      /** Format: date-time */
+      last_used_at: string | null;
+      /** Format: date-time */
+      revoked_at: string | null;
+      /** Format: date-time */
+      created_at: string;
+      /** Format: date-time */
+      updated_at: string;
+    };
+    ApiKeyCreate: {
+      api_key: {
+        name: string;
+        scopes: components["schemas"]["ApiKeyScope"][];
+        constraints?: components["schemas"]["ApiKeyConstraints"];
+        /** Format: date-time */
+        expires_at?: string;
+      };
+    };
+    ApiKeyConstraints: {
+      ip_cidrs?: string[];
+    };
+    /** @enum {string} */
+    ApiKeyScope:
+      | "organization.read"
+      | "organization.write"
+      | "project.read"
+      | "project.write"
+      | "deployment.read"
+      | "deployment.write"
+      | "domain.read"
+      | "domain.write"
+      | "addon.read"
+      | "addon.write"
+      | "telemetry.read"
+      | "operation.read"
+      | "source.read"
+      | "source.write"
+      | "api_key.read"
+      | "api_key.write";
     Addon: {
       id: components["schemas"]["ResourceId"];
       organization_id: components["schemas"]["ResourceId"];
@@ -1445,6 +1541,103 @@ export interface operations {
       422: components["responses"]["PreconditionFailed"];
       429: components["responses"]["RateLimited"];
       503: components["responses"]["Unavailable"];
+    };
+  };
+  listApiKeys: {
+    parameters: {
+      query?: {
+        /** @description Maximum resources in one page. */
+        limit?: components["parameters"]["Limit"];
+      };
+      header?: never;
+      path?: never;
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description API key page. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ListEnvelope"] & {
+            data?: components["schemas"]["ApiKey"][];
+          };
+        };
+      };
+      401: components["responses"]["Unauthenticated"];
+      403: components["responses"]["Forbidden"];
+      429: components["responses"]["RateLimited"];
+    };
+  };
+  createApiKey: {
+    parameters: {
+      query?: never;
+      header: {
+        /** @description Caller-generated key scoped by organization, principal, method, and normalized route. */
+        "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+      };
+      path?: never;
+      cookie?: never;
+    };
+    requestBody: {
+      content: {
+        "application/json": components["schemas"]["ApiKeyCreate"];
+      };
+    };
+    responses: {
+      /** @description API key created; the secret is not retrievable again. */
+      201: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": {
+            data: components["schemas"]["ApiKey"];
+            secret: string;
+          };
+        };
+      };
+      400: components["responses"]["InvalidArgument"];
+      401: components["responses"]["Unauthenticated"];
+      403: components["responses"]["Forbidden"];
+      409: components["responses"]["Conflict"];
+      422: components["responses"]["PreconditionFailed"];
+      429: components["responses"]["RateLimited"];
+    };
+  };
+  revokeApiKey: {
+    parameters: {
+      query?: never;
+      header: {
+        /** @description Caller-generated key scoped by organization, principal, method, and normalized route. */
+        "Idempotency-Key": components["parameters"]["IdempotencyKey"];
+      };
+      path: {
+        /** @description API key resource ID. */
+        api_key_id: components["schemas"]["ResourceId"];
+      };
+      cookie?: never;
+    };
+    requestBody?: never;
+    responses: {
+      /** @description Revoked API key metadata. */
+      200: {
+        headers: {
+          [name: string]: unknown;
+        };
+        content: {
+          "application/json": components["schemas"]["ResourceEnvelope"] & {
+            data?: components["schemas"]["ApiKey"];
+          };
+        };
+      };
+      401: components["responses"]["Unauthenticated"];
+      403: components["responses"]["Forbidden"];
+      404: components["responses"]["NotFound"];
+      409: components["responses"]["Conflict"];
+      429: components["responses"]["RateLimited"];
     };
   };
   listEnvironments: {

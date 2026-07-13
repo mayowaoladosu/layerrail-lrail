@@ -11,6 +11,7 @@ REVOKE ALL ON FUNCTION lrail_claim_email(text, integer) FROM PUBLIC;
 REVOKE ALL ON FUNCTION lrail_finish_email(bigint, text, text, text, text, text, timestamptz) FROM PUBLIC;
 REVOKE ALL ON FUNCTION lrail_apply_email_provider_event(text, text, text, text, timestamptz) FROM PUBLIC;
 REVOKE ALL ON FUNCTION lrail_expire_source_upload_sessions(integer) FROM PUBLIC;
+REVOKE ALL ON FUNCTION lrail_find_api_key(text) FROM PUBLIC;
 
 DO $runtime_grants$
 BEGIN
@@ -24,6 +25,7 @@ BEGIN
     GRANT EXECUTE ON FUNCTION rodauth_get_previous_salt(bigint) TO lrail_web;
     GRANT EXECUTE ON FUNCTION rodauth_previous_password_hash_match(bigint, text) TO lrail_web;
     GRANT EXECUTE ON FUNCTION lrail_apply_email_provider_event(text, text, text, text, timestamptz) TO lrail_web;
+    GRANT EXECUTE ON FUNCTION lrail_find_api_key(text) TO lrail_web;
 
     REVOKE ALL ON schema_migrations, ar_internal_metadata FROM lrail_web;
     REVOKE ALL ON account_password_hashes FROM lrail_web;

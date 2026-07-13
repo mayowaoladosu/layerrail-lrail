@@ -15,6 +15,7 @@ PATTERNS = {
     "Slack token": re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{20,}\b"),
     "Stripe secret": re.compile(r"\b(?:sk|rk)_(?:live|test)_[A-Za-z0-9]{16,}\b"),
     "Resend API key": re.compile(r"\bre_[A-Za-z0-9]{24,}\b"),
+    "Lrail API key": re.compile(r"\blrail_key_[A-Za-z0-9]{12}_[A-Za-z0-9_-]{43}\b"),
     "generic bearer token": re.compile(r"(?i)authorization\s*:\s*bearer\s+[A-Za-z0-9._~-]{24,}"),
 }
 
@@ -28,6 +29,9 @@ ALLOWED_SUBSTRINGS = (
 # These files contain inert marker strings used to prove the source scanner
 # rejects private-key material. No key body or usable credential is present.
 MARKER_CORPUS_FILES = {
+    Path("cli/dist/archive.js"),
+    Path("cli/src/archive.test.ts"),
+    Path("cli/src/archive.ts"),
     Path("services/source-plane/internal/sourcearchive/finalizer_test.go"),
     Path("services/source-plane/internal/sourcearchive/scanner.go"),
     Path("services/source-plane/internal/sourcearchive/scanner_test.go"),

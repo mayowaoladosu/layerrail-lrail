@@ -294,6 +294,33 @@ $$;
 
 
 --
+-- Name: lrail_find_api_key(text); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE FUNCTION public.lrail_find_api_key(candidate_prefix text) RETURNS TABLE(key_id bigint, key_public_id character varying, organization_id bigint, account_id bigint, secret_digest character varying, scopes jsonb, constraints jsonb, expires_at timestamp with time zone, last_used_at timestamp with time zone)
+    LANGUAGE sql STABLE SECURITY DEFINER
+    SET search_path TO 'public', 'pg_temp'
+    SET row_security TO 'off'
+    AS $$
+  SELECT
+    id,
+    public_id,
+    api_keys.organization_id,
+    api_keys.account_id,
+    api_keys.secret_digest,
+    api_keys.scopes,
+    api_keys.constraints,
+    api_keys.expires_at,
+    api_keys.last_used_at
+  FROM api_keys
+  WHERE prefix = candidate_prefix
+    AND revoked_at IS NULL
+    AND (expires_at IS NULL OR expires_at > clock_timestamp())
+  LIMIT 1;
+$$;
+
+
+--
 -- Name: lrail_finish_email(bigint, text, text, text, text, text, timestamp with time zone); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -967,7 +994,7 @@ CREATE TABLE public.api_keys (
     id bigint NOT NULL,
     public_id character varying(64) NOT NULL,
     organization_id bigint NOT NULL,
-    account_id bigint,
+    account_id bigint NOT NULL,
     name character varying NOT NULL,
     prefix character varying NOT NULL,
     secret_digest character varying NOT NULL,
@@ -978,7 +1005,11 @@ CREATE TABLE public.api_keys (
     revoked_at timestamp(6) without time zone,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT api_keys_public_id_format CHECK (((public_id)::text ~ '^[a-z]{2,5}_[0-9a-f-]{36}$'::text))
+    CONSTRAINT api_keys_argon_digest CHECK (((secret_digest)::text ~~ '$argon2id$%'::text)),
+    CONSTRAINT api_keys_constraints_object CHECK ((jsonb_typeof(constraints) = 'object'::text)),
+    CONSTRAINT api_keys_prefix_format CHECK (((prefix)::text ~ '^[A-Za-z0-9]{12}$'::text)),
+    CONSTRAINT api_keys_public_id_format CHECK (((public_id)::text ~ '^[a-z]{2,5}_[0-9a-f-]{36}$'::text)),
+    CONSTRAINT api_keys_scopes_array CHECK ((jsonb_typeof(scopes) = 'array'::text))
 );
 
 ALTER TABLE ONLY public.api_keys FORCE ROW LEVEL SECURITY;
@@ -6313,7 +6344,8 @@ INSERT INTO "schema_migrations" (version) VALUES
 ('20260712204511'),
 ('20260712204512'),
 ('20260712221000'),
-('20260712233000')
+('20260712233000'),
+('20260713001500')
 ON CONFLICT DO NOTHING;
 
 -- LRAIL_RUNTIME_GRANTS_BEGIN
@@ -6331,6 +6363,7 @@ REVOKE ALL ON FUNCTION lrail_claim_email(text, integer) FROM PUBLIC;
 REVOKE ALL ON FUNCTION lrail_finish_email(bigint, text, text, text, text, text, timestamptz) FROM PUBLIC;
 REVOKE ALL ON FUNCTION lrail_apply_email_provider_event(text, text, text, text, timestamptz) FROM PUBLIC;
 REVOKE ALL ON FUNCTION lrail_expire_source_upload_sessions(integer) FROM PUBLIC;
+REVOKE ALL ON FUNCTION lrail_find_api_key(text) FROM PUBLIC;
 
 DO $runtime_grants$
 BEGIN
@@ -6344,6 +6377,7 @@ BEGIN
     GRANT EXECUTE ON FUNCTION rodauth_get_previous_salt(bigint) TO lrail_web;
     GRANT EXECUTE ON FUNCTION rodauth_previous_password_hash_match(bigint, text) TO lrail_web;
     GRANT EXECUTE ON FUNCTION lrail_apply_email_provider_event(text, text, text, text, timestamptz) TO lrail_web;
+    GRANT EXECUTE ON FUNCTION lrail_find_api_key(text) TO lrail_web;
 
     REVOKE ALL ON schema_migrations, ar_internal_metadata FROM lrail_web;
     REVOKE ALL ON account_password_hashes FROM lrail_web;

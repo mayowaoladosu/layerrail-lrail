@@ -17,7 +17,7 @@ module Authorization
     "admin" => %w[
       organization.read organization.update membership.read membership.invite
       project.* environment.* service.* deployment.* release.* domain.* addon.*
-      source.* telemetry.* operation.read webhook.* schedule.*
+      source.* api_key.* telemetry.* operation.read webhook.* schedule.*
     ],
     "developer" => %w[
       organization.read project.read project.create environment.read service.read service.update

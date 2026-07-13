@@ -13,6 +13,8 @@ Rodauth-Rails owns browser authentication. PostgreSQL stores current and previou
 
 Rodauth provider messages are converted after commit into versioned `EmailIntent` rows. An exact content fingerprint is the intent idempotency key. A restricted worker claims intents with `FOR UPDATE SKIP LOCKED` inside a security-definer function, then uses either the in-memory development adapter or Resend. Retry state, attempt count, provider identifier, and terminal delivery state remain in PostgreSQL.
 
+Public API automation keys use a secret-once `lrail_key_<prefix>_<secret>` format. The stored verifier is Argon2id over an HMAC-SHA-256 prehash keyed by a separate rotatable production pepper; plaintext, full token, and pepper are never persisted. A security-definer prefix lookup is executable only by the web role and bypasses RLS only to locate one active verifier; successful authentication immediately re-enters organization RLS and active-membership checks. Route scopes, optional IP CIDRs, expiry, throttling, and revocation are enforced before controller work. Secret-bearing idempotency responses are encrypted at rest and expire in one day.
+
 Resend callbacks are verified over the raw request body with the official Svix verifier, its timestamp window, and all three signature headers. Provider delivery IDs are unique before state is applied. Unsupported, stale, tampered, or oversized requests do not mutate an intent.
 
 ## Boundaries

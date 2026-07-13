@@ -1,0 +1,25 @@
+{
+  "name": "@lrail/cli",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.16.0 <25"
+  },
+  "bin": {
+    "lrail": "dist/index.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "check": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run --coverage.enabled=false"
+  },
+  "dependencies": {
+    "commander": "15.0.0",
+    "ignore": "7.0.6",
+    "tar-stream": "3.2.0"
+  },
+  "devDependencies": {
+    "@types/tar-stream": "3.1.4"
+  }
+}

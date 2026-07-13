@@ -37,6 +37,31 @@ RSpec.describe "database security boundaries" do
     end.to raise_error(ActiveRecord::StatementInvalid, /permission denied/)
   end
 
+  it "exposes API key verification only through the scoped lookup function" do
+    account = create_account
+    organization = create_organization(account:)
+    issued = within_organization(account, organization) do
+      ApiKeys::Issue.call(account:, organization:, attributes: { name: "Boundary", scopes: %w[project.read] })
+    end
+    connection = ApplicationRecord.connection
+
+    ApplicationRecord.transaction(requires_new: true) do
+      connection.execute("SET LOCAL ROLE lrail_web")
+      row = connection.select_one("SELECT * FROM lrail_find_api_key(#{connection.quote(issued.api_key.prefix)})")
+      expect(row.fetch("key_public_id")).to eq(issued.api_key.public_id)
+      expect(row.fetch("secret_digest")).to start_with("$argon2id$")
+      connection.execute("RESET ROLE")
+    end
+
+    expect do
+      ApplicationRecord.transaction(requires_new: true) do
+        connection.execute("SET LOCAL ROLE lrail_worker")
+        connection.select_all("SELECT * FROM lrail_find_api_key(#{connection.quote(issued.api_key.prefix)})")
+      end
+    end.to raise_error(ActiveRecord::StatementInvalid, /permission denied/)
+    connection.execute("RESET ROLE")
+  end
+
   it "does not expose foreign source upload sessions through RLS" do
     account = create_account
     foreign = create_account(email: "upload-boundary-foreign@example.test")

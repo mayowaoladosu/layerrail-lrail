@@ -198,6 +198,11 @@ func ResolutionDigest(material BaseMaterial) (string, error) {
 	return materialResolutionDigest(material)
 }
 
+func ValidatePolicy(policy Policy) error {
+	_, err := normalizePolicy(policy)
+	return err
+}
+
 func PlatformSupplyChainPolicy(allowedSignerPublicKeyDigests []string) SupplyChainPolicy {
 	return SupplyChainPolicy{
 		Version: CurrentSupplyChainPolicyVersion, SyftVersion: CurrentSyftVersion, TrivyVersion: CurrentTrivyVersion,

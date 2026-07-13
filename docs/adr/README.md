@@ -22,5 +22,6 @@ ADRs are immutable decision history. Superseding decisions link to the prior rec
 | 016 | Small bounded C CO-RE eBPF programs controlled by Go                                |
 | 017 | Deterministic non-executing detector plugins and evidence graph                     |
 | 018 | Starlark v1 bounded modules, execution profile, diagnostics, and Build IR v2        |
+| 019 | Build IR policy lock, capability validation, and deterministic BuildKit LLB         |
 
 Each record uses: status, context, decision, boundaries, consequences, and supersession.

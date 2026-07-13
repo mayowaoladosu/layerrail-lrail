@@ -151,6 +151,13 @@ func TestCompileProducesDeterministicRealLLBGraph(t *testing.T) {
 	if len(first.Outputs[0].ImageConfig) == 0 || first.Lock.Outputs[0].ConfigDigest == "" {
 		t.Fatalf("image output config absent: %#v", first.Outputs[0])
 	}
+	var imageConfig struct {
+		Architecture string `json:"architecture"`
+		OS           string `json:"os"`
+	}
+	if err := json.Unmarshal(first.Outputs[0].ImageConfig, &imageConfig); err != nil || imageConfig.Architecture != "amd64" || imageConfig.OS != "linux" {
+		t.Fatalf("image platform config=%#v error=%v", imageConfig, err)
+	}
 	serialized, err := json.Marshal(first)
 	if err != nil {
 		t.Fatalf("Marshal: %v", err)

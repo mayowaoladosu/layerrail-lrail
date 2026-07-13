@@ -327,7 +327,7 @@ func (compiler *graphCompiler) compileOutputs(ctx context.Context) ([]OutputDefi
 		configDigest := ""
 		switch output.Kind {
 		case "oci_image":
-			compiled.ImageConfig, err = imageConfig(output)
+			compiled.ImageConfig, err = imageConfig(output, compiler.platform)
 			if err != nil {
 				return nil, nil, fail("llb.image_config", "OCI image config could not be canonicalized.", output.State)
 			}
@@ -348,19 +348,23 @@ func (compiler *graphCompiler) compileOutputs(ctx context.Context) ([]OutputDefi
 	return outputs, locks, nil
 }
 
-func imageConfig(output buildir.Output) ([]byte, error) {
+func imageConfig(output buildir.Output, platform ocispecs.Platform) ([]byte, error) {
 	exposedPorts := make(map[string]struct{}, len(output.Ports))
 	for _, port := range output.Ports {
 		exposedPorts[fmt.Sprintf("%d/tcp", port)] = struct{}{}
 	}
 	return canonicaljson.Marshal(struct {
-		Config struct {
+		Architecture string `json:"architecture"`
+		OS           string `json:"os"`
+		Config       struct {
 			Entrypoint   []string            `json:"Entrypoint"`
 			Cmd          []string            `json:"Cmd"`
 			ExposedPorts map[string]struct{} `json:"ExposedPorts"`
 			Labels       map[string]string   `json:"Labels"`
 		} `json:"config"`
 	}{
+		Architecture: platform.Architecture,
+		OS:           platform.OS,
 		Config: struct {
 			Entrypoint   []string            `json:"Entrypoint"`
 			Cmd          []string            `json:"Cmd"`

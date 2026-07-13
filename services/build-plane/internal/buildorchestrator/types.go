@@ -3,6 +3,7 @@ package buildorchestrator
 
 import (
 	"errors"
+	"net/url"
 	"regexp"
 	"slices"
 	"strings"
@@ -143,11 +144,15 @@ func (request Request) Validate(now time.Time) error {
 			return errors.New("build request resource identity is invalid")
 		}
 	}
+	archiveReference, archiveErr := url.Parse(request.Source.ArchiveRef)
 	if !digestPattern.MatchString(request.Source.SnapshotDigest) ||
 		!digestPattern.MatchString(request.Source.ManifestDigest) ||
 		!digestPattern.MatchString(request.Source.ArchiveDigest) ||
 		request.Source.SizeBytes <= 0 || request.Source.SizeBytes > 1<<30 ||
-		!strings.HasPrefix(request.Source.ArchiveRef, "s3://") || len(request.Source.ArchiveRef) > 2048 ||
+		archiveErr != nil || archiveReference.Scheme != "s3" || archiveReference.Host == "" || archiveReference.Path == "" ||
+		archiveReference.User != nil || archiveReference.RawQuery != "" || archiveReference.Fragment != "" ||
+		strings.Contains(archiveReference.Path, "//") || slices.Contains(strings.Split(archiveReference.Path, "/"), "..") ||
+		len(request.Source.ArchiveRef) > 2048 ||
 		!validRelativePath(request.Source.SelectedRoot, true) {
 		return errors.New("build request source is invalid")
 	}

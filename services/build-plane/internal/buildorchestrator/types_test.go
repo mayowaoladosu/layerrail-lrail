@@ -38,11 +38,12 @@ func TestRequestValidationOwnsCompleteImmutableIntent(t *testing.T) {
 	}
 
 	tests := map[string]func(*Request){
-		"foreign prefix":     func(request *Request) { request.BuildID = testProjectID },
-		"mutable source":     func(request *Request) { request.Source.SnapshotDigest = "main" },
-		"unsafe root":        func(request *Request) { request.Source.SelectedRoot = "../foreign" },
-		"unbounded deadline": func(request *Request) { request.Deadline = now.Add(3 * time.Hour).Format(time.RFC3339Nano) },
-		"hidden build file":  func(request *Request) { request.Configuration.BuildFile = "Lrailfile.star" },
+		"foreign prefix":      func(request *Request) { request.BuildID = testProjectID },
+		"mutable source":      func(request *Request) { request.Source.SnapshotDigest = "main" },
+		"unsafe root":         func(request *Request) { request.Source.SelectedRoot = "../foreign" },
+		"embedded credential": func(request *Request) { request.Source.ArchiveRef = "s3://access:secret@lrail-source/archive.tar.gz" },
+		"unbounded deadline":  func(request *Request) { request.Deadline = now.Add(3 * time.Hour).Format(time.RFC3339Nano) },
+		"hidden build file":   func(request *Request) { request.Configuration.BuildFile = "Lrailfile.star" },
 	}
 	for name, mutate := range tests {
 		t.Run(name, func(t *testing.T) {

@@ -73,7 +73,8 @@ func TestBoltBrokerStorePersistsFencedRunEventsResultAndCheckpoint(t *testing.T)
 
 	failed := Result{
 		Version: CurrentResultVersion, BuildID: request.BuildID, Generation: request.Generation, State: "failed",
-		SourceSnapshotID: request.Source.SnapshotID, SourceDigest: request.Source.SnapshotDigest, Outputs: []OutputResult{},
+		SourceSnapshotID: request.Source.SnapshotID, SourceDigest: request.Source.SnapshotDigest,
+		Outputs: []OutputResult{}, Services: []ServiceResult{},
 		FailureCode: "source_archive_invalid", FailureMessage: "Source snapshot could not be materialized",
 		StartedAt: now.Format(time.RFC3339Nano), FinishedAt: now.Add(5 * time.Second).Format(time.RFC3339Nano), Cleanup: CleanupResult{Status: "clean"},
 	}

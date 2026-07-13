@@ -7,6 +7,8 @@ class SourceSnapshot < ApplicationRecord
   belongs_to :project
   belongs_to :source_connection, optional: true
   has_many :builds, dependent: :restrict_with_error
+  has_many :source_upload_sessions, dependent: :restrict_with_error
+  has_many :source_fetches, dependent: :restrict_with_error
 
   validates :kind, :digest, :object_ref, :retention_until, presence: true
   validates :digest, uniqueness: { scope: %i[organization_id project_id] }

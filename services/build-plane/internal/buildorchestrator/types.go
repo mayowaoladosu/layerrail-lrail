@@ -83,32 +83,33 @@ type Event struct {
 }
 
 type Result struct {
-	Version           int            `json:"version"`
-	BuildID           string         `json:"build_id"`
-	Generation        uint64         `json:"generation"`
-	State             string         `json:"state"`
-	SourceSnapshotID  string         `json:"source_snapshot_id"`
-	SourceDigest      string         `json:"source_digest"`
-	DetectionDigest   string         `json:"detection_digest,omitempty"`
-	ManifestDigest    string         `json:"manifest_digest,omitempty"`
-	BuildIRDigest     string         `json:"build_ir_digest,omitempty"`
-	DefinitionDigest  string         `json:"definition_digest,omitempty"`
-	AssignmentDigest  string         `json:"assignment_digest,omitempty"`
-	LogsDigest        string         `json:"logs_digest,omitempty"`
-	Outputs           []OutputResult `json:"outputs"`
-	FailureCode       string         `json:"failure_code,omitempty"`
-	FailureMessage    string         `json:"failure_message,omitempty"`
-	StartedAt         string         `json:"started_at"`
-	FinishedAt        string         `json:"finished_at"`
-	WorkerIdentity    string         `json:"worker_identity,omitempty"`
-	Cleanup           CleanupResult  `json:"cleanup"`
-	CacheHits         int64          `json:"cache_hits"`
-	CacheMisses       int64          `json:"cache_misses"`
-	DetectorResultRef string         `json:"detector_result_ref,omitempty"`
-	ManifestRef       string         `json:"manifest_ref,omitempty"`
-	GeneratedBuildRef string         `json:"generated_build_ref,omitempty"`
-	BuildIRRef        string         `json:"build_ir_ref,omitempty"`
-	DefinitionLockRef string         `json:"definition_lock_ref,omitempty"`
+	Version           int             `json:"version"`
+	BuildID           string          `json:"build_id"`
+	Generation        uint64          `json:"generation"`
+	State             string          `json:"state"`
+	SourceSnapshotID  string          `json:"source_snapshot_id"`
+	SourceDigest      string          `json:"source_digest"`
+	DetectionDigest   string          `json:"detection_digest,omitempty"`
+	ManifestDigest    string          `json:"manifest_digest,omitempty"`
+	BuildIRDigest     string          `json:"build_ir_digest,omitempty"`
+	DefinitionDigest  string          `json:"definition_digest,omitempty"`
+	AssignmentDigest  string          `json:"assignment_digest,omitempty"`
+	LogsDigest        string          `json:"logs_digest,omitempty"`
+	Outputs           []OutputResult  `json:"outputs"`
+	Services          []ServiceResult `json:"services"`
+	FailureCode       string          `json:"failure_code,omitempty"`
+	FailureMessage    string          `json:"failure_message,omitempty"`
+	StartedAt         string          `json:"started_at"`
+	FinishedAt        string          `json:"finished_at"`
+	WorkerIdentity    string          `json:"worker_identity,omitempty"`
+	Cleanup           CleanupResult   `json:"cleanup"`
+	CacheHits         int64           `json:"cache_hits"`
+	CacheMisses       int64           `json:"cache_misses"`
+	DetectorResultRef string          `json:"detector_result_ref,omitempty"`
+	ManifestRef       string          `json:"manifest_ref,omitempty"`
+	GeneratedBuildRef string          `json:"generated_build_ref,omitempty"`
+	BuildIRRef        string          `json:"build_ir_ref,omitempty"`
+	DefinitionLockRef string          `json:"definition_lock_ref,omitempty"`
 }
 
 type OutputResult struct {
@@ -122,6 +123,34 @@ type OutputResult struct {
 	LayerDigests           []string                      `json:"layer_digests"`
 	PublicationManifestRef string                        `json:"publication_manifest_ref,omitempty"`
 	SupplyChain            buildworker.SupplyChainResult `json:"supply_chain"`
+}
+
+type ServiceResult struct {
+	Name           string          `json:"name"`
+	Root           string          `json:"root"`
+	Kind           string          `json:"kind"`
+	Language       string          `json:"language"`
+	Framework      string          `json:"framework"`
+	RuntimeVersion string          `json:"runtime_version,omitempty"`
+	Build          BuildResult     `json:"build"`
+	Processes      []ProcessResult `json:"processes"`
+}
+
+type BuildResult struct {
+	Strategy       string   `json:"strategy"`
+	InstallCommand []string `json:"install_command"`
+	BuildCommand   []string `json:"build_command"`
+	OutputPath     string   `json:"output_path,omitempty"`
+	CachePaths     []string `json:"cache_paths"`
+}
+
+type ProcessResult struct {
+	Name       string   `json:"name"`
+	Kind       string   `json:"kind"`
+	Command    []string `json:"command"`
+	Port       *int     `json:"port,omitempty"`
+	Protocol   string   `json:"protocol"`
+	HealthPath string   `json:"health_path,omitempty"`
 }
 
 type CleanupResult struct {
@@ -221,7 +250,7 @@ func (result Result) Validate() error {
 		return errors.New("build result timing is invalid")
 	}
 	if result.State == "complete" {
-		if len(result.Outputs) == 0 || result.FailureCode != "" || result.FailureMessage != "" ||
+		if len(result.Outputs) == 0 || len(result.Services) != len(result.Outputs) || result.FailureCode != "" || result.FailureMessage != "" ||
 			!digestPattern.MatchString(result.DetectionDigest) || !digestPattern.MatchString(result.ManifestDigest) ||
 			!digestPattern.MatchString(result.BuildIRDigest) || !digestPattern.MatchString(result.DefinitionDigest) ||
 			!digestPattern.MatchString(result.AssignmentDigest) || !digestPattern.MatchString(result.LogsDigest) ||
@@ -247,6 +276,19 @@ func (result Result) Validate() error {
 	}
 	if !slices.IsSorted(names) || len(slices.Compact(append([]string(nil), names...))) != len(names) {
 		return errors.New("build output results must be sorted and unique")
+	}
+	serviceNames := make([]string, 0, len(result.Services))
+	for _, service := range result.Services {
+		if !outputNamePattern.MatchString(service.Name) || !validRelativePath(service.Root, true) ||
+			!slices.Contains([]string{"web", "worker", "private_service", "static"}, service.Kind) ||
+			!slices.Contains([]string{"ruby", "node", "python", "go", "static", "docker"}, service.Language) ||
+			service.Framework == "" || len(service.Framework) > 64 || len(service.Processes) == 0 || len(service.Processes) > 32 {
+			return errors.New("build service result is invalid")
+		}
+		serviceNames = append(serviceNames, service.Name)
+	}
+	if result.State == "complete" && !slices.Equal(serviceNames, names) {
+		return errors.New("build services do not match immutable outputs")
 	}
 	return nil
 }

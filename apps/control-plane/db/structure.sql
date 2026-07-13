@@ -1428,7 +1428,20 @@ CREATE TABLE public.attestations (
     digest character varying NOT NULL,
     object_ref character varying NOT NULL,
     created_at timestamp(6) without time zone NOT NULL,
-    updated_at timestamp(6) without time zone NOT NULL
+    updated_at timestamp(6) without time zone NOT NULL,
+    payload_digest character varying(71),
+    subject_digest character varying(71),
+    signer_key_id character varying(128),
+    signer_key_version integer,
+    signer_public_key_digest character varying(71),
+    policy_digest character varying(71),
+    CONSTRAINT attestations_digest CHECK (((digest IS NULL) OR ((digest)::text ~ '^sha256:[0-9a-f]{64}$'::text))),
+    CONSTRAINT attestations_kind CHECK (((kind)::text = ANY ((ARRAY['sbom'::character varying, 'vulnerability_scan'::character varying, 'provenance'::character varying, 'signature'::character varying, 'policy_decision'::character varying])::text[]))),
+    CONSTRAINT attestations_payload_digest CHECK (((payload_digest IS NULL) OR ((payload_digest)::text ~ '^sha256:[0-9a-f]{64}$'::text))),
+    CONSTRAINT attestations_policy_digest CHECK (((policy_digest IS NULL) OR ((policy_digest)::text ~ '^sha256:[0-9a-f]{64}$'::text))),
+    CONSTRAINT attestations_signer_key_version CHECK (((signer_key_version IS NULL) OR (signer_key_version > 0))),
+    CONSTRAINT attestations_signer_public_key_digest CHECK (((signer_public_key_digest IS NULL) OR ((signer_public_key_digest)::text ~ '^sha256:[0-9a-f]{64}$'::text))),
+    CONSTRAINT attestations_subject_digest CHECK (((subject_digest IS NULL) OR ((subject_digest)::text ~ '^sha256:[0-9a-f]{64}$'::text)))
 );
 
 ALTER TABLE ONLY public.attestations FORCE ROW LEVEL SECURITY;
@@ -1552,7 +1565,7 @@ CREATE TABLE public.builds (
     public_id character varying(64) NOT NULL,
     organization_id bigint NOT NULL,
     source_snapshot_id bigint NOT NULL,
-    definition_digest character varying NOT NULL,
+    definition_digest character varying,
     state character varying DEFAULT 'accepted'::character varying NOT NULL,
     network_profile character varying DEFAULT 'none'::character varying NOT NULL,
     artifact_digest character varying,
@@ -1560,7 +1573,30 @@ CREATE TABLE public.builds (
     completed_at timestamp(6) without time zone,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
-    CONSTRAINT builds_public_id_format CHECK (((public_id)::text ~ '^[a-z]{2,5}_[0-9a-f-]{36}$'::text))
+    deployment_id bigint,
+    generation bigint DEFAULT 1 NOT NULL,
+    detection_digest character varying(71),
+    detection_ref character varying,
+    manifest_digest character varying(71),
+    manifest_ref character varying,
+    build_ir_digest character varying(71),
+    build_ir_ref character varying,
+    definition_lock_ref character varying,
+    assignment_digest character varying(71),
+    logs_digest character varying(71),
+    worker_identity character varying(512),
+    cleanup_state character varying(32),
+    error_code character varying(128),
+    error_message text,
+    CONSTRAINT builds_assignment_digest CHECK (((assignment_digest IS NULL) OR ((assignment_digest)::text ~ '^sha256:[0-9a-f]{64}$'::text))),
+    CONSTRAINT builds_build_ir_digest CHECK (((build_ir_digest IS NULL) OR ((build_ir_digest)::text ~ '^sha256:[0-9a-f]{64}$'::text))),
+    CONSTRAINT builds_definition_digest CHECK (((definition_digest IS NULL) OR ((definition_digest)::text ~ '^sha256:[0-9a-f]{64}$'::text))),
+    CONSTRAINT builds_detection_digest CHECK (((detection_digest IS NULL) OR ((detection_digest)::text ~ '^sha256:[0-9a-f]{64}$'::text))),
+    CONSTRAINT builds_generation CHECK ((generation > 0)),
+    CONSTRAINT builds_logs_digest CHECK (((logs_digest IS NULL) OR ((logs_digest)::text ~ '^sha256:[0-9a-f]{64}$'::text))),
+    CONSTRAINT builds_manifest_digest CHECK (((manifest_digest IS NULL) OR ((manifest_digest)::text ~ '^sha256:[0-9a-f]{64}$'::text))),
+    CONSTRAINT builds_public_id_format CHECK (((public_id)::text ~ '^[a-z]{2,5}_[0-9a-f-]{36}$'::text)),
+    CONSTRAINT builds_state CHECK (((state)::text = ANY ((ARRAY['accepted'::character varying, 'running'::character varying, 'waiting'::character varying, 'retrying'::character varying, 'canceling'::character varying, 'complete'::character varying, 'failed'::character varying, 'canceled'::character varying])::text[])))
 );
 
 ALTER TABLE ONLY public.builds FORCE ROW LEVEL SECURITY;
@@ -1776,9 +1812,15 @@ CREATE TABLE public.deployments (
     canceled_at timestamp(6) without time zone,
     created_at timestamp(6) without time zone NOT NULL,
     updated_at timestamp(6) without time zone NOT NULL,
+    artifact_ready_at timestamp(6) without time zone,
+    build_mode character varying(16) DEFAULT 'auto'::character varying NOT NULL,
+    build_file character varying(1024),
+    accept_detected boolean DEFAULT false NOT NULL,
+    CONSTRAINT deployments_build_configuration CHECK (((((build_mode)::text = 'auto'::text) AND (build_file IS NULL)) OR (((build_mode)::text = 'repository'::text) AND (build_file IS NOT NULL) AND ((char_length((build_file)::text) >= 1) AND (char_length((build_file)::text) <= 1024))))),
+    CONSTRAINT deployments_build_mode CHECK (((build_mode)::text = ANY ((ARRAY['auto'::character varying, 'repository'::character varying])::text[]))),
     CONSTRAINT deployments_public_id_format CHECK (((public_id)::text ~ '^[a-z]{2,5}_[0-9a-f-]{36}$'::text)),
     CONSTRAINT deployments_source_object CHECK ((jsonb_typeof(source) = 'object'::text)),
-    CONSTRAINT deployments_state CHECK (((state)::text = ANY ((ARRAY['created'::character varying, 'sourcing'::character varying, 'detecting'::character varying, 'queued'::character varying, 'building'::character varying, 'scanning'::character varying, 'publishing'::character varying, 'scheduling'::character varying, 'starting'::character varying, 'verifying'::character varying, 'ready'::character varying, 'promoted'::character varying, 'canceling'::character varying, 'canceled'::character varying, 'failed'::character varying, 'retrying'::character varying])::text[])))
+    CONSTRAINT deployments_state CHECK (((state)::text = ANY ((ARRAY['created'::character varying, 'sourcing'::character varying, 'detecting'::character varying, 'queued'::character varying, 'building'::character varying, 'scanning'::character varying, 'publishing'::character varying, 'artifact_ready'::character varying, 'scheduling'::character varying, 'starting'::character varying, 'verifying'::character varying, 'ready'::character varying, 'promoted'::character varying, 'canceling'::character varying, 'canceled'::character varying, 'failed'::character varying, 'retrying'::character varying])::text[])))
 );
 
 ALTER TABLE ONLY public.deployments FORCE ROW LEVEL SECURITY;
@@ -2235,6 +2277,63 @@ CREATE SEQUENCE public.oauth_clients_id_seq
 --
 
 ALTER SEQUENCE public.oauth_clients_id_seq OWNED BY public.oauth_clients.id;
+
+
+--
+-- Name: operation_events; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE public.operation_events (
+    id bigint NOT NULL,
+    organization_id bigint NOT NULL,
+    operation_id bigint NOT NULL,
+    build_id bigint,
+    generation bigint NOT NULL,
+    sequence bigint NOT NULL,
+    attempt integer NOT NULL,
+    stage character varying(64) NOT NULL,
+    kind character varying(64) NOT NULL,
+    output character varying(512),
+    vertex character varying(512),
+    name character varying(512),
+    current bigint,
+    total bigint,
+    cached boolean DEFAULT false NOT NULL,
+    stream integer DEFAULT 0 NOT NULL,
+    line text,
+    code character varying(128),
+    message text,
+    occurred_at timestamp(6) without time zone NOT NULL,
+    created_at timestamp(6) without time zone NOT NULL,
+    updated_at timestamp(6) without time zone NOT NULL,
+    CONSTRAINT operation_events_attempt CHECK ((attempt > 0)),
+    CONSTRAINT operation_events_generation CHECK ((generation > 0)),
+    CONSTRAINT operation_events_line_size CHECK ((char_length(line) <= 16384)),
+    CONSTRAINT operation_events_message_size CHECK ((char_length(message) <= 4096)),
+    CONSTRAINT operation_events_sequence CHECK ((sequence > 0)),
+    CONSTRAINT operation_events_stream CHECK ((stream >= 0))
+);
+
+ALTER TABLE ONLY public.operation_events FORCE ROW LEVEL SECURITY;
+
+
+--
+-- Name: operation_events_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE public.operation_events_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: operation_events_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.operation_events_id_seq OWNED BY public.operation_events.id;
 
 
 --
@@ -3515,6 +3614,13 @@ ALTER TABLE ONLY public.oauth_clients ALTER COLUMN id SET DEFAULT nextval('publi
 
 
 --
+-- Name: operation_events id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.operation_events ALTER COLUMN id SET DEFAULT nextval('public.operation_events_id_seq'::regclass);
+
+
+--
 -- Name: operations id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -3989,6 +4095,14 @@ ALTER TABLE ONLY public.oauth_clients
 
 
 --
+-- Name: operation_events operation_events_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.operation_events
+    ADD CONSTRAINT operation_events_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: operations operations_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4173,10 +4287,24 @@ ALTER TABLE ONLY public.workflow_runs
 
 
 --
+-- Name: attestations_revision_kind; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX attestations_revision_kind ON public.attestations USING btree (revision_id, kind);
+
+
+--
 -- Name: audit_resource_timeline; Type: INDEX; Schema: public; Owner: -
 --
 
 CREATE INDEX audit_resource_timeline ON public.audit_events USING btree (resource_type, resource_public_id, occurred_at);
+
+
+--
+-- Name: builds_deployment_generation; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX builds_deployment_generation ON public.builds USING btree (deployment_id, generation) WHERE (deployment_id IS NOT NULL);
 
 
 --
@@ -4471,6 +4599,13 @@ CREATE UNIQUE INDEX index_build_steps_on_build_id_and_position ON public.build_s
 --
 
 CREATE INDEX index_build_steps_on_organization_id ON public.build_steps USING btree (organization_id);
+
+
+--
+-- Name: index_builds_on_deployment_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_builds_on_deployment_id ON public.builds USING btree (deployment_id);
 
 
 --
@@ -4933,6 +5068,27 @@ CREATE INDEX index_oauth_clients_on_organization_id ON public.oauth_clients USIN
 --
 
 CREATE UNIQUE INDEX index_oauth_clients_on_public_id ON public.oauth_clients USING btree (public_id);
+
+
+--
+-- Name: index_operation_events_on_build_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_operation_events_on_build_id ON public.operation_events USING btree (build_id);
+
+
+--
+-- Name: index_operation_events_on_operation_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_operation_events_on_operation_id ON public.operation_events USING btree (operation_id);
+
+
+--
+-- Name: index_operation_events_on_organization_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX index_operation_events_on_organization_id ON public.operation_events USING btree (organization_id);
 
 
 --
@@ -5559,6 +5715,20 @@ CREATE UNIQUE INDEX index_workflow_runs_on_workflow_id ON public.workflow_runs U
 
 
 --
+-- Name: operation_events_generation_sequence; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX operation_events_generation_sequence ON public.operation_events USING btree (operation_id, generation, sequence);
+
+
+--
+-- Name: operation_events_timeline; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX operation_events_timeline ON public.operation_events USING btree (operation_id, occurred_at, id);
+
+
+--
 -- Name: outbox_delivery_queue; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5784,6 +5954,14 @@ ALTER TABLE ONLY public.environments
 
 ALTER TABLE ONLY public.idempotency_keys
     ADD CONSTRAINT fk_rails_149452d765 FOREIGN KEY (organization_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
+
+
+--
+-- Name: operation_events fk_rails_1610ae40a9; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.operation_events
+    ADD CONSTRAINT fk_rails_1610ae40a9 FOREIGN KEY (build_id) REFERENCES public.builds(id) ON DELETE SET NULL;
 
 
 --
@@ -6091,6 +6269,14 @@ ALTER TABLE ONLY public.source_snapshots
 
 
 --
+-- Name: operation_events fk_rails_609966c06d; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.operation_events
+    ADD CONSTRAINT fk_rails_609966c06d FOREIGN KEY (operation_id) REFERENCES public.operations(id) ON DELETE CASCADE;
+
+
+--
 -- Name: service_routes fk_rails_60c2c89669; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -6224,6 +6410,14 @@ ALTER TABLE ONLY public.project_source_bindings
 
 ALTER TABLE ONLY public.account_otp_keys
     ADD CONSTRAINT fk_rails_823f8d7a81 FOREIGN KEY (id) REFERENCES public.accounts(id);
+
+
+--
+-- Name: operation_events fk_rails_8492a96024; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.operation_events
+    ADD CONSTRAINT fk_rails_8492a96024 FOREIGN KEY (organization_id) REFERENCES public.organizations(id) ON DELETE CASCADE;
 
 
 --
@@ -6480,6 +6674,14 @@ ALTER TABLE ONLY public.deployments
 
 ALTER TABLE ONLY public.deployments
     ADD CONSTRAINT fk_rails_b9a3851b82 FOREIGN KEY (project_id) REFERENCES public.projects(id);
+
+
+--
+-- Name: builds fk_rails_b9d69d800f; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.builds
+    ADD CONSTRAINT fk_rails_b9d69d800f FOREIGN KEY (deployment_id) REFERENCES public.deployments(id) ON DELETE RESTRICT;
 
 
 --
@@ -6984,6 +7186,19 @@ CREATE POLICY oauth_clients_tenant_policy ON public.oauth_clients USING ((((orga
 
 
 --
+-- Name: operation_events; Type: ROW SECURITY; Schema: public; Owner: -
+--
+
+ALTER TABLE public.operation_events ENABLE ROW LEVEL SECURITY;
+
+--
+-- Name: operation_events operation_events_tenant_policy; Type: POLICY; Schema: public; Owner: -
+--
+
+CREATE POLICY operation_events_tenant_policy ON public.operation_events USING ((((organization_id)::text = current_setting('lrail.organization_id'::text, true)) AND public.lrail_account_has_membership(organization_id))) WITH CHECK ((((organization_id)::text = current_setting('lrail.organization_id'::text, true)) AND public.lrail_account_has_membership(organization_id)));
+
+
+--
 -- Name: operations; Type: ROW SECURITY; Schema: public; Owner: -
 --
 
@@ -7283,7 +7498,8 @@ INSERT INTO "schema_migrations" (version) VALUES
 ('20260712221000'),
 ('20260712233000'),
 ('20260713001500'),
-('20260713013000')
+('20260713013000'),
+('20260713160000')
 ON CONFLICT DO NOTHING;
 
 -- LRAIL_RUNTIME_GRANTS_BEGIN

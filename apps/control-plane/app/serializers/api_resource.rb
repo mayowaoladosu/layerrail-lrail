@@ -46,7 +46,12 @@ class ApiResource
         environment_id: value.environment.public_id,
         state: value.state,
         source: value.source,
+        source_snapshot_id: value.source_snapshot&.public_id,
         manifest_revision: value.manifest_revision,
+        build_mode: value.build_mode,
+        build_file: value.build_file,
+        accept_detected: value.accept_detected,
+        artifact_ready_at: timestamp(value.artifact_ready_at),
         operation_id: value.operation.public_id,
         revision_id: value.revision&.public_id,
         revision_digest: value.revision&.image_digest,
@@ -65,6 +70,27 @@ class ApiResource
         error: value.error_code ? { code: value.error_code, message: value.error_message } : nil,
         created_at: timestamp(value.created_at),
         updated_at: timestamp(value.updated_at)
+      }
+    end
+
+    def operation_event(value)
+      {
+        generation: value.generation,
+        sequence: value.sequence,
+        attempt: value.attempt,
+        stage: value.stage,
+        kind: value.kind,
+        output: value.output,
+        vertex: value.vertex,
+        name: value.name,
+        current: value.current,
+        total: value.total,
+        cached: value.cached,
+        stream: value.stream,
+        line: value.line,
+        code: value.code,
+        message: value.message,
+        occurred_at: timestamp(value.occurred_at)
       }
     end
 

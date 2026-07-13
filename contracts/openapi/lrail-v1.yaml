@@ -1069,6 +1069,56 @@ paths:
           $ref: "#/components/responses/NotFound"
         "429":
           $ref: "#/components/responses/RateLimited"
+  /v1/operations/{operation_id}/events:
+    parameters:
+      - $ref: "#/components/parameters/OperationId"
+    get:
+      tags: [Operations]
+      operationId: listOperationEvents
+      summary: Resume retained operation events
+      description: Returns an ordered generation-bound batch after the caller's last durable sequence.
+      x-lrail-action: operation.read
+      parameters:
+        - name: generation
+          in: query
+          schema: {type: integer, minimum: 1}
+        - name: after
+          in: query
+          schema: {type: integer, minimum: 0, default: 0}
+        - name: limit
+          in: query
+          schema: {type: integer, minimum: 1, maximum: 1000, default: 250}
+      responses:
+        "200":
+          description: Ordered retained events and current operation truth.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [data, operation, generation, next_sequence]
+                properties:
+                  data:
+                    type: array
+                    maxItems: 1000
+                    items:
+                      $ref: "#/components/schemas/OperationEvent"
+                  operation:
+                    $ref: "#/components/schemas/Operation"
+                  generation:
+                    type: integer
+                    minimum: 1
+                  next_sequence:
+                    type: integer
+                    minimum: 0
+        "400":
+          $ref: "#/components/responses/InvalidArgument"
+        "401":
+          $ref: "#/components/responses/Unauthenticated"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "429":
+          $ref: "#/components/responses/RateLimited"
 components:
   securitySchemes:
     bearerAuth:
@@ -1522,6 +1572,7 @@ components:
           manifest_revision,
           operation_id,
           revision_id,
+          source_snapshot_id,
           created_at,
           updated_at,
         ]
@@ -1538,9 +1589,24 @@ components:
           $ref: "#/components/schemas/DeploymentState"
         source:
           $ref: "#/components/schemas/DeploymentSource"
+        source_snapshot_id:
+          oneOf:
+            - $ref: "#/components/schemas/ResourceId"
+            - type: "null"
         manifest_revision:
           type: integer
           minimum: 1
+        build_mode:
+          type: string
+          enum: [auto, repository]
+        build_file:
+          type: [string, "null"]
+          maxLength: 1024
+        accept_detected:
+          type: boolean
+        artifact_ready_at:
+          type: [string, "null"]
+          format: date-time
         operation_id:
           $ref: "#/components/schemas/ResourceId"
         revision_id:
@@ -1573,6 +1639,17 @@ components:
           type: string
           minLength: 3
           maxLength: 512
+        build_mode:
+          type: string
+          enum: [auto, repository]
+          default: auto
+        build_file:
+          type: string
+          minLength: 1
+          maxLength: 1024
+        accept_detected:
+          type: boolean
+          default: false
     DeploymentSource:
       oneOf:
         - type: object
@@ -1613,6 +1690,7 @@ components:
           building,
           scanning,
           publishing,
+          artifact_ready,
           scheduling,
           starting,
           verifying,
@@ -1901,6 +1979,28 @@ components:
         updated_at:
           type: string
           format: date-time
+    OperationEvent:
+      type: object
+      additionalProperties: false
+      required:
+        [generation, sequence, attempt, stage, kind, cached, stream, occurred_at]
+      properties:
+        generation: {type: integer, minimum: 1}
+        sequence: {type: integer, minimum: 1}
+        attempt: {type: integer, minimum: 1}
+        stage: {type: string, pattern: "^[a-z][a-z0-9_]{0,63}$"}
+        kind: {type: string, pattern: "^[a-z][a-z0-9_.-]{0,63}$"}
+        output: {type: [string, "null"], maxLength: 512}
+        vertex: {type: [string, "null"], maxLength: 512}
+        name: {type: [string, "null"], maxLength: 512}
+        current: {type: [integer, "null"]}
+        total: {type: [integer, "null"]}
+        cached: {type: boolean}
+        stream: {type: integer, minimum: 0}
+        line: {type: [string, "null"], maxLength: 16384}
+        code: {type: [string, "null"], maxLength: 128}
+        message: {type: [string, "null"], maxLength: 4096}
+        occurred_at: {type: string, format: date-time}
     Organization:
       type: object
       additionalProperties: false

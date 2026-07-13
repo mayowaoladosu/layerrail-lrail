@@ -386,7 +386,8 @@ func (broker *Broker) appendSyntheticTerminal(record RunRecord, state, code, mes
 	started, _ := time.Parse(time.RFC3339Nano, record.CreatedAt)
 	result := Result{
 		Version: CurrentResultVersion, BuildID: record.Request.BuildID, Generation: record.Request.Generation, State: state,
-		SourceSnapshotID: record.Request.Source.SnapshotID, SourceDigest: record.Request.Source.SnapshotDigest, Outputs: []OutputResult{},
+		SourceSnapshotID: record.Request.Source.SnapshotID, SourceDigest: record.Request.Source.SnapshotDigest,
+		Outputs: []OutputResult{}, Services: []ServiceResult{},
 		FailureCode: code, FailureMessage: message, StartedAt: started.UTC().Format(time.RFC3339Nano),
 		FinishedAt: broker.clock().UTC().Format(time.RFC3339Nano), Cleanup: CleanupResult{Status: cleanup},
 	}

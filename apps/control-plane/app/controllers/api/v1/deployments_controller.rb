@@ -43,7 +43,15 @@ module Api
       private
 
       def deployment_params
-        params.permit(:environment_id, :manifest_revision, :reason, source: {})
+        params.permit(
+          :environment_id,
+          :manifest_revision,
+          :reason,
+          :build_mode,
+          :build_file,
+          :accept_detected,
+          source: {},
+        )
       end
 
       def environment_filter(project)

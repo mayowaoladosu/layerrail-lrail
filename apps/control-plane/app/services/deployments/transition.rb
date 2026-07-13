@@ -34,6 +34,7 @@ module Deployments
 
     def self.terminal_attributes(state)
       case state.to_s
+      when "artifact_ready" then { artifact_ready_at: Time.current }
       when "ready" then { ready_at: Time.current }
       when "promoted" then { promoted_at: Time.current }
       when "canceled" then { canceled_at: Time.current }

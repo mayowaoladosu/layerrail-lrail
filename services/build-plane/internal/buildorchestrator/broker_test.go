@@ -233,7 +233,8 @@ func terminalBrokerEvent(request Request, now time.Time, result Result) Event {
 func failedBrokerResult(request Request, now time.Time, code string) Result {
 	return Result{
 		Version: CurrentResultVersion, BuildID: request.BuildID, Generation: request.Generation, State: "failed",
-		SourceSnapshotID: request.Source.SnapshotID, SourceDigest: request.Source.SnapshotDigest, Outputs: []OutputResult{},
+		SourceSnapshotID: request.Source.SnapshotID, SourceDigest: request.Source.SnapshotDigest,
+		Outputs: []OutputResult{}, Services: []ServiceResult{},
 		FailureCode: code, FailureMessage: "Fixture terminal failure", StartedAt: now.Format(time.RFC3339Nano),
 		FinishedAt: now.Add(time.Second).Format(time.RFC3339Nano), Cleanup: CleanupResult{Status: "clean"},
 	}

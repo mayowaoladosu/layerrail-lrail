@@ -32,7 +32,9 @@ Rails.application.routes.draw do
           resources :addons, only: :index
         end
         resources :deployments, only: %i[show destroy]
-        resources :operations, only: :show
+        resources :operations, only: :show do
+          get :events, on: :member
+        end
         resources :api_keys, only: %i[index create destroy]
         post "source_uploads/:id/finalize", to: "source_uploads#finalize", as: :finalize_source_upload
       end

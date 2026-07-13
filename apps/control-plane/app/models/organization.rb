@@ -13,6 +13,9 @@ class Organization < ApplicationRecord
   has_many :services, dependent: :destroy
   has_many :deployments, dependent: :restrict_with_error
   has_many :operations, dependent: :destroy
+  has_many :operation_events, dependent: :destroy
+  has_many :builds, dependent: :restrict_with_error
+  has_many :attestations, dependent: :restrict_with_error
   has_many :releases, dependent: :restrict_with_error
   has_many :domains, dependent: :restrict_with_error
   has_many :addons, dependent: :restrict_with_error

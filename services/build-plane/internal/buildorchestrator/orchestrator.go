@@ -235,6 +235,7 @@ func (orchestrator *Orchestrator) Run(ctx context.Context, request Request, emit
 		return Result{}, err
 	}
 	partial := Result{DetectionDigest: detectionObject.Digest, DetectorResultRef: detectionObject.Reference}
+	partial.Services = serviceResults(detection, nil)
 	if request.Configuration.Mode == "auto" && (!request.Configuration.AcceptDetected || detection.Blocked) {
 		return orchestrator.finishFailure(stream, request, started, "waiting", "detect_confirmation_required", "Detected configuration requires explicit confirmation", partial)
 	}
@@ -280,6 +281,7 @@ func (orchestrator *Orchestrator) Run(ctx context.Context, request Request, emit
 	partial.BuildIRRef = irObject.Reference
 	partial.DefinitionDigest = compilation.DefinitionDigest
 	partial.DefinitionLockRef = lockObject.Reference
+	partial.Services = serviceResults(detection, compilation.Outputs)
 
 	if err := stream.send("assigning", "progress", "Preparing signed isolated BuildCell assignment"); err != nil {
 		return Result{}, err
@@ -436,6 +438,9 @@ func (orchestrator *Orchestrator) finishFailure(stream *eventStream, request Req
 	partial.SourceSnapshotID = request.Source.SnapshotID
 	partial.SourceDigest = request.Source.SnapshotDigest
 	partial.Outputs = []OutputResult{}
+	if partial.Services == nil {
+		partial.Services = []ServiceResult{}
+	}
 	partial.FailureCode = code
 	partial.FailureMessage = message
 	partial.StartedAt = started.Format(time.RFC3339Nano)
@@ -448,6 +453,71 @@ func (orchestrator *Orchestrator) finishFailure(stream *eventStream, request Req
 		return Result{}, err
 	}
 	return partial, nil
+}
+
+func serviceResults(detection DetectionResult, outputs []llbcompiler.OutputDefinition) []ServiceResult {
+	detected := make(map[string]DetectedService, len(detection.Services))
+	for _, service := range detection.Services {
+		detected[service.Name] = service
+	}
+	names := make([]string, 0)
+	if len(outputs) == 0 {
+		for _, service := range detection.Services {
+			names = append(names, service.Name)
+		}
+	} else {
+		for _, output := range outputs {
+			names = append(names, output.Name)
+		}
+	}
+	slices.Sort(names)
+	result := make([]ServiceResult, 0, len(names))
+	for _, name := range names {
+		service, found := detected[name]
+		if !found {
+			kind := "web"
+			for _, output := range outputs {
+				if output.Name == name && output.Kind == "static_bundle" {
+					kind = "static"
+				}
+			}
+			result = append(result, ServiceResult{
+				Name: name, Root: ".", Kind: kind, Language: "docker", Framework: "Custom Starlark",
+				Build:     BuildResult{Strategy: "starlark", InstallCommand: []string{}, BuildCommand: []string{}, CachePaths: []string{}},
+				Processes: []ProcessResult{{Name: "web", Kind: kind, Command: []string{"platform-defined"}, Protocol: "none"}},
+			})
+			continue
+		}
+		processes := make([]ProcessResult, 0, len(service.Processes))
+		for _, process := range service.Processes {
+			health := ""
+			if process.HealthPath != nil {
+				health = *process.HealthPath
+			}
+			processes = append(processes, ProcessResult{
+				Name: process.Name, Kind: process.Kind, Command: append([]string(nil), process.Command...),
+				Port: process.Port, Protocol: process.Protocol, HealthPath: health,
+			})
+		}
+		runtimeVersion := ""
+		if service.Runtime.Version != nil {
+			runtimeVersion = *service.Runtime.Version
+		}
+		outputPath := ""
+		if service.Build.OutputPath != nil {
+			outputPath = *service.Build.OutputPath
+		}
+		result = append(result, ServiceResult{
+			Name: service.Name, Root: service.Root, Kind: service.Kind, Language: service.Language,
+			Framework: service.Framework, RuntimeVersion: runtimeVersion,
+			Build: BuildResult{
+				Strategy: service.Build.Strategy, InstallCommand: append([]string(nil), service.Build.InstallCommand...),
+				BuildCommand: append([]string(nil), service.Build.BuildCommand...), OutputPath: outputPath,
+				CachePaths: append([]string(nil), service.Build.CachePaths...),
+			}, Processes: processes,
+		})
+	}
+	return result
 }
 
 func compilationFailure(err error) (string, string, bool) {

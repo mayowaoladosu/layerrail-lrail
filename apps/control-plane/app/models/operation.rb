@@ -10,6 +10,8 @@ class Operation < ApplicationRecord
   validates :state, inclusion: { in: STATES }
   validates :completed_steps, :total_steps, numericality: { only_integer: true, greater_than_or_equal_to: 0 }
 
+  has_many :operation_events, dependent: :destroy
+
   def terminal?
     state.in?(%w[succeeded failed canceled])
   end

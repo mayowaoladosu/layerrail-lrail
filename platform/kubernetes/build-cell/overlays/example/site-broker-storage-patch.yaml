@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: lrail-build-broker-state
+  namespace: lrail-control
+spec:
+  storageClassName: rook-ceph-block

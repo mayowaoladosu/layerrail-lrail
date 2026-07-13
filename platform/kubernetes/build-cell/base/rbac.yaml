@@ -1,6 +1,13 @@
 apiVersion: v1
 kind: ServiceAccount
 metadata:
+  name: lrail-build-broker
+  namespace: lrail-control
+automountServiceAccountToken: false
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
   name: lrail-build-control
   namespace: lrail-build-control
 automountServiceAccountToken: true

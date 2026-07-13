@@ -1,0 +1,139 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lrail-build-broker-site
+  namespace: lrail-control
+data:
+  cell-id: cell_019b01da-7e31-7000-8000-000000000001
+  source-object-prefix: s3://lrail-source/snapshots
+  cell-object-prefix: s3://lrail-build/cell-example
+  source-s3-endpoint: s3.example.invalid
+  source-s3-region: us-east-1
+  source-s3-secure: "true"
+  cell-s3-endpoint: s3.example.invalid
+  cell-s3-region: us-east-1
+  cell-s3-secure: "true"
+  dsl-compiler-version: 0.3.0
+  llb-compiler-version: 0.2.0
+  assignment-openbao-address: https://openbao.example.invalid
+  assignment-openbao-role: build-assignment-signer
+  assignment-openbao-auth-mount: kubernetes
+  assignment-openbao-transit-mount: transit
+  assignment-openbao-key-name: build-assignment
+  assignment-key-id: lrail-build-assignment
+  assignment-public-key-digest: sha256:722abd12e99a5367f375aeb9672a8e07712e03c2add16fa8d6914d1cfa2efe0c
+  buildcell-address: dns:///lrail-build-cell.lrail-build-control.svc.cluster.local:9443
+  buildcell-server-name: lrail-build-cell.lrail-build-control.svc.cluster.local
+  buildcell-server-uris: spiffe://lrail.internal/build-cell
+  build-policy.json: |
+    {
+      "api_version": "lrail.build-policy/v1",
+      "id": "pol_019b01da-7e31-7000-8000-000000000001",
+      "revision": "1.0.0",
+      "base": {
+        "allowed_registries": ["docker.io"],
+        "curated_digests": [],
+        "allow_customer_bases": true,
+        "allowed_signature_identities": ["upstream-unverified:docker.io/library/golang"],
+        "require_sbom": false,
+        "require_provenance": false
+      },
+      "network": {
+        "allowed_profiles": ["none", "packages"],
+        "package_hosts": ["proxy.golang.org", "storage.googleapis.com", "sum.golang.org"],
+        "external_hosts": [],
+        "package_gateway_id": "gateway.packages.v1",
+        "allowlist_gateway_id": "",
+        "private_gateway_id": ""
+      },
+      "cache": {
+        "scope": "project",
+        "trust_domain": "trusted-builds-v1",
+        "allow_shared": false,
+        "allow_shared_with_secrets": false
+      },
+      "secrets": {"allowed_names": []},
+      "build_arguments": {"allowed_names": []},
+      "supply_chain": {
+        "version": 1,
+        "syft_version": "1.46.0",
+        "trivy_version": "0.72.0",
+        "signer_key_id": "lrail-build-evidence",
+        "allowed_signer_public_key_digests": ["sha256:722abd12e99a5367f375aeb9672a8e07712e03c2add16fa8d6914d1cfa2efe0c"],
+        "denied_vulnerability_severities": ["CRITICAL"],
+        "denied_configuration_severities": ["CRITICAL", "HIGH"],
+        "denied_license_classifications": ["Forbidden"],
+        "require_secret_free": true,
+        "require_image_configuration_scan": true
+      }
+    }
+  base-catalog.json: |
+    {
+      "version": "1.0.0",
+      "entries": [
+        {
+          "language": "go",
+          "material": {
+            "requested_ref": "docker.io/library/golang:1.26.5-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2",
+            "resolved_ref": "docker.io/library/golang:1.26.5-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2",
+            "digest": "sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2",
+            "registry": "docker.io",
+            "classification": "customer",
+            "platforms": ["linux/amd64", "linux/arm64"],
+            "signature_identity": "upstream-unverified:docker.io/library/golang",
+            "resolution_digest": "sha256:10e6846b69e6978fd51a0825ac080fc7ac8e2408af53ac2e5e0968c04f7bc7ef"
+          }
+        }
+      ]
+    }
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lrail-openbao-ca
+  namespace: lrail-control
+data:
+  ca.pem: |
+    -----BEGIN CERTIFICATE-----
+    REPLACE_WITH_SITE_CA_CERTIFICATE
+    -----END CERTIFICATE-----
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lrail-s3-ca
+  namespace: lrail-control
+data:
+  ca.pem: |
+    -----BEGIN CERTIFICATE-----
+    REPLACE_WITH_S3_CA_CERTIFICATE
+    -----END CERTIFICATE-----
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: lrail-build-broker-source-s3
+  namespace: lrail-control
+type: Opaque
+stringData:
+  access-key: EXAMPLE_NON_AUTHENTIC_SOURCE_READ_ACCESS_KEY
+  secret-key: EXAMPLE_NON_AUTHENTIC_SOURCE_READ_SECRET_KEY
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: lrail-build-broker-cell-s3
+  namespace: lrail-control
+type: Opaque
+stringData:
+  access-key: EXAMPLE_NON_AUTHENTIC_CELL_WRITE_ACCESS_KEY
+  secret-key: EXAMPLE_NON_AUTHENTIC_CELL_WRITE_SECRET_KEY
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: lrail-build-images
+  namespace: lrail-control
+type: kubernetes.io/dockerconfigjson
+stringData:
+  .dockerconfigjson: '{"auths":{"ghcr.io":{"username":"EXAMPLE_NON_AUTHENTIC_USER","password":"EXAMPLE_NON_AUTHENTIC_READ_TOKEN"}}}'

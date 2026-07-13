@@ -13,6 +13,7 @@ resources:
   - rbac.yaml
   - storage-and-quota.yaml
   - certificates.yaml
+  - build-broker.yaml
   - egress-proxy.yaml
   - registry-broker.yaml
   - evidence-signer.yaml

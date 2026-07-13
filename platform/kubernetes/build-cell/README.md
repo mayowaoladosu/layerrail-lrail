@@ -1,4 +1,4 @@
-# Build cell deployment
+# Build cell and durable BuildService deployment
 
 The build cell is a dedicated execution boundary. The base manifests are intentionally not a complete site configuration: they reference site-owned endpoints, public assignment keys, trust roots, and object-store credentials that must be supplied by an overlay.
 
@@ -12,12 +12,40 @@ The build cell is a dedicated execution boundary. The base manifests are intenti
 - a `lrail-internal-ca` cert-manager ClusterIssuer
 - HTTPS OpenBao and S3-compatible endpoints
 - an OpenBao Transit Ed25519 key and dedicated Kubernetes-auth role for evidence signing
+- a separate OpenBao Transit Ed25519 key and five-minute Kubernetes-auth role for build-assignment signing
 - an RWX storage class; the example selects `rook-cephfs` for the versioned Trivy database
+- an RWO storage class; the example selects `rook-ceph-block` for singleton broker state
 - a site-owned, anonymous-read Harbor mirror of the Trivy vulnerability database
-- the final published, digest-pinned controller, worker, egress-proxy, registry-broker, evidence-signer, Trivy DB updater, and residue-agent images
+- the final published, digest-pinned build broker, controller, worker, egress-proxy, registry-broker, evidence-signer, Trivy DB updater, and residue-agent images
 - an HTTPS Harbor origin with token expiry no greater than 15 minutes
 
-The example overlay contains only non-authentic placeholders. Replace its public key, CA, endpoint, object credential, Harbor administrator credential, storage-class name, and `lrail-build-images` Docker config through the production secret/configuration workflow. The component package token needs read-only access to these seven private packages and no repository or write scope. Never commit real credentials or private key material.
+The example overlay contains only non-authentic placeholders. Replace its public keys, CAs, endpoints, object credentials, Harbor administrator credential, storage-class names, and `lrail-build-images` Docker config through the production secret/configuration workflow. The component package token needs read-only access to these eight private packages and no repository or write scope. Never commit real credentials or private key material.
+
+## Durable BuildService boundary
+
+`lrail-build-broker` is a singleton because generation fencing, exact signed-assignment checkpoints, and retained events use one Bolt volume. `Recreate` plus a `ReadWriteOnce` claim prevents concurrent writers. It runs as UID/GID 65532 with a read-only root filesystem and no Kubernetes API, PostgreSQL, source-provider, Harbor-administration, or evidence-signing authority.
+
+A production overlay must supply two different object identities:
+
+- `lrail-build-broker-source-s3` may only `GetObject` under the finalized source snapshot prefix;
+- `lrail-build-broker-cell-s3` may only `GetObject` and `PutObject` under exactly one selected cell content prefix.
+
+The IAM JSON files under `base/policies` are scope templates. Replace `cell-example` with the selected cell's exact prefix before installing the cell-write policy. Never combine these identities. The broker site ConfigMap owns the immutable build policy, base catalog, exact cell identity, TLS S3 origins, OpenBao assignment identity, and BuildCell mTLS endpoint. The broker image is pinned by registry digest and its GHCR package is private; do not replace the digest with a mutable tag.
+
+Mount `lrail-control-worker-build-client-tls` into the control-worker workload and configure:
+
+```text
+LRAIL_BUILD_SERVICE_ENDPOINT=https://lrail-build-broker.lrail-control.svc.cluster.local:9444
+LRAIL_BUILD_SERVICE_CA_FILE=/run/lrail-build-service/ca.crt
+LRAIL_BUILD_SERVICE_CLIENT_CERT=/run/lrail-build-service/tls.crt
+LRAIL_BUILD_SERVICE_CLIENT_KEY=/run/lrail-build-service/tls.key
+```
+
+The broker accepts only `spiffe://lrail.internal/control-worker`. BuildCell accepts only `spiffe://lrail.internal/build-broker`. Certificates rotate every 24 hours. Go services reload certificate files; the Ruby client creates a fresh verified TLS 1.3 connection for each activity request.
+
+Provision the dedicated Transit key and Kubernetes-auth role using [the assignment signer runbook](../../openbao/build-assignment-signer.md). Publish its public key to BuildCell before starting the broker. Startup fails closed unless a live preflight signature verifies under the pinned key ID, algorithm, and PKIX public-key digest.
+
+Roll out BuildCell dependencies first, then the broker, and then control workers. A broker restart must reopen the original Bolt volume, enumerate nonterminal generations, and reuse the exact signed assignment bytes. If the volume is unavailable or an OpenBao/BuildCell preflight fails, leave the broker unavailable; never start an empty replacement against an active cell. M-B stops at Rails `artifact_ready` truth and must not create a release, target bundle, route, Kubernetes runtime workload, or runtime process.
 
 ## Render and validate
 

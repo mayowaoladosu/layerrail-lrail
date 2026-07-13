@@ -1,0 +1,335 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: lrail-build-broker
+  namespace: lrail-control
+  labels:
+    app.kubernetes.io/name: lrail-build-broker
+spec:
+  selector:
+    app.kubernetes.io/name: lrail-build-broker
+  ports:
+    - name: https
+      port: 9444
+      targetPort: https
+      protocol: TCP
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: lrail-build-broker-state
+  namespace: lrail-control
+spec:
+  accessModes: [ReadWriteOnce]
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lrail-build-broker
+  namespace: lrail-control
+  labels:
+    app.kubernetes.io/name: lrail-build-broker
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: lrail-build-broker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: lrail-build-broker
+        app.kubernetes.io/component: durable-build-service
+    spec:
+      serviceAccountName: lrail-build-broker
+      automountServiceAccountToken: false
+      imagePullSecrets:
+        - name: lrail-build-images
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 150
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+        appArmorProfile:
+          type: RuntimeDefault
+      containers:
+        - name: broker
+          image: ghcr.io/mayowaoladosu/layerrail-lrail/build-broker@sha256:5deb720604c52d6ea7b16d13e65d2851664f1ffd273d8c652fe1e6ccab7ada9d
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+            appArmorProfile:
+              type: RuntimeDefault
+          ports:
+            - name: https
+              containerPort: 9444
+              protocol: TCP
+          env:
+            - name: LRAIL_CELL_ID
+              valueFrom:
+                configMapKeyRef:
+                  name: lrail-build-broker-site
+                  key: cell-id
+            - name: LRAIL_SOURCE_OBJECT_PREFIX
+              valueFrom:
+                configMapKeyRef:
+                  name: lrail-build-broker-site
+                  key: source-object-prefix
+            - name: LRAIL_OBJECT_PREFIX
+              valueFrom:
+                configMapKeyRef:
+                  name: lrail-build-broker-site
+                  key: cell-object-prefix
+            - name: LRAIL_SOURCE_S3_ENDPOINT
+              valueFrom:
+                configMapKeyRef:
+                  name: lrail-build-broker-site
+                  key: source-s3-endpoint
+            - name: LRAIL_SOURCE_S3_REGION
+              valueFrom:
+                configMapKeyRef:
+                  name: lrail-build-broker-site
+                  key: source-s3-region
+            - name: LRAIL_SOURCE_S3_SECURE
+              valueFrom:
+                configMapKeyRef:
+                  name: lrail-build-broker-site
+                  key: source-s3-secure
+            - { name: LRAIL_SOURCE_S3_CA_FILE, value: /etc/lrail/s3/ca.pem }
+            - {
+                name: LRAIL_SOURCE_S3_ACCESS_KEY_FILE,
+                value: /run/lrail-source-s3/access-key,
+              }
+            - {
+                name: LRAIL_SOURCE_S3_SECRET_KEY_FILE,
+                value: /run/lrail-source-s3/secret-key,
+              }
+            - name: LRAIL_CELL_S3_ENDPOINT
+              valueFrom:
+                configMapKeyRef:
+                  name: lrail-build-broker-site
+                  key: cell-s3-endpoint
+            - name: LRAIL_CELL_S3_REGION
+              valueFrom:
+                configMapKeyRef:
+                  name: lrail-build-broker-site
+                  key: cell-s3-region
+            - name: LRAIL_CELL_S3_SECURE
+              valueFrom:
+                configMapKeyRef:
+                  name: lrail-build-broker-site
+                  key: cell-s3-secure
+            - { name: LRAIL_CELL_S3_CA_FILE, value: /etc/lrail/s3/ca.pem }
+            - {
+                name: LRAIL_CELL_S3_ACCESS_KEY_FILE,
+                value: /run/lrail-cell-s3/access-key,
+              }
+            - {
+                name: LRAIL_CELL_S3_SECRET_KEY_FILE,
+                value: /run/lrail-cell-s3/secret-key,
+              }
+            - {
+                name: LRAIL_BUILD_POLICY_FILE,
+                value: /etc/lrail/broker/build-policy.json,
+              }
+            - {
+                name: LRAIL_BASE_CATALOG_FILE,
+                value: /etc/lrail/broker/base-catalog.json,
+              }
+            - name: LRAIL_DSL_COMPILER_VERSION
+              valueFrom:
+                configMapKeyRef:
+                  name: lrail-build-broker-site
+                  key: dsl-compiler-version
+            - name: LRAIL_LLB_COMPILER_VERSION
+              valueFrom:
+                configMapKeyRef:
+                  name: lrail-build-broker-site
+                  key: llb-compiler-version
+            - name: LRAIL_ASSIGNMENT_OPENBAO_ADDRESS
+              valueFrom:
+                configMapKeyRef:
+                  name: lrail-build-broker-site
+                  key: assignment-openbao-address
+            - name: LRAIL_ASSIGNMENT_OPENBAO_ROLE
+              valueFrom:
+                configMapKeyRef:
+                  name: lrail-build-broker-site
+                  key: assignment-openbao-role
+            - name: LRAIL_ASSIGNMENT_OPENBAO_AUTH_MOUNT
+              valueFrom:
+                configMapKeyRef:
+                  name: lrail-build-broker-site
+                  key: assignment-openbao-auth-mount
+            - name: LRAIL_ASSIGNMENT_OPENBAO_TRANSIT_MOUNT
+              valueFrom:
+                configMapKeyRef:
+                  name: lrail-build-broker-site
+                  key: assignment-openbao-transit-mount
+            - name: LRAIL_ASSIGNMENT_OPENBAO_KEY_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: lrail-build-broker-site
+                  key: assignment-openbao-key-name
+            - name: LRAIL_ASSIGNMENT_KEY_ID
+              valueFrom:
+                configMapKeyRef:
+                  name: lrail-build-broker-site
+                  key: assignment-key-id
+            - name: LRAIL_ASSIGNMENT_PUBLIC_KEY_DIGEST
+              valueFrom:
+                configMapKeyRef:
+                  name: lrail-build-broker-site
+                  key: assignment-public-key-digest
+            - {
+                name: LRAIL_ASSIGNMENT_OPENBAO_JWT_FILE,
+                value: /var/run/secrets/lrail-openbao/token,
+              }
+            - {
+                name: LRAIL_ASSIGNMENT_OPENBAO_CA_FILE,
+                value: /etc/lrail/openbao/ca.pem,
+              }
+            - name: LRAIL_BUILDCELL_ADDRESS
+              valueFrom:
+                configMapKeyRef:
+                  name: lrail-build-broker-site
+                  key: buildcell-address
+            - name: LRAIL_BUILDCELL_SERVER_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: lrail-build-broker-site
+                  key: buildcell-server-name
+            - name: LRAIL_BUILDCELL_SERVER_URIS
+              valueFrom:
+                configMapKeyRef:
+                  name: lrail-build-broker-site
+                  key: buildcell-server-uris
+            - {
+                name: LRAIL_BUILDCELL_CLIENT_CERT,
+                value: /run/lrail-buildcell-client/tls.crt,
+              }
+            - {
+                name: LRAIL_BUILDCELL_CLIENT_KEY,
+                value: /run/lrail-buildcell-client/tls.key,
+              }
+            - {
+                name: LRAIL_BUILDCELL_CA,
+                value: /run/lrail-buildcell-client/ca.crt,
+              }
+            - {
+                name: LRAIL_BUILD_BROKER_STATE_FILE,
+                value: /var/lib/lrail-broker/runs.db,
+              }
+            - {
+                name: LRAIL_BUILD_BROKER_SCRATCH_ROOT,
+                value: /var/lib/lrail-scratch,
+              }
+            - { name: LRAIL_SERVER_CERT, value: /run/lrail-server/tls.crt }
+            - { name: LRAIL_SERVER_KEY, value: /run/lrail-server/tls.key }
+            - { name: LRAIL_CLIENT_CA, value: /run/lrail-server/ca.crt }
+            - {
+                name: LRAIL_ALLOWED_CLIENT_URIS,
+                value: spiffe://lrail.internal/control-worker,
+              }
+            - { name: LRAIL_LISTEN_ADDRESS, value: ":9444" }
+          resources:
+            requests: { cpu: 250m, memory: 256Mi, ephemeral-storage: 256Mi }
+            limits: { cpu: "2", memory: 2Gi, ephemeral-storage: 4Gi }
+          readinessProbe:
+            tcpSocket: { port: https }
+            initialDelaySeconds: 2
+            periodSeconds: 5
+            timeoutSeconds: 1
+            failureThreshold: 12
+          livenessProbe:
+            tcpSocket: { port: https }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 1
+            failureThreshold: 6
+          volumeMounts:
+            - { name: state, mountPath: /var/lib/lrail-broker }
+            - { name: scratch, mountPath: /var/lib/lrail-scratch }
+            - {
+                name: broker-config,
+                mountPath: /etc/lrail/broker,
+                readOnly: true,
+              }
+            - {
+                name: openbao-ca,
+                mountPath: /etc/lrail/openbao,
+                readOnly: true,
+              }
+            - { name: s3-ca, mountPath: /etc/lrail/s3, readOnly: true }
+            - {
+                name: openbao-token,
+                mountPath: /var/run/secrets/lrail-openbao,
+                readOnly: true,
+              }
+            - {
+                name: source-s3,
+                mountPath: /run/lrail-source-s3,
+                readOnly: true,
+              }
+            - { name: cell-s3, mountPath: /run/lrail-cell-s3, readOnly: true }
+            - {
+                name: buildcell-client,
+                mountPath: /run/lrail-buildcell-client,
+                readOnly: true,
+              }
+            - { name: server-tls, mountPath: /run/lrail-server, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: state
+          persistentVolumeClaim: { claimName: lrail-build-broker-state }
+        - name: scratch
+          emptyDir: { sizeLimit: 2Gi }
+        - name: broker-config
+          configMap: { name: lrail-build-broker-site, defaultMode: 0444 }
+        - name: openbao-ca
+          configMap: { name: lrail-openbao-ca, defaultMode: 0444 }
+        - name: s3-ca
+          configMap: { name: lrail-s3-ca, defaultMode: 0444 }
+        - name: openbao-token
+          projected:
+            defaultMode: 0440
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  audience: openbao.lrail.internal
+                  expirationSeconds: 600
+        - name: source-s3
+          secret:
+            { secretName: lrail-build-broker-source-s3, defaultMode: 0440 }
+        - name: cell-s3
+          secret: { secretName: lrail-build-broker-cell-s3, defaultMode: 0440 }
+        - name: buildcell-client
+          secret:
+            {
+              secretName: lrail-build-broker-cell-client-tls,
+              defaultMode: 0440,
+            }
+        - name: server-tls
+          secret:
+            { secretName: lrail-build-broker-server-tls, defaultMode: 0440 }
+        - name: tmp
+          emptyDir:
+            medium: Memory
+            sizeLimit: 64Mi

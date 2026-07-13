@@ -1,6 +1,72 @@
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
+  name: lrail-build-broker-server
+  namespace: lrail-control
+spec:
+  secretName: lrail-build-broker-server-tls
+  duration: 24h
+  renewBefore: 8h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  dnsNames:
+    - lrail-build-broker.lrail-control.svc
+    - lrail-build-broker.lrail-control.svc.cluster.local
+  uris:
+    - spiffe://lrail.internal/build-service
+  usages: [server auth]
+  issuerRef:
+    group: cert-manager.io
+    kind: ClusterIssuer
+    name: lrail-internal-ca
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: lrail-build-broker-cell-client
+  namespace: lrail-control
+spec:
+  secretName: lrail-build-broker-cell-client-tls
+  duration: 24h
+  renewBefore: 8h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  uris:
+    - spiffe://lrail.internal/build-broker
+  usages: [client auth]
+  issuerRef:
+    group: cert-manager.io
+    kind: ClusterIssuer
+    name: lrail-internal-ca
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: lrail-control-worker-build-client
+  namespace: lrail-control
+spec:
+  secretName: lrail-control-worker-build-client-tls
+  duration: 24h
+  renewBefore: 8h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  uris:
+    - spiffe://lrail.internal/control-worker
+  usages: [client auth]
+  issuerRef:
+    group: cert-manager.io
+    kind: ClusterIssuer
+    name: lrail-internal-ca
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
   name: lrail-build-cell-server
   namespace: lrail-build-control
 spec:

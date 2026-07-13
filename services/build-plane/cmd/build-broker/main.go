@@ -244,14 +244,39 @@ func s3Client(scope string) (*minio.Client, error) {
 	if err != nil {
 		return nil, errors.New("S3 secure setting is invalid")
 	}
+	transport, err := tlsTransport(os.Getenv("LRAIL_"+scope+"_S3_CA_FILE"), secure)
+	if err != nil {
+		return nil, err
+	}
 	client, err := minio.New(os.Getenv("LRAIL_"+scope+"_S3_ENDPOINT"), &minio.Options{
-		Creds: credentials.NewStaticV4(access, secret, ""), Secure: secure, Region: os.Getenv("LRAIL_" + scope + "_S3_REGION"),
+		Creds: credentials.NewStaticV4(access, secret, ""), Secure: secure, Region: os.Getenv("LRAIL_" + scope + "_S3_REGION"), Transport: transport,
 	})
 	access, secret = "", ""
 	if err != nil {
 		return nil, errors.New("create S3 client")
 	}
 	return client, nil
+}
+
+func tlsTransport(caFile string, secure bool) (*http.Transport, error) {
+	transport := &http.Transport{
+		DialContext:       (&net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
+		ForceAttemptHTTP2: true, MaxIdleConns: 16, MaxIdleConnsPerHost: 8, IdleConnTimeout: 30 * time.Second,
+		TLSHandshakeTimeout: 10 * time.Second, ResponseHeaderTimeout: 30 * time.Second, ExpectContinueTimeout: time.Second,
+	}
+	if !secure {
+		return transport, nil
+	}
+	contents, err := os.ReadFile(caFile)
+	if err != nil || len(contents) == 0 || len(contents) > 1<<20 {
+		return nil, errors.New("read S3 TLS CA")
+	}
+	roots := x509.NewCertPool()
+	if !roots.AppendCertsFromPEM(contents) {
+		return nil, errors.New("parse S3 TLS CA")
+	}
+	transport.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS13, RootCAs: roots}
+	return transport, nil
 }
 
 func tlsHTTPClient(caFile string, timeout time.Duration) (*http.Client, error) {

@@ -29,7 +29,7 @@ metadata:
   namespace: lrail-build-control
 data:
   keys.json: |
-    {"example-v1":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}
+    {"lrail-build-assignment":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}
 ---
 apiVersion: v1
 kind: ConfigMap

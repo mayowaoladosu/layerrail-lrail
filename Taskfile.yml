@@ -121,6 +121,12 @@ tasks:
         -v "{{.ROOT_DIR}}/platform/kubernetes/build-cell/base/scripts/update-trivy-db.sh:/update-trivy-db.sh:ro"
         --entrypoint /bin/sh "{{.ALPINE_IMAGE}}" -n /update-trivy-db.sh
 
+  mb:lab:kata:
+    desc: Prove a real tokenless Kata qemu guest on the pinned lrail-alpha lab before M-B execution
+    cmds:
+      - >-
+        python tools/mb_lab.py kata
+
   build-cell:images:
     desc: Build final-source broker, controller, worker, egress, registry broker, signer, DB updater, and residue images
     deps: [build-trivy-db-updater:image]

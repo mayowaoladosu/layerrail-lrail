@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "cluster_context": "lrail-alpha",
+  "dependencies": {
+    "kata": {
+      "chart_version": "3.32.0",
+      "chart_sha256": "901c3895d972d0f87df72f06277504acd81c48042631d3677e989db8c4c70aa6",
+      "image": "quay.io/kata-containers/kata-deploy@sha256:47c4cf29c9e8cf9bb7debab58761b672e1d4c93ee5e92db7b442ee00e7d561cc"
+    },
+    "cert_manager": {
+      "chart": "oci://quay.io/jetstack/charts/cert-manager",
+      "version": "v1.21.0"
+    },
+    "kyverno": {
+      "repository": "https://kyverno.github.io/kyverno/",
+      "chart": "kyverno",
+      "version": "1.18.2"
+    },
+    "openbao": {
+      "repository": "https://openbao.github.io/openbao-helm",
+      "chart": "openbao",
+      "version": "0.28.4",
+      "application_version": "2.4.1"
+    },
+    "harbor": {
+      "repository": "https://helm.goharbor.io",
+      "chart": "harbor",
+      "version": "1.19.1",
+      "application_version": "2.14.1"
+    }
+  },
+  "lrail_images": {
+    "build_broker": "ghcr.io/mayowaoladosu/layerrail-lrail/build-broker@sha256:5deb720604c52d6ea7b16d13e65d2851664f1ffd273d8c652fe1e6ccab7ada9d",
+    "buildcell_controller": "ghcr.io/mayowaoladosu/layerrail-lrail/buildcell-controller@sha256:6ff5cb967b1da771a865f454c6eab14f32cee847d1c36718572bbf6abd9ac876",
+    "buildkit_worker": "ghcr.io/mayowaoladosu/layerrail-lrail/buildkit-worker@sha256:07215eeaaf7732af74474f9c03aad54163989045aad6b795e24692ccbe3394fe"
+  }
+}

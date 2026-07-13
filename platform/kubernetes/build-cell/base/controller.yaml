@@ -87,7 +87,7 @@ spec:
             - {name: tmp, mountPath: /tmp}
       containers:
         - name: controller
-          image: ghcr.io/mayowaoladosu/layerrail-lrail/buildcell-controller@sha256:6ff5cb967b1da771a865f454c6eab14f32cee847d1c36718572bbf6abd9ac876
+          image: ghcr.io/mayowaoladosu/layerrail-lrail/buildcell-controller@sha256:555dd2b46c9f7f37ff29b7b24e493dcb5f4b8cec9e63298a9cf718e325460b0f
           imagePullPolicy: IfNotPresent
           securityContext:
             runAsNonRoot: true

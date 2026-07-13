@@ -221,6 +221,10 @@ func buildJob(config Config, name string, labels, annotations map[string]string,
 	}
 	seccompProfile := seccompProfile(config.SeccompProfile)
 	appArmorProfile := appArmorProfile(config.AppArmorProfile)
+	containerAppArmorProfile := appArmorProfile
+	if appArmorProfile != nil {
+		containerAppArmorProfile = appArmorProfile.DeepCopy()
+	}
 	strictGroups := corev1.SupplementalGroupsPolicyStrict
 	root := int64(1000)
 	group := int64(1000)
@@ -288,7 +292,7 @@ func buildJob(config Config, name string, labels, annotations map[string]string,
 							RunAsNonRoot: &nonRoot, RunAsUser: &root, RunAsGroup: &group, AllowPrivilegeEscalation: &allowEscalation,
 							ReadOnlyRootFilesystem: &readOnly, Privileged: ptr.To(false), ProcMount: ptr.To(corev1.DefaultProcMount),
 							Capabilities:   &corev1.Capabilities{Drop: []corev1.Capability{"ALL"}},
-							SeccompProfile: seccompProfile.DeepCopy(), AppArmorProfile: appArmorProfile.DeepCopy(),
+							SeccompProfile: seccompProfile.DeepCopy(), AppArmorProfile: containerAppArmorProfile,
 						},
 						Resources: resources, TerminationMessagePolicy: terminationLog,
 						ReadinessProbe: &corev1.Probe{ProbeHandler: corev1.ProbeHandler{TCPSocket: &corev1.TCPSocketAction{Port: intstr.FromString("buildkit")}}, InitialDelaySeconds: 2, PeriodSeconds: 2, TimeoutSeconds: 1, FailureThreshold: 30},
@@ -333,6 +337,9 @@ func seccompProfile(value string) *corev1.SeccompProfile {
 func appArmorProfile(value string) *corev1.AppArmorProfile {
 	if value == "RuntimeDefault" {
 		return &corev1.AppArmorProfile{Type: corev1.AppArmorProfileTypeRuntimeDefault}
+	}
+	if value == "Disabled" {
+		return nil
 	}
 	return &corev1.AppArmorProfile{Type: corev1.AppArmorProfileTypeLocalhost, LocalhostProfile: ptr.To(value)}
 }

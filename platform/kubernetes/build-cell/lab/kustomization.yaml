@@ -1,0 +1,36 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+resources:
+  - ../base
+patches:
+  - path: gvisor-patch.yaml
+  - path: storage-patch.yaml
+  - path: network-policy-patch.yaml
+  - target:
+      group: node.k8s.io
+      version: v1
+      kind: RuntimeClass
+      name: kata-qemu
+    patch: |-
+      $patch: delete
+      apiVersion: node.k8s.io/v1
+      kind: RuntimeClass
+      metadata:
+        name: kata-qemu
+  - target:
+      group: kyverno.io
+      version: v1
+      kind: ClusterPolicy
+      name: lrail-build-worker-isolation
+    patch: |-
+      - op: replace
+        path: /spec/rules/1/name
+        value: require-gvisor-and-no-ambient-authority
+      - op: replace
+        path: /spec/rules/1/validate/message
+        value: Functional lab build workers require gVisor, digest-pinned images, no API token, and restricted container security.
+      - op: replace
+        path: /spec/rules/1/validate/pattern/spec/runtimeClassName
+        value: gvisor
+      - op: remove
+        path: /spec/rules/1/validate/pattern/spec/containers/0/securityContext/appArmorProfile

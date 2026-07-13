@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import hashlib
 import json
 import subprocess
 import sys
@@ -288,13 +290,351 @@ def dependency_probe() -> None:
     )
 
 
+def secret_value(namespace: str, name: str, key: str) -> bytes:
+    secret = json.loads(
+        command("kubectl", "get", "secret", name, "-n", namespace, "-o", "json").stdout
+    )
+    encoded = secret.get("data", {}).get(key)
+    if not encoded:
+        raise LabFailure(f"runtime secret {namespace}/{name} lacks {key}")
+    try:
+        return base64.b64decode(encoded, validate=True)
+    except ValueError as error:
+        raise LabFailure(f"runtime secret {namespace}/{name} contains invalid data") from error
+
+
+def apply_resource(resource: dict[str, object]) -> None:
+    command("kubectl", "apply", "-f", "-", input_text=json.dumps(resource))
+
+
+def config_map(namespace: str, name: str, data: dict[str, str]) -> None:
+    apply_resource(
+        {
+            "apiVersion": "v1",
+            "kind": "ConfigMap",
+            "metadata": {
+                "name": name,
+                "namespace": namespace,
+                "labels": {"dev.lrail/lab": "mb-functional-gvisor"},
+            },
+            "data": data,
+        }
+    )
+
+
+def opaque_secret(namespace: str, name: str, data: dict[str, bytes]) -> None:
+    apply_resource(
+        {
+            "apiVersion": "v1",
+            "kind": "Secret",
+            "metadata": {
+                "name": name,
+                "namespace": namespace,
+                "labels": {"dev.lrail/lab": "mb-functional-gvisor"},
+            },
+            "type": "Opaque",
+            "data": {
+                key: base64.b64encode(value).decode("ascii") for key, value in data.items()
+            },
+        }
+    )
+
+
+def image_pull_secret(namespace: str, username: str, token: str) -> None:
+    authorization = base64.b64encode(f"{username}:{token}".encode()).decode("ascii")
+    docker_config = json.dumps(
+        {
+            "auths": {
+                "ghcr.io": {
+                    "username": username,
+                    "password": token,
+                    "auth": authorization,
+                }
+            }
+        },
+        separators=(",", ":"),
+    ).encode()
+    apply_resource(
+        {
+            "apiVersion": "v1",
+            "kind": "Secret",
+            "metadata": {
+                "name": "lrail-build-images",
+                "namespace": namespace,
+                "labels": {"dev.lrail/lab": "mb-functional-gvisor"},
+            },
+            "type": "kubernetes.io/dockerconfigjson",
+            "data": {
+                ".dockerconfigjson": base64.b64encode(docker_config).decode("ascii")
+            },
+        }
+    )
+
+
+def openbao_public_key(name: str, root_token: str) -> tuple[str, str]:
+    response = command(
+        "kubectl",
+        "exec",
+        "-n",
+        "lrail-security",
+        "openbao-0",
+        "--",
+        "env",
+        "BAO_ADDR=https://localhost:8200",
+        "BAO_CACERT=/openbao/tls/ca.crt",
+        f"BAO_TOKEN={root_token}",
+        "bao",
+        "read",
+        f"transit/keys/{name}",
+        "-format=json",
+    )
+    key = json.loads(response.stdout)["data"]
+    if (
+        key.get("type") != "ed25519"
+        or key.get("derived")
+        or key.get("exportable")
+        or key.get("allow_plaintext_backup")
+        or key.get("deletion_allowed")
+        or not key.get("supports_signing")
+    ):
+        raise LabFailure(f"OpenBao key {name!r} is unsafe")
+    version = str(key["latest_version"])
+    raw = base64.b64decode(key["keys"][version]["public_key"], validate=True)
+    if len(raw) != 32:
+        raise LabFailure(f"OpenBao key {name!r} is not canonical Ed25519")
+    encoded = base64.urlsafe_b64encode(raw).decode("ascii").rstrip("=")
+    subject_public_key_info = bytes.fromhex("302a300506032b6570032100") + raw
+    digest = "sha256:" + hashlib.sha256(subject_public_key_info).hexdigest()
+    return encoded, digest
+
+
+def functional_cell() -> None:
+    dependency_probe()
+    command(
+        "kubectl",
+        "apply",
+        "-f",
+        str(ROOT / "platform/kubernetes/build-cell/base/namespaces.yaml"),
+    )
+    command(
+        "kubectl",
+        "label",
+        "node",
+        EXPECTED_CONTEXT,
+        "lrail.dev/pool=build",
+        "lrail.dev/gvisor=true",
+        "--overwrite",
+    )
+
+    root_token = secret_value(
+        "lrail-security", "lrail-openbao-bootstrap", "root-token"
+    ).decode("utf-8")
+    assignment_key, assignment_digest = openbao_public_key(
+        "build-assignment", root_token
+    )
+    _, evidence_digest = openbao_public_key("build-evidence", root_token)
+    root_ca = secret_value("lrail-storage", "minio-server-tls", "ca.crt").decode(
+        "utf-8"
+    )
+    minio = {
+        key: secret_value("lrail-storage", "lrail-minio-bootstrap", key)
+        for key in (
+            "cell-access-key",
+            "cell-secret-key",
+            "reader-access-key",
+            "reader-secret-key",
+        )
+    }
+    harbor_password = secret_value(
+        "lrail-registry", "lrail-harbor-bootstrap", "HARBOR_ADMIN_PASSWORD"
+    )
+    dns_address = command(
+        "kubectl",
+        "get",
+        "service",
+        "kube-dns",
+        "-n",
+        "kube-system",
+        "-o",
+        "jsonpath={.spec.clusterIP}",
+    ).stdout.strip()
+    if not dns_address:
+        raise LabFailure("cluster DNS address is unavailable")
+
+    build_policy = json.loads(
+        (ROOT / "services/build-plane/config/build-policy.v1.example.json").read_text(
+            encoding="utf-8"
+        )
+    )
+    build_policy["supply_chain"]["allowed_signer_public_key_digests"] = [
+        evidence_digest
+    ]
+    base_catalog = (
+        ROOT / "services/build-plane/config/base-catalog.v1.json"
+    ).read_text(encoding="utf-8")
+
+    config_map(
+        "lrail-build-control",
+        "lrail-build-cell-site",
+        {
+            "cell-id": "cell_019b01da-7e31-7000-8000-000000000001",
+            "object-prefix": "s3://lrail-build/cell-lab/",
+            "s3-endpoint": "minio.lrail-storage.svc.cluster.local:9000",
+            "s3-region": "us-east-1",
+            "openbao-address": "https://openbao.lrail-security.svc.cluster.local:8200",
+            "openbao-role": "build-cell",
+            "openbao-signing-role": "build-evidence-signer",
+            "harbor-api-endpoint": "https://harbor.lrail-registry.svc.cluster.local",
+            "harbor-registry": "https://harbor.lrail-registry.svc.cluster.local",
+            "harbor-project-storage-limit": "10737418240",
+            "trivy-db-repository": "ghcr.io/aquasecurity/trivy-db:2",
+            "trivy-max-db-age": "48h",
+            "cluster-dns-cidr": f"{dns_address}/32",
+            "cluster-dns-address": f"{dns_address}:53",
+            "residue-server-name": "lrail-residue-agent.lrail-build-system.svc.cluster.local",
+            "residue-server-uris": "spiffe://lrail.internal/residue-agent",
+            "allowed-broker-uris": "spiffe://lrail.internal/build-broker",
+        },
+    )
+    config_map(
+        "lrail-build-control",
+        "lrail-build-assignment-keys",
+        {"keys.json": json.dumps({"lrail-build-assignment": assignment_key})},
+    )
+    for namespace in ("lrail-build-control", "lrail-control"):
+        config_map(namespace, "lrail-openbao-ca", {"ca.pem": root_ca})
+        config_map(namespace, "lrail-s3-ca", {"ca.pem": root_ca})
+    config_map("lrail-build-control", "lrail-harbor-ca", {"ca.pem": root_ca})
+    config_map(
+        "lrail-build-system",
+        "lrail-residue-agent-site",
+        {"allowed-client-uris": "spiffe://lrail.internal/build-controller"},
+    )
+    config_map(
+        "lrail-control",
+        "lrail-build-broker-site",
+        {
+            "cell-id": "cell_019b01da-7e31-7000-8000-000000000001",
+            "source-object-prefix": "s3://lrail-source/snapshots",
+            "cell-object-prefix": "s3://lrail-build/cell-lab",
+            "source-s3-endpoint": "minio.lrail-storage.svc.cluster.local:9000",
+            "source-s3-region": "us-east-1",
+            "source-s3-secure": "true",
+            "cell-s3-endpoint": "minio.lrail-storage.svc.cluster.local:9000",
+            "cell-s3-region": "us-east-1",
+            "cell-s3-secure": "true",
+            "dsl-compiler-version": "0.3.0",
+            "llb-compiler-version": "0.2.0",
+            "assignment-openbao-address": "https://openbao.lrail-security.svc.cluster.local:8200",
+            "assignment-openbao-role": "build-assignment-signer",
+            "assignment-openbao-auth-mount": "kubernetes",
+            "assignment-openbao-transit-mount": "transit",
+            "assignment-openbao-key-name": "build-assignment",
+            "assignment-key-id": "lrail-build-assignment",
+            "assignment-public-key-digest": assignment_digest,
+            "buildcell-address": "dns:///lrail-build-cell.lrail-build-control.svc.cluster.local:9443",
+            "buildcell-server-name": "lrail-build-cell.lrail-build-control.svc.cluster.local",
+            "buildcell-server-uris": "spiffe://lrail.internal/build-cell",
+            "build-policy.json": json.dumps(build_policy, sort_keys=True),
+            "base-catalog.json": base_catalog,
+        },
+    )
+    opaque_secret(
+        "lrail-build-control",
+        "lrail-build-s3",
+        {
+            "access-key": minio["cell-access-key"],
+            "secret-key": minio["cell-secret-key"],
+        },
+    )
+    opaque_secret(
+        "lrail-control",
+        "lrail-build-broker-source-s3",
+        {
+            "access-key": minio["reader-access-key"],
+            "secret-key": minio["reader-secret-key"],
+        },
+    )
+    opaque_secret(
+        "lrail-control",
+        "lrail-build-broker-cell-s3",
+        {
+            "access-key": minio["cell-access-key"],
+            "secret-key": minio["cell-secret-key"],
+        },
+    )
+    opaque_secret(
+        "lrail-build-control",
+        "lrail-harbor-admin",
+        {"username": b"admin", "password": harbor_password},
+    )
+
+    username = command("gh", "api", "user", "--jq", ".login").stdout.strip()
+    token = command("gh", "auth", "token").stdout.strip()
+    if not username or not token:
+        raise LabFailure("GitHub package identity is unavailable")
+    for namespace in (
+        "lrail-control",
+        "lrail-build-control",
+        "lrail-build",
+        "lrail-build-system",
+    ):
+        image_pull_secret(namespace, username, token)
+
+    command(
+        "kubectl",
+        "apply",
+        "-k",
+        str(ROOT / "platform/kubernetes/build-cell/lab"),
+    )
+    for namespace in ("lrail-control", "lrail-build-control", "lrail-build-system"):
+        command(
+            "kubectl",
+            "wait",
+            "--for=condition=Ready",
+            "certificate",
+            "--all",
+            "-n",
+            namespace,
+            "--timeout=300s",
+        )
+    rollouts = (
+        ("deployment", "lrail-build-egress", "lrail-build-control"),
+        ("deployment", "lrail-build-registry-broker", "lrail-build-control"),
+        ("deployment", "lrail-build-evidence-signer", "lrail-build-control"),
+        ("daemonset", "lrail-residue-agent", "lrail-build-system"),
+        ("deployment", "lrail-build-control", "lrail-build-control"),
+        ("deployment", "lrail-build-broker", "lrail-control"),
+    )
+    for kind, name, namespace in rollouts:
+        command(
+            "kubectl",
+            "rollout",
+            "status",
+            f"{kind}/{name}",
+            "-n",
+            namespace,
+            "--timeout=1200s",
+        )
+    print(
+        "Functional gVisor BuildCell and durable broker are ready. "
+        "This does not satisfy the separate Kata M-B gate."
+    )
+
+
 def main() -> int:
-    if len(sys.argv) != 2 or sys.argv[1] not in {"dependencies", "kata"}:
-        sys.stderr.write("usage: mb_lab.py dependencies|kata\n")
+    if len(sys.argv) != 2 or sys.argv[1] not in {
+        "dependencies",
+        "functional-cell",
+        "kata",
+    }:
+        sys.stderr.write("usage: mb_lab.py dependencies|functional-cell|kata\n")
         return 2
     try:
         if sys.argv[1] == "dependencies":
             dependency_probe()
+        elif sys.argv[1] == "functional-cell":
+            functional_cell()
         else:
             kata_probe()
     except (OSError, json.JSONDecodeError, LabFailure) as error:

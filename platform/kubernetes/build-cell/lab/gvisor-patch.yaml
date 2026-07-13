@@ -1,0 +1,112 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lrail-build-cell-static
+  namespace: lrail-build-control
+data:
+  node-selector.json: |
+    {"lrail.dev/gvisor":"true","lrail.dev/pool":"build"}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lrail-build-control
+  namespace: lrail-build-control
+spec:
+  template:
+    metadata:
+      labels:
+        dev.lrail/lab: mb-functional-gvisor
+    spec:
+      securityContext:
+        appArmorProfile: null
+      initContainers:
+        - name: trivy-db-bootstrap
+          securityContext:
+            appArmorProfile: null
+      containers:
+        - name: controller
+          securityContext:
+            appArmorProfile: null
+          env:
+            - name: LRAIL_BUILD_RUNTIME_CLASS
+              value: gvisor
+            - name: LRAIL_BUILD_APPARMOR_PROFILE
+              value: Disabled
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lrail-build-broker
+  namespace: lrail-control
+spec:
+  template:
+    spec:
+      securityContext:
+        appArmorProfile: null
+      containers:
+        - name: broker
+          securityContext:
+            appArmorProfile: null
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lrail-build-egress
+  namespace: lrail-build-control
+spec:
+  template:
+    spec:
+      securityContext:
+        appArmorProfile: null
+      containers:
+        - name: egress-proxy
+          securityContext:
+            appArmorProfile: null
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lrail-build-registry-broker
+  namespace: lrail-build-control
+spec:
+  template:
+    spec:
+      securityContext:
+        appArmorProfile: null
+      containers:
+        - name: broker
+          securityContext:
+            appArmorProfile: null
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lrail-build-evidence-signer
+  namespace: lrail-build-control
+spec:
+  template:
+    spec:
+      securityContext:
+        appArmorProfile: null
+      containers:
+        - name: signer
+          securityContext:
+            appArmorProfile: null
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: lrail-trivy-db-updater
+  namespace: lrail-build-control
+spec:
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          securityContext:
+            appArmorProfile: null
+          containers:
+            - name: updater
+              securityContext:
+                appArmorProfile: null

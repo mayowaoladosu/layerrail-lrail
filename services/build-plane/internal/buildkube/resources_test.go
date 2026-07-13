@@ -216,6 +216,12 @@ func TestBuildResourcesEnforcesKataRestrictedWorkerAndNoAPIAuthority(t *testing.
 	}
 }
 
+func TestAppArmorProfileSupportsExplicitFunctionalLabDisabledMode(t *testing.T) {
+	if profile := appArmorProfile("Disabled"); profile != nil {
+		t.Fatalf("profile=%#v", profile)
+	}
+}
+
 func TestBuildResourcesRealizesPrivateCapabilityAndBlocksAmbientPrivateRanges(t *testing.T) {
 	t.Parallel()
 	network := []llbcompiler.NetworkCapability{{NodeID: "n2", Profile: "private", GatewayID: "private-gateway", Hosts: []string{}}}

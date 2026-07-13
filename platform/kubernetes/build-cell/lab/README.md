@@ -26,6 +26,12 @@ Kata 3.32.0 is installed from the checksum-verified official chart. The lab refu
 
 On Docker Desktop/WSL2, nested KVM may create qemu successfully but fail to boot the guest agent, observed as `timed out connecting to vsock ...:1024`. That host failure is fail-closed: do not relabel gVisor or runc as Kata, and do not claim M-B complete. Move the same generated overlay to a nested-virtualization-capable Linux node or repair the host runtime, then rerun the probe.
 
+## Functional gVisor cell
+
+`task mb:lab:functional-cell` deploys the same controller, durable broker, disposable BuildKit worker, Harbor, and evidence plumbing with the `gvisor` RuntimeClass. This is a separately labeled functional lab path for continuing end-to-end integration while the host cannot boot Kata. It does not satisfy or waive the Kata prerequisite, and its success must never be reported as M-B completion.
+
+The functional overlay is intentionally narrow: it changes the worker RuntimeClass and node selector, removes AppArmor fields because Docker Desktop does not expose host AppArmor enforcement, selects the single-node storage class, and grants the controller/updater HTTPS access only to the Trivy database registry and blob redirect host. Production manifests retain Kata and AppArmor requirements.
+
 ## Secrets
 
 The setup script generates short-lived lab-only CA, mTLS, S3, Harbor, OpenBao, and API credentials directly into `.work/mb-lab`. It never writes credential values into tracked files or terminal output. The repository secret scanner includes untracked, non-ignored text; generated runtime material is ignored by `.gitignore` and must be destroyed with the teardown task.

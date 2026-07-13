@@ -133,6 +133,12 @@ tasks:
       - >-
         python tools/mb_lab.py dependencies
 
+  mb:lab:functional-cell:
+    desc: Deploy a gVisor functional BuildCell without waiving the separate Kata M-B gate
+    cmds:
+      - >-
+        python tools/mb_lab.py functional-cell
+
   build-cell:images:
     desc: Build final-source broker, controller, worker, egress, registry broker, signer, DB updater, and residue images
     deps: [build-trivy-db-updater:image]

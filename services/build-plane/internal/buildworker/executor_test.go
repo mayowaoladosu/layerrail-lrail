@@ -226,11 +226,15 @@ func successfulFakeSolve(kind string, artifact []byte, secret []byte) func(conte
 		}
 		now := workerNow
 		vertexDigest := digest.FromString("fake vertex")
-		statuses <- &client.SolveStatus{Vertexes: []*client.Vertex{{Digest: vertexDigest, Name: "build " + string(secret), Started: &now}}}
+		signedURL := "https://user:password@production.cloudfront.docker.com/registry/blob/data?Expires=123&Signature=ephemeral#fragment"
+		statuses <- &client.SolveStatus{Vertexes: []*client.Vertex{{Digest: vertexDigest, Name: "build " + string(secret) + " " + signedURL, Started: &now}}}
 		completed := now.Add(time.Millisecond)
-		statuses <- &client.SolveStatus{Vertexes: []*client.Vertex{{Digest: vertexDigest, Name: "build " + string(secret), Started: &now, Completed: &completed, Cached: false}}}
+		statuses <- &client.SolveStatus{Vertexes: []*client.Vertex{{Digest: vertexDigest, Name: "build " + string(secret), Started: &now, Completed: &completed, Cached: false, Error: "fetch " + signedURL}}}
+		statuses <- &client.SolveStatus{Statuses: []*client.VertexStatus{{Vertex: vertexDigest, Name: "download " + signedURL, Timestamp: now}}}
 		statuses <- &client.SolveStatus{Logs: []*client.VertexLog{{Vertex: vertexDigest, Stream: 1, Data: append([]byte("log "), secret[:len(secret)/2]...), Timestamp: now}}}
 		statuses <- &client.SolveStatus{Logs: []*client.VertexLog{{Vertex: vertexDigest, Stream: 1, Data: append(append([]byte(nil), secret[len(secret)/2:]...), '\n'), Timestamp: now}}}
+		statuses <- &client.SolveStatus{Logs: []*client.VertexLog{{Vertex: vertexDigest, Stream: 2, Data: []byte("redirect " + signedURL + "\n"), Timestamp: now}}}
+		statuses <- &client.SolveStatus{Warnings: []*client.VertexWarning{{Vertex: vertexDigest, Short: []byte("warning " + signedURL)}}}
 		export := options.Exports[0]
 		if kind == "static_bundle" {
 			if export.Type != client.ExporterLocal || export.OutputDir == "" {
@@ -319,6 +323,11 @@ func TestBuildKitExecutorCompletesStaticOutputAfterCleanResidue(t *testing.T) {
 		serialized := fmt.Sprintf("%s %s %s", event.Name, event.Line, event.Message)
 		if strings.Contains(serialized, string(secret)) {
 			t.Fatalf("secret leaked in event %#v", event)
+		}
+		for _, forbidden := range []string{"user:password", "Expires=", "Signature=", "ephemeral", "#fragment"} {
+			if strings.Contains(serialized, forbidden) {
+				t.Fatalf("URL capability %q leaked in event %#v", forbidden, event)
+			}
 		}
 	}
 }

@@ -112,6 +112,10 @@ func NewPolicy(buildID, organizationID, workerName, payloadDigest string, genera
 			return Policy{}, errors.New("base registry egress authority is invalid")
 		}
 		addDestination(host, port, "base")
+		if material.Registry == "docker.io" {
+			addDestination("auth.docker.io", 443, "base")
+			addDestination("production.cloudfront.docker.com", 443, "base")
+		}
 	}
 	privateByGateway := make(map[string]PrivateDestination)
 	for _, capability := range lock.Network {
@@ -294,6 +298,9 @@ func normalizePrivateDestination(gatewayID string, endpoint PrivateEndpoint) (Pr
 
 func parseRegistryAuthority(authority string) (string, uint16, error) {
 	authority = strings.ToLower(strings.TrimSpace(authority))
+	if authority == "docker.io" {
+		return "registry-1.docker.io", 443, nil
+	}
 	if validHostname(authority) {
 		return authority, 443, nil
 	}

@@ -8,8 +8,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"sort"
 	"strings"
@@ -107,9 +109,9 @@ func (executor *BuildKitExecutor) Execute(ctx context.Context, request Request) 
 		if event.OccurredAt.IsZero() {
 			event.OccurredAt = executor.clock().UTC()
 		}
-		event.Line = redactor.RedactString(event.Line)
-		event.Message = redactor.RedactString(event.Message)
-		event.Name = redactor.RedactString(event.Name)
+		event.Line = sanitizeProgressText(redactor.RedactString(event.Line))
+		event.Message = sanitizeProgressText(redactor.RedactString(event.Message))
+		event.Name = sanitizeProgressText(redactor.RedactString(event.Name))
 		encoded, err := canonicaljson.Marshal(event)
 		if err != nil {
 			transcriptErr = errors.New("encode structured build event")
@@ -460,6 +462,22 @@ func (executor *BuildKitExecutor) streamStatuses(statuses <-chan *client.SolveSt
 		}
 	}
 	return result
+}
+
+var progressURLPattern = regexp.MustCompile(`https?://[^\s"'<>]+`)
+
+func sanitizeProgressText(value string) string {
+	return progressURLPattern.ReplaceAllStringFunc(value, func(candidate string) string {
+		parsed, err := url.Parse(candidate)
+		if err != nil || parsed.Host == "" {
+			return "[redacted-url]"
+		}
+		parsed.User = nil
+		parsed.RawQuery = ""
+		parsed.ForceQuery = false
+		parsed.Fragment = ""
+		return parsed.String()
+	})
 }
 
 func ensureFreshDirectory(directory string) error {

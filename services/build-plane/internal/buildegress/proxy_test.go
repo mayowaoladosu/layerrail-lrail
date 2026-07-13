@@ -269,6 +269,29 @@ func TestCertificatePolicyRoundTripAndTamperRejection(t *testing.T) {
 	}
 }
 
+func TestPolicyMapsDockerHubToItsCanonicalRegistryAPI(t *testing.T) {
+	t.Parallel()
+	lock := llbcompiler.DefinitionLock{BaseMaterials: []llbcompiler.BaseMaterial{{Registry: "docker.io"}}}
+	policy, err := NewPolicy(
+		egressBuildID, egressOrgID, "build-fixture-a1", egressPayload, 1,
+		egressNow.Add(-time.Minute), egressNow.Add(10*time.Minute), lock, nil,
+	)
+	if err != nil {
+		t.Fatalf("NewPolicy: %v", err)
+	}
+	if len(policy.Destinations) != 3 || policy.Destinations[0].Domain != "auth.docker.io" ||
+		policy.Destinations[1].Domain != "production.cloudfront.docker.com" ||
+		policy.Destinations[2].Domain != "registry-1.docker.io" ||
+		!slices.Equal(policy.Destinations[0].Ports, []uint16{443}) ||
+		!slices.Equal(policy.Destinations[1].Ports, []uint16{443}) ||
+		!slices.Equal(policy.Destinations[2].Ports, []uint16{443}) ||
+		!slices.Equal(policy.Destinations[0].Profiles, []string{"base"}) ||
+		!slices.Equal(policy.Destinations[1].Profiles, []string{"base"}) ||
+		!slices.Equal(policy.Destinations[2].Profiles, []string{"base"}) {
+		t.Fatalf("destinations = %#v", policy.Destinations)
+	}
+}
+
 func TestReloadingProxyTLSConfigObservesServerRotation(t *testing.T) {
 	t.Parallel()
 	_, _, rootPEM, rootKeyPEM := testRootCA(t)

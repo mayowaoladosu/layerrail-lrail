@@ -30,7 +30,7 @@ On Docker Desktop/WSL2, nested KVM may create qemu successfully but fail to boot
 
 `task mb:lab:functional-cell` deploys the same controller, durable broker, disposable BuildKit worker, Harbor, and evidence plumbing with the `gvisor` RuntimeClass. This is a separately labeled functional lab path for continuing end-to-end integration while the host cannot boot Kata. It does not satisfy or waive the Kata prerequisite, and its success must never be reported as M-B completion.
 
-The functional overlay is intentionally narrow: it changes the worker RuntimeClass and node selector, removes AppArmor fields because Docker Desktop does not expose host AppArmor enforcement, selects the single-node storage class, and grants the controller/updater HTTPS access only to the Trivy database registry and blob redirect host. Production manifests retain Kata and AppArmor requirements.
+The functional overlay is intentionally narrow: it changes the worker RuntimeClass and node selector, removes AppArmor fields because Docker Desktop does not expose host AppArmor enforcement, selects the single-node storage class, and grants the controller/updater HTTPS access only to the Trivy database registry and blob redirect host. It also issues lab-only loopback TLS names and allows node-originated traffic to the broker port so a local Linux control-worker container can traverse a Kubernetes port-forward; the broker still requires the exact control-worker SPIFFE client certificate. Production manifests retain Kata, AppArmor, service-DNS-only certificates, and pod-identity ingress requirements.
 
 ## Secrets
 

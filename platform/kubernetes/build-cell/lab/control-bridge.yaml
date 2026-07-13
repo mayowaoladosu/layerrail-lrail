@@ -1,0 +1,25 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: lrail-control-api-server
+  namespace: lrail-control
+  labels:
+    dev.lrail/lab: mb-functional-gvisor
+spec:
+  secretName: lrail-control-api-server-tls
+  duration: 24h
+  renewBefore: 8h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  dnsNames:
+    - localhost
+    - host.docker.internal
+  uris:
+    - spiffe://lrail.internal/control-api
+  usages: [server auth]
+  issuerRef:
+    group: cert-manager.io
+    kind: ClusterIssuer
+    name: lrail-internal-ca

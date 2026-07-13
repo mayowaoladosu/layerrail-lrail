@@ -300,7 +300,9 @@ def secret_value(namespace: str, name: str, key: str) -> bytes:
     try:
         return base64.b64decode(encoded, validate=True)
     except ValueError as error:
-        raise LabFailure(f"runtime secret {namespace}/{name} contains invalid data") from error
+        raise LabFailure(
+            f"runtime secret {namespace}/{name} contains invalid data"
+        ) from error
 
 
 def apply_resource(resource: dict[str, object]) -> None:
@@ -334,7 +336,8 @@ def opaque_secret(namespace: str, name: str, data: dict[str, bytes]) -> None:
             },
             "type": "Opaque",
             "data": {
-                key: base64.b64encode(value).decode("ascii") for key, value in data.items()
+                key: base64.b64encode(value).decode("ascii")
+                for key, value in data.items()
             },
         }
     )
@@ -598,6 +601,14 @@ def functional_cell() -> None:
             namespace,
             "--timeout=300s",
         )
+    command(
+        "kubectl",
+        "rollout",
+        "restart",
+        "deployment/lrail-build-broker",
+        "-n",
+        "lrail-control",
+    )
     rollouts = (
         ("deployment", "lrail-build-egress", "lrail-build-control"),
         ("deployment", "lrail-build-registry-broker", "lrail-build-control"),

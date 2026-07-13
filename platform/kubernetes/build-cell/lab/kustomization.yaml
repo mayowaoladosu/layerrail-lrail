@@ -2,6 +2,7 @@ apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 resources:
   - ../base
+  - control-bridge.yaml
 patches:
   - path: gvisor-patch.yaml
   - path: storage-patch.yaml
@@ -17,6 +18,19 @@ patches:
       kind: RuntimeClass
       metadata:
         name: kata-qemu
+  - target:
+      group: cert-manager.io
+      version: v1
+      kind: Certificate
+      name: lrail-build-broker-server
+      namespace: lrail-control
+    patch: |-
+      - op: add
+        path: /spec/dnsNames/-
+        value: localhost
+      - op: add
+        path: /spec/dnsNames/-
+        value: host.docker.internal
   - target:
       group: kyverno.io
       version: v1

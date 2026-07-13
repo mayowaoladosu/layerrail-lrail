@@ -1,6 +1,58 @@
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
+  name: build-broker
+  namespace: lrail-control
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: lrail-build-broker
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: lrail-control
+            k8s:app.kubernetes.io/name: lrail-control-workers
+      toPorts:
+        - ports:
+            - { port: "9444", protocol: TCP }
+    - fromEntities: [host, remote-node]
+      toPorts:
+        - ports:
+            - { port: "9444", protocol: TCP }
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s:k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - { port: "53", protocol: UDP }
+            - { port: "53", protocol: TCP }
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: lrail-build-control
+            k8s:app.kubernetes.io/name: lrail-build-control
+      toPorts:
+        - ports:
+            - { port: "9443", protocol: TCP }
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: lrail-security
+            k8s:app.kubernetes.io/name: openbao
+      toPorts:
+        - ports:
+            - { port: "8200", protocol: TCP }
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: lrail-storage
+            k8s:app.kubernetes.io/name: minio
+      toPorts:
+        - ports:
+            - { port: "9000", protocol: TCP }
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
   name: build-control
   namespace: lrail-build-control
 spec:

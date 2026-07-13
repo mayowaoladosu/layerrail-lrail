@@ -100,6 +100,10 @@ func normalizePolicy(policy Policy) (Policy, error) {
 	policy.Network.ExternalHosts = sortedUnique(policy.Network.ExternalHosts)
 	policy.Secrets.AllowedNames = sortedUnique(policy.Secrets.AllowedNames)
 	policy.BuildArguments.AllowedNames = sortedUnique(policy.BuildArguments.AllowedNames)
+	policy.SupplyChain.AllowedSignerPublicKeyDigests = sortedUnique(policy.SupplyChain.AllowedSignerPublicKeyDigests)
+	policy.SupplyChain.DeniedVulnerabilitySeverities = sortedUnique(policy.SupplyChain.DeniedVulnerabilitySeverities)
+	policy.SupplyChain.DeniedConfigurationSeverities = sortedUnique(policy.SupplyChain.DeniedConfigurationSeverities)
+	policy.SupplyChain.DeniedLicenseClassifications = sortedUnique(policy.SupplyChain.DeniedLicenseClassifications)
 
 	if len(policy.Base.AllowedRegistries) == 0 || len(policy.Base.AllowedRegistries) > maxPolicyValues {
 		return Policy{}, fail("llb.policy_base", "Base policy requires a bounded registry allowlist.", "")
@@ -155,7 +159,51 @@ func normalizePolicy(policy Policy) (Policy, error) {
 			return Policy{}, fail("llb.policy_argument", "Build argument policy contains a secret-like or invalid name.", "")
 		}
 	}
+	if err := ValidateSupplyChainPolicy(policy.SupplyChain); err != nil {
+		return Policy{}, err
+	}
 	return policy, nil
+}
+
+func ValidateSupplyChainPolicy(policy SupplyChainPolicy) error {
+	if policy.Version != CurrentSupplyChainPolicyVersion || !semanticVersionPattern.MatchString(policy.SyftVersion) ||
+		!semanticVersionPattern.MatchString(policy.TrivyVersion) || !validCapabilityID(policy.SignerKeyID) ||
+		len(policy.AllowedSignerPublicKeyDigests) == 0 || len(policy.AllowedSignerPublicKeyDigests) > 8 || !allDigests(policy.AllowedSignerPublicKeyDigests) ||
+		!sortedDistinct(policy.AllowedSignerPublicKeyDigests) || !policy.RequireSecretFree || !policy.RequireImageConfigurationScan {
+		return fail("llb.policy_supply_chain", "Supply-chain evidence policy is incomplete or outside platform minimums.", "")
+	}
+	if len(policy.DeniedVulnerabilitySeverities) == 0 || len(policy.DeniedVulnerabilitySeverities) > 5 ||
+		!sortedDistinct(policy.DeniedVulnerabilitySeverities) || !slices.Contains(policy.DeniedVulnerabilitySeverities, "CRITICAL") {
+		return fail("llb.policy_supply_chain", "Supply-chain vulnerability policy must deny critical findings.", "")
+	}
+	for _, severity := range policy.DeniedVulnerabilitySeverities {
+		if !slices.Contains([]string{"CRITICAL", "HIGH", "LOW", "MEDIUM", "UNKNOWN"}, severity) {
+			return fail("llb.policy_supply_chain", "Supply-chain vulnerability policy contains an unsupported severity.", "")
+		}
+	}
+	if len(policy.DeniedConfigurationSeverities) == 0 || len(policy.DeniedConfigurationSeverities) > 5 ||
+		!sortedDistinct(policy.DeniedConfigurationSeverities) || !slices.Contains(policy.DeniedConfigurationSeverities, "CRITICAL") {
+		return fail("llb.policy_supply_chain", "Supply-chain configuration policy must deny critical findings.", "")
+	}
+	for _, severity := range policy.DeniedConfigurationSeverities {
+		if !slices.Contains([]string{"CRITICAL", "HIGH", "LOW", "MEDIUM", "UNKNOWN"}, severity) {
+			return fail("llb.policy_supply_chain", "Supply-chain configuration policy contains an unsupported severity.", "")
+		}
+	}
+	if len(policy.DeniedLicenseClassifications) == 0 || len(policy.DeniedLicenseClassifications) > 7 ||
+		!sortedDistinct(policy.DeniedLicenseClassifications) || !slices.Contains(policy.DeniedLicenseClassifications, "Forbidden") {
+		return fail("llb.policy_supply_chain", "Supply-chain license policy must deny forbidden licenses.", "")
+	}
+	for _, classification := range policy.DeniedLicenseClassifications {
+		if !slices.Contains([]string{"Forbidden", "Notice", "Permissive", "Reciprocal", "Restricted", "Unencumbered", "Unknown"}, classification) {
+			return fail("llb.policy_supply_chain", "Supply-chain license policy contains an unsupported classification.", "")
+		}
+	}
+	return nil
+}
+
+func sortedDistinct(values []string) bool {
+	return slices.IsSorted(values) && len(slices.Compact(append([]string(nil), values...))) == len(values)
 }
 
 func normalizeMaterials(ir buildir.IR, materials []BaseMaterial, policy Policy) ([]BaseMaterial, error) {

@@ -16,6 +16,7 @@ func cacheLock() llbcompiler.DefinitionLock {
 	return llbcompiler.DefinitionLock{
 		Version: llbcompiler.CurrentLockVersion, CompilerVersion: "0.1.0",
 		PolicyDigest: testPolicyDigest,
+		SupplyChain:  llbcompiler.PlatformSupplyChainPolicy([]string{"sha256:1111111111111111111111111111111111111111111111111111111111111111"}),
 		Caches:       []llbcompiler.CacheCapability{{NodeID: "n2", Name: "modules", Target: "/cache", Sharing: "locked", Scope: "organization", Namespace: "lrail-cache-" + strings.Repeat("a", 64)}},
 	}
 }

@@ -59,6 +59,7 @@ type OutputResult struct {
 	PublicationManifestRef string            `json:"publication_manifest_ref,omitempty"`
 	LayerDigests           []string          `json:"layer_digests"`
 	ExporterResponse       map[string]string `json:"exporter_response"`
+	SupplyChain            SupplyChainResult `json:"supply_chain"`
 }
 
 type Result struct {
@@ -110,6 +111,43 @@ type ExportedArtifact struct {
 	Path           string
 	Digest         string
 	Size           int64
+	Provenance     ProvenanceContext
+}
+
+type ProvenanceContext struct {
+	AssignmentDigest    string
+	DefinitionDigest    string
+	IRDigest            string
+	PolicyDigest        string
+	SourceSnapshot      string
+	SourceArchive       string
+	TargetPlatform      string
+	BuilderIdentity     string
+	CompilerVersion     string
+	AssignmentIssuedAt  string
+	AssignmentExpiresAt string
+	BuildArguments      []llbcompiler.NameValue
+	BaseMaterials       []llbcompiler.BaseMaterial
+	Network             []llbcompiler.NetworkCapability
+	SecretNames         []string
+	SupplyChain         llbcompiler.SupplyChainPolicy
+}
+
+type EvidenceReference struct {
+	Kind           string `json:"kind"`
+	Reference      string `json:"reference"`
+	ManifestDigest string `json:"manifest_digest"`
+	PayloadDigest  string `json:"payload_digest"`
+}
+
+type SupplyChainResult struct {
+	PolicyState           string               `json:"policy_state"`
+	ScanState             string               `json:"scan_state"`
+	PolicyDigest          string               `json:"policy_digest"`
+	SignerKeyID           string               `json:"signer_key_id"`
+	SignerKeyVersion      int                  `json:"signer_key_version"`
+	SignerPublicKeyDigest string               `json:"signer_public_key_digest"`
+	Evidence              [5]EvidenceReference `json:"evidence"`
 }
 
 type CommittedArtifact struct {
@@ -119,6 +157,7 @@ type CommittedArtifact struct {
 	Size                   int64
 	ManifestDigest         string
 	PublicationManifestRef string
+	SupplyChain            SupplyChainResult
 }
 
 type ArtifactCommitter interface {

@@ -77,6 +77,7 @@ func (compiler *Compiler) compile(ctx context.Context, request Request) (Result,
 		Network:         append([]NetworkCapability(nil), capabilities.network...),
 		Caches:          append([]CacheCapability(nil), capabilities.caches...),
 		Secrets:         append([]SecretCapability(nil), capabilities.secrets...),
+		SupplyChain:     input.policy.SupplyChain,
 		Outputs:         outputLocks,
 	}
 	definitionDigest, err := digestValue(lock)

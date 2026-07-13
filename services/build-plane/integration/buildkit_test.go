@@ -93,7 +93,7 @@ func TestRealRootlessBuildKitSolveAndResidue(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewDirectoryArtifactCommitter: %v", err)
 	}
-	executor, err := buildworker.NewBuildKitExecutor(buildkit, byteSource{contents: archive}, cleanScratch{root: scratchRoot}, committer, buildworker.RejectingCacheProvider{}, scratchRoot, time.Minute)
+	executor, err := buildworker.NewBuildKitExecutor(buildkit, byteSource{contents: archive}, cleanScratch{root: scratchRoot}, integrationEvidenceCommitter{inner: committer}, buildworker.RejectingCacheProvider{}, scratchRoot, time.Minute)
 	if err != nil {
 		t.Fatalf("NewBuildKitExecutor: %v", err)
 	}
@@ -138,7 +138,7 @@ func TestRealRootlessBuildKitOCIExportIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewDirectoryArtifactCommitter: %v", err)
 	}
-	executor, err := buildworker.NewBuildKitExecutor(buildkit, byteSource{contents: archive}, cleanScratch{root: scratchRoot}, committer, buildworker.RejectingCacheProvider{}, scratchRoot, time.Minute)
+	executor, err := buildworker.NewBuildKitExecutor(buildkit, byteSource{contents: archive}, cleanScratch{root: scratchRoot}, integrationEvidenceCommitter{inner: committer}, buildworker.RejectingCacheProvider{}, scratchRoot, time.Minute)
 	if err != nil {
 		t.Fatalf("NewBuildKitExecutor: %v", err)
 	}
@@ -242,7 +242,7 @@ func TestRealRootlessBuildKitWorkerKillRetriesSameAssignmentCleanly(t *testing.T
 	}
 
 	firstClient := startBuildKitContainer(t, ctx, containerName, "12346")
-	firstExecutor, err := buildworker.NewBuildKitExecutor(firstClient, byteSource{contents: archive}, cleanScratch{root: scratchRoot}, committer, buildworker.RejectingCacheProvider{}, scratchRoot, time.Minute)
+	firstExecutor, err := buildworker.NewBuildKitExecutor(firstClient, byteSource{contents: archive}, cleanScratch{root: scratchRoot}, integrationEvidenceCommitter{inner: committer}, buildworker.RejectingCacheProvider{}, scratchRoot, time.Minute)
 	if err != nil {
 		t.Fatalf("NewBuildKitExecutor first: %v", err)
 	}
@@ -270,7 +270,7 @@ func TestRealRootlessBuildKitWorkerKillRetriesSameAssignmentCleanly(t *testing.T
 	}
 
 	secondClient := startBuildKitContainer(t, ctx, containerName, "12346")
-	secondExecutor, err := buildworker.NewBuildKitExecutor(secondClient, byteSource{contents: archive}, cleanScratch{root: scratchRoot}, committer, buildworker.RejectingCacheProvider{}, scratchRoot, time.Minute)
+	secondExecutor, err := buildworker.NewBuildKitExecutor(secondClient, byteSource{contents: archive}, cleanScratch{root: scratchRoot}, integrationEvidenceCommitter{inner: committer}, buildworker.RejectingCacheProvider{}, scratchRoot, time.Minute)
 	if err != nil {
 		t.Fatalf("NewBuildKitExecutor second: %v", err)
 	}
@@ -305,6 +305,7 @@ func TestRealRootlessBuildKitDirectoryCacheRoundTripAcrossFreshWorkers(t *testin
 	}
 	lock := llbcompiler.DefinitionLock{
 		CompilerVersion: "0.1.0", PolicyDigest: integrationPolicy,
+		SupplyChain: llbcompiler.PlatformSupplyChainPolicy([]string{"sha256:1111111111111111111111111111111111111111111111111111111111111111"}),
 		Caches: []llbcompiler.CacheCapability{{
 			NodeID: "n2", Name: "modules", Target: "/cache", Sharing: "locked", Scope: "organization",
 			Namespace: "lrail-cache-" + strings.Repeat("a", 64),
@@ -477,7 +478,8 @@ func resolveIntegrationOutput(t *testing.T, state llb.State, materials []llbcomp
 		Version: llbcompiler.CurrentLockVersion, CompilerVersion: "0.1.0", IRDigest: integrationIR, PolicyDigest: integrationPolicy,
 		SourceSnapshot: sourceDigest, TargetPlatform: "linux/amd64", BuildArguments: []llbcompiler.NameValue{}, BaseMaterials: materials,
 		Network: network, Caches: []llbcompiler.CacheCapability{}, Secrets: []llbcompiler.SecretCapability{},
-		Outputs: []llbcompiler.OutputLock{{Name: "site", Kind: outputKind, StateID: "n1", LLBDigest: digest(definitionBytes), ConfigDigest: digest(config)}},
+		SupplyChain: llbcompiler.PlatformSupplyChainPolicy([]string{"sha256:1111111111111111111111111111111111111111111111111111111111111111"}),
+		Outputs:     []llbcompiler.OutputLock{{Name: "site", Kind: outputKind, StateID: "n1", LLBDigest: digest(definitionBytes), ConfigDigest: digest(config)}},
 	}
 	lockDigest, _ := llbcompiler.LockDigest(lock)
 	output := buildcell.OutputArtifact{Name: "site", Kind: outputKind, LLBDigest: digest(definitionBytes), Head: string(head), LLBRef: integrationPrefix + "site.llb", ConfigDigest: digest(config), ConfigRef: integrationPrefix + "site.json"}

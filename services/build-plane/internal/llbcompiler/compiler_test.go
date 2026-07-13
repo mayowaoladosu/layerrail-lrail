@@ -20,6 +20,7 @@ const testBaseDigest = "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 const testBaseRef = "registry.example.invalid/lrail/ruby:3.4@" + testBaseDigest
 const testSBOMDigest = "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
 const testProvenanceDigest = "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd"
+const testSignerPublicKeyDigest = "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
 
 func validCompileRequest(t *testing.T) Request {
 	t.Helper()
@@ -79,6 +80,12 @@ func validPolicy() Policy {
 		},
 		Secrets:        SecretPolicy{AllowedNames: []string{"rails-build-key"}},
 		BuildArguments: BuildArgumentPolicy{AllowedNames: []string{"BUILD_MODE"}},
+		SupplyChain: SupplyChainPolicy{
+			Version: CurrentSupplyChainPolicyVersion, SyftVersion: "1.46.0", TrivyVersion: "0.72.0",
+			SignerKeyID: "lrail-build-evidence", AllowedSignerPublicKeyDigests: []string{testSignerPublicKeyDigest},
+			DeniedVulnerabilitySeverities: []string{"CRITICAL"}, DeniedConfigurationSeverities: []string{"CRITICAL", "HIGH"},
+			DeniedLicenseClassifications: []string{"Forbidden"}, RequireSecretFree: true, RequireImageConfigurationScan: true,
+		},
 	}
 }
 

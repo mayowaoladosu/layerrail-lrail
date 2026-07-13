@@ -60,6 +60,12 @@ func validEnvelope(t *testing.T) (Envelope, *Verifier, mapStore) {
 		Network:         []llbcompiler.NetworkCapability{},
 		Caches:          []llbcompiler.CacheCapability{},
 		Secrets:         []llbcompiler.SecretCapability{},
+		SupplyChain: llbcompiler.SupplyChainPolicy{
+			Version: llbcompiler.CurrentSupplyChainPolicyVersion, SyftVersion: "1.46.0", TrivyVersion: "0.72.0",
+			SignerKeyID: "lrail-build-evidence", AllowedSignerPublicKeyDigests: []string{"sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"},
+			DeniedVulnerabilitySeverities: []string{"CRITICAL"}, DeniedConfigurationSeverities: []string{"CRITICAL", "HIGH"},
+			DeniedLicenseClassifications: []string{"Forbidden"}, RequireSecretFree: true, RequireImageConfigurationScan: true,
+		},
 		Outputs: []llbcompiler.OutputLock{{
 			Name: "site", Kind: "static_bundle", StateID: "n1", LLBDigest: llbDigest, ConfigDigest: configDigest,
 		}},

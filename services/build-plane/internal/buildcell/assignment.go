@@ -403,6 +403,9 @@ func validateLock(lock llbcompiler.DefinitionLock) error {
 		len(lock.Caches) > buildir.MaxNodes || len(lock.Secrets) > buildir.MaxNodes || len(lock.Outputs) == 0 || len(lock.Outputs) > buildir.MaxOutputs {
 		return assignmentError("assignment.lock", "Assignment definition lock exceeds capability limits.")
 	}
+	if err := llbcompiler.ValidateSupplyChainPolicy(lock.SupplyChain); err != nil {
+		return assignmentError("assignment.lock", "Assignment supply-chain policy is invalid.")
+	}
 	argumentNames := make(map[string]struct{}, len(lock.BuildArguments))
 	for _, argument := range lock.BuildArguments {
 		if !argumentNamePattern.MatchString(argument.Name) || !boundedLockText(argument.Value, true) {

@@ -101,6 +101,27 @@ func TestCompileRejectsInvalidScopeDigestPolicyAndMaterialLocks(t *testing.T) {
 	}
 }
 
+func TestCompileRejectsWeakenedSupplyChainEvidencePolicy(t *testing.T) {
+	t.Parallel()
+	for name, mutate := range map[string]func(*SupplyChainPolicy){
+		"secret scan disabled":           func(policy *SupplyChainPolicy) { policy.RequireSecretFree = false },
+		"configuration scan disabled":    func(policy *SupplyChainPolicy) { policy.RequireImageConfigurationScan = false },
+		"critical configuration allowed": func(policy *SupplyChainPolicy) { policy.DeniedConfigurationSeverities = []string{"HIGH"} },
+		"critical findings allowed":      func(policy *SupplyChainPolicy) { policy.DeniedVulnerabilitySeverities = []string{"HIGH"} },
+		"forbidden licenses allowed":     func(policy *SupplyChainPolicy) { policy.DeniedLicenseClassifications = []string{"Restricted"} },
+		"signer trust absent":            func(policy *SupplyChainPolicy) { policy.AllowedSignerPublicKeyDigests = nil },
+		"scanner unpinned":               func(policy *SupplyChainPolicy) { policy.TrivyVersion = "latest" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			request := validCompileRequest(t)
+			mutate(&request.Policy.SupplyChain)
+			if code := compileCode(t, request); code != "llb.policy_supply_chain" {
+				t.Fatalf("code = %q", code)
+			}
+		})
+	}
+}
+
 func TestCompileRejectsNetworkCacheSecretAndArgumentPolicyViolations(t *testing.T) {
 	t.Parallel()
 	tests := map[string]struct {

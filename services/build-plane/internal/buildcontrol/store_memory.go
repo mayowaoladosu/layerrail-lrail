@@ -198,7 +198,8 @@ func validateTerminalResult(result Result, buildID, payloadDigest string) error 
 		for _, output := range result.Worker.Outputs {
 			_, duplicate := outputNames[output.Name]
 			if output.Name == "" || (output.Kind != "oci_image" && output.Kind != "static_bundle") || output.ArtifactRef == "" ||
-				!runDigestPattern.MatchString(output.ArtifactDigest) || output.ArtifactSize <= 0 || !runDigestPattern.MatchString(output.ConfigDigest) || duplicate || !validOutputContentIdentity(output) {
+				!runDigestPattern.MatchString(output.ArtifactDigest) || output.ArtifactSize <= 0 || !runDigestPattern.MatchString(output.ConfigDigest) || duplicate ||
+				!validOutputContentIdentity(output) || !validStoredSupplyChainIdentity(output) {
 				return fmt.Errorf("%w: successful terminal output identity is invalid", ErrController)
 			}
 			outputNames[output.Name] = struct{}{}

@@ -16,6 +16,7 @@ import (
 
 	"github.com/mayowaoladosu/layerrail-lrail/internal/canonicaljson"
 	"github.com/mayowaoladosu/layerrail-lrail/services/build-plane/internal/buildcell"
+	"github.com/mayowaoladosu/layerrail-lrail/services/build-plane/internal/buildsupply"
 	"github.com/mayowaoladosu/layerrail-lrail/services/build-plane/internal/buildworker"
 	"github.com/mayowaoladosu/layerrail-lrail/services/build-plane/internal/llbcompiler"
 )
@@ -510,11 +511,49 @@ func validateSuccessfulResult(assignment buildcell.ResolvedAssignment, result bu
 			!runDigestPattern.MatchString(output.ArtifactDigest) || output.ArtifactSize <= 0 || output.ConfigDigest != expectedConfig {
 			return errors.New("worker output identity is incomplete")
 		}
-		if !validOutputContentIdentity(output) {
+		if !validOutputContentIdentity(output) || !validSupplyChainIdentity(output, assignment.Verified.Payload.Lock.PolicyDigest, assignment.Verified.Payload.Lock.SupplyChain) {
 			return errors.New("worker output manifest or layer identity is invalid")
 		}
 	}
 	return nil
+}
+
+func validSupplyChainIdentity(output buildworker.OutputResult, policyDigest string, policy llbcompiler.SupplyChainPolicy) bool {
+	evidence := output.SupplyChain
+	if !validStoredSupplyChainIdentity(output) || evidence.PolicyDigest != policyDigest ||
+		evidence.SignerKeyID != policy.SignerKeyID || evidence.SignerKeyVersion < 1 ||
+		!slices.Contains(policy.AllowedSignerPublicKeyDigests, evidence.SignerPublicKeyDigest) {
+		return false
+	}
+	return true
+}
+
+func validStoredSupplyChainIdentity(output buildworker.OutputResult) bool {
+	evidence := output.SupplyChain
+	if evidence.PolicyState != "accepted" || evidence.ScanState != "passed" || !runDigestPattern.MatchString(evidence.PolicyDigest) ||
+		evidence.SignerKeyID == "" || evidence.SignerKeyVersion < 1 || !runDigestPattern.MatchString(evidence.SignerPublicKeyDigest) {
+		return false
+	}
+	repository, _, found := strings.Cut(output.ArtifactRef, "@")
+	if !found || repository == "" {
+		return false
+	}
+	expectedKinds := map[string]struct{}{
+		buildsupply.KindSBOM: {}, buildsupply.KindScan: {}, buildsupply.KindProvenance: {}, buildsupply.KindSignature: {}, buildsupply.KindPolicy: {},
+	}
+	manifestDigests := make(map[string]struct{}, len(evidence.Evidence))
+	for _, reference := range evidence.Evidence {
+		if _, expected := expectedKinds[reference.Kind]; !expected || reference.Reference != repository+"@"+reference.ManifestDigest ||
+			!runDigestPattern.MatchString(reference.ManifestDigest) || !runDigestPattern.MatchString(reference.PayloadDigest) {
+			return false
+		}
+		if _, duplicate := manifestDigests[reference.ManifestDigest]; duplicate {
+			return false
+		}
+		manifestDigests[reference.ManifestDigest] = struct{}{}
+		delete(expectedKinds, reference.Kind)
+	}
+	return len(expectedKinds) == 0
 }
 
 func validOutputContentIdentity(output buildworker.OutputResult) bool {

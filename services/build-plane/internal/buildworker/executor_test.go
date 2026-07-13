@@ -91,6 +91,7 @@ func resolvedWorkerAssignment(t *testing.T, kind string, secrets []llbcompiler.S
 		TargetPlatform: "linux/amd64", BuildArguments: []llbcompiler.NameValue{},
 		BaseMaterials: []llbcompiler.BaseMaterial{}, Network: network,
 		Caches: []llbcompiler.CacheCapability{}, Secrets: secrets,
+		SupplyChain: llbcompiler.PlatformSupplyChainPolicy([]string{"sha256:1111111111111111111111111111111111111111111111111111111111111111"}),
 		Outputs: []llbcompiler.OutputLock{{
 			Name: outputName, Kind: kind, StateID: "n1",
 			LLBDigest: digestBytes(definitionBytes), ConfigDigest: digestBytes(config),
@@ -161,6 +162,43 @@ type committerFunc func(context.Context, ExportedArtifact) (CommittedArtifact, e
 
 func (function committerFunc) Commit(ctx context.Context, artifact ExportedArtifact) (CommittedArtifact, error) {
 	return function(ctx, artifact)
+}
+
+type testEvidenceCommitter struct{ inner ArtifactCommitter }
+
+func (committer testEvidenceCommitter) Commit(ctx context.Context, artifact ExportedArtifact) (CommittedArtifact, error) {
+	committed, err := committer.inner.Commit(ctx, artifact)
+	if err != nil {
+		return CommittedArtifact{}, err
+	}
+	manifestDigest := artifact.Digest
+	if artifact.Kind == "oci_image" {
+		identity, inspectErr := InspectOCIArtifact(artifact.Path)
+		if inspectErr != nil {
+			return CommittedArtifact{}, inspectErr
+		}
+		manifestDigest = identity.ManifestDigest
+		committed.ManifestDigest = manifestDigest
+	}
+	repository := "registry.example.invalid/lrail/" + artifact.OutputName
+	committed.Reference = repository + "@" + manifestDigest
+	committed.SupplyChain = testSupplyChain(repository, artifact.Provenance.PolicyDigest, artifact.Provenance.SupplyChain)
+	return committed, nil
+}
+
+func testSupplyChain(repository, policyDigest string, policy llbcompiler.SupplyChainPolicy) SupplyChainResult {
+	kinds := []string{"sbom", "vulnerability_scan", "provenance", "signature", "policy_decision"}
+	var references [5]EvidenceReference
+	for index, kind := range kinds {
+		manifestDigest := fmt.Sprintf("sha256:%064x", index+10)
+		payloadDigest := fmt.Sprintf("sha256:%064x", index+20)
+		references[index] = EvidenceReference{Kind: kind, Reference: repository + "@" + manifestDigest, ManifestDigest: manifestDigest, PayloadDigest: payloadDigest}
+	}
+	return SupplyChainResult{
+		PolicyState: "accepted", ScanState: "passed", PolicyDigest: policyDigest,
+		SignerKeyID: policy.SignerKeyID, SignerKeyVersion: 1,
+		SignerPublicKeyDigest: policy.AllowedSignerPublicKeyDigests[0], Evidence: references,
+	}
 }
 
 type eventRecorder struct {
@@ -239,7 +277,7 @@ func executorHarness(t *testing.T, client BuildKitClient, archive []byte, cleanu
 		}
 		return report
 	})
-	executor, err := NewBuildKitExecutor(client, archiveStore{contents: archive}, cleaner, committer, RejectingCacheProvider{}, scratchRoot, solveTimeout)
+	executor, err := NewBuildKitExecutor(client, archiveStore{contents: archive}, cleaner, testEvidenceCommitter{inner: committer}, RejectingCacheProvider{}, scratchRoot, solveTimeout)
 	if err != nil {
 		t.Fatalf("NewBuildKitExecutor: %v", err)
 	}
@@ -353,6 +391,34 @@ func TestVisitOCIArtifactBlobsStreamsEveryVerifiedDescriptor(t *testing.T) {
 		return nil
 	}); err == nil {
 		t.Fatal("expected partially consumed blob rejection")
+	}
+}
+
+func TestExtractOCIArtifactCreatesVerifiedLayoutAndRejectsMutation(t *testing.T) {
+	t.Parallel()
+	artifact, _, _ := fakeOCIArchive(t)
+	filePath := filepath.Join(t.TempDir(), "artifact.oci.tar")
+	if err := os.WriteFile(filePath, artifact, 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	identity, err := InspectOCIArtifact(filePath)
+	if err != nil {
+		t.Fatalf("InspectOCIArtifact: %v", err)
+	}
+	destination := filepath.Join(t.TempDir(), "layout")
+	if err := ExtractOCIArtifact(t.Context(), filePath, destination, digestBytes(artifact), int64(len(artifact)), identity); err != nil {
+		t.Fatalf("ExtractOCIArtifact: %v", err)
+	}
+	if contents, err := os.ReadFile(filepath.Join(destination, "blobs", "sha256", strings.TrimPrefix(identity.Config.Digest, "sha256:"))); err != nil || digest.FromBytes(contents).String() != identity.Config.Digest {
+		t.Fatalf("extracted config digest differs: %v", err)
+	}
+	mutated := append([]byte(nil), artifact...)
+	mutated[len(mutated)/2] ^= 0xff
+	if err := os.WriteFile(filePath, mutated, 0o600); err != nil {
+		t.Fatalf("mutate artifact: %v", err)
+	}
+	if err := ExtractOCIArtifact(t.Context(), filePath, filepath.Join(t.TempDir(), "mutated"), digestBytes(artifact), int64(len(artifact)), identity); err == nil {
+		t.Fatal("mutated OCI archive was extracted")
 	}
 }
 
@@ -524,6 +590,23 @@ func TestBuildKitExecutorRejectsMismatchedArtifactCommit(t *testing.T) {
 	result, err := executor.Execute(context.Background(), Request{Assignment: assignment, Attempt: 1, Secrets: map[string][]byte{}, Events: func(Event) {}})
 	if !errors.Is(err, ErrExecute) || result.Phase != PhaseFailed || result.ErrorCode != "artifact_commit" || result.Cleanup.Status != CleanupClean {
 		t.Fatalf("result = %#v, error = %v", result, err)
+	}
+}
+
+func TestBuildKitExecutorRejectsMissingSupplyChainEvidence(t *testing.T) {
+	t.Parallel()
+	assignment, archive := resolvedWorkerAssignment(t, "static_bundle", nil)
+	fake := &fakeBuildKitClient{solve: successfulFakeSolve("static_bundle", []byte("safe static output"), []byte("fake-progress-value"))}
+	executor, _ := executorHarness(t, fake, archive, CleanupClean, time.Minute)
+	executor.committer = committerFunc(func(_ context.Context, artifact ExportedArtifact) (CommittedArtifact, error) {
+		return CommittedArtifact{
+			Reference: "registry.example.invalid/lrail/site@" + artifact.Digest,
+			Digest:    artifact.Digest, Size: artifact.Size, ManifestDigest: artifact.Digest,
+		}, nil
+	})
+	result, err := executor.Execute(t.Context(), Request{Assignment: assignment, Attempt: 1, Secrets: map[string][]byte{}, Events: func(Event) {}})
+	if !errors.Is(err, ErrExecute) || result.Phase != PhaseFailed || result.ErrorCode != "artifact_commit" || len(result.Outputs) != 0 {
+		t.Fatalf("result=%#v error=%v", result, err)
 	}
 }
 

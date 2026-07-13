@@ -63,13 +63,16 @@ func TestRealDistributionPublishesPullsAndDeduplicatesByDigest(t *testing.T) {
 	}
 	waitRegistryReady(t, ctx, httpClient, registryURL)
 	artifact, expectedManifest := registryOCIFixture(t)
+	artifact, evidence, signerPublicKey := registryEvidenceMaterials(t, artifact)
 	repository, _ := RepositoryName(artifact.ProjectID, artifact.OutputName)
 	broker := &publisherBroker{registry: registryURL, repository: repository, token: "ignored-by-authless-conformance-registry"}
 	distribution, err := NewDistributionClient(httpClient)
 	if err != nil {
 		t.Fatalf("NewDistributionClient: %v", err)
 	}
-	publisher, err := NewPublisher(PublisherConfig{Broker: broker, Registry: distribution, Clock: func() time.Time { return registryNow }})
+	publisher, err := NewPublisher(PublisherConfig{
+		Broker: broker, Registry: distribution, RegistryOrigin: registryURL, Evidence: evidence, Clock: func() time.Time { return registryNow },
+	})
 	if err != nil {
 		t.Fatalf("NewPublisher: %v", err)
 	}
@@ -78,7 +81,7 @@ func TestRealDistributionPublishesPullsAndDeduplicatesByDigest(t *testing.T) {
 		t.Fatalf("Commit: %v", err)
 	}
 	second, err := publisher.Commit(t.Context(), artifact)
-	if err != nil || first != second || first.ManifestDigest != expectedManifest {
+	if err != nil || first != second || first.ManifestDigest != expectedManifest || first.SupplyChain.PolicyState != "accepted" {
 		t.Fatalf("first=%#v second=%#v error=%v", first, second, err)
 	}
 	projectName, _ := ProjectName(artifact.OrganizationID)
@@ -91,6 +94,17 @@ func TestRealDistributionPublishesPullsAndDeduplicatesByDigest(t *testing.T) {
 	assertRegistryBlob(t, httpClient, registryURL, fullRepositoryPath(projectName, repository), identity.Config)
 	for _, layer := range identity.Layers {
 		assertRegistryBlob(t, httpClient, registryURL, fullRepositoryPath(projectName, repository), layer)
+	}
+	if cosignPath := os.Getenv("LRAIL_COSIGN_PATH"); cosignPath != "" {
+		publicKeyPath := filepath.Join(certificateRoot, "cosign.pub")
+		if err := os.WriteFile(publicKeyPath, signerPublicKey, 0o600); err != nil {
+			t.Fatalf("write Cosign public key: %v", err)
+		}
+		command := exec.CommandContext(ctx, cosignPath, "verify", "--key", publicKeyPath, "--insecure-ignore-tlog", "--registry-cacert", filepath.Join(certificateRoot, "tls.crt"), first.Reference)
+		command.Env = append(os.Environ(), "SSL_CERT_FILE="+filepath.Join(certificateRoot, "tls.crt"))
+		if output, err := command.CombinedOutput(); err != nil {
+			t.Fatalf("Cosign verify: %v: %s", err, output)
+		}
 	}
 }
 

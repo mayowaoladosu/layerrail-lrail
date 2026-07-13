@@ -115,11 +115,18 @@ func (client *DistributionClient) EnsureBlob(ctx context.Context, capability Pus
 }
 
 func (client *DistributionClient) PutManifest(ctx context.Context, capability PushCapability, projectName string, identity buildworker.OCIArtifactIdentity) error {
+	return client.PutManifestReference(ctx, capability, projectName, identity, identity.ManifestDigest)
+}
+
+func (client *DistributionClient) PutManifestReference(ctx context.Context, capability PushCapability, projectName string, identity buildworker.OCIArtifactIdentity, reference string) error {
 	actual := sha256.Sum256(identity.Manifest)
 	if !validDigest(identity.ManifestDigest) || "sha256:"+hex.EncodeToString(actual[:]) != identity.ManifestDigest || identity.ManifestMediaType == "" || len(identity.Manifest) == 0 || len(identity.Manifest) > int(MaxRegistryResponseBytes) {
 		return errors.New("OCI manifest publication identity is invalid")
 	}
-	response, _, err := client.request(ctx, capability, projectName, http.MethodPut, "/manifests/"+identity.ManifestDigest, identity.ManifestMediaType, bytes.NewReader(identity.Manifest), int64(len(identity.Manifest)))
+	if reference != identity.ManifestDigest && !validManifestTag(reference) {
+		return errors.New("OCI manifest publication reference is invalid")
+	}
+	response, _, err := client.request(ctx, capability, projectName, http.MethodPut, "/manifests/"+reference, identity.ManifestMediaType, bytes.NewReader(identity.Manifest), int64(len(identity.Manifest)))
 	if err != nil || response.StatusCode != http.StatusCreated || response.Header.Get("Docker-Content-Digest") != identity.ManifestDigest {
 		return fmt.Errorf("%w: registry manifest publication failed", ErrRegistry)
 	}
@@ -128,6 +135,37 @@ func (client *DistributionClient) PutManifest(ctx context.Context, capability Pu
 		return fmt.Errorf("%w: published manifest verification failed", ErrRegistry)
 	}
 	return nil
+}
+
+func (client *DistributionClient) EnsureManifestReference(ctx context.Context, capability PushCapability, projectName string, identity buildworker.OCIArtifactIdentity, reference string) error {
+	if !validManifestTag(reference) {
+		return errors.New("OCI manifest alias is invalid")
+	}
+	response, contents, err := client.request(ctx, capability, projectName, http.MethodGet, "/manifests/"+reference, identity.ManifestMediaType, nil, 0)
+	if err != nil {
+		return err
+	}
+	if response.StatusCode == http.StatusOK {
+		return verifyManifestResponse(response, contents, identity)
+	}
+	if response.StatusCode != http.StatusNotFound {
+		return fmt.Errorf("%w: registry manifest alias lookup was rejected", ErrRegistry)
+	}
+	return client.PutManifestReference(ctx, capability, projectName, identity, reference)
+}
+
+func validManifestTag(value string) bool {
+	if len(value) < 1 || len(value) > 128 {
+		return false
+	}
+	for index, character := range value {
+		if character >= 'a' && character <= 'z' || character >= 'A' && character <= 'Z' || character >= '0' && character <= '9' ||
+			(index > 0 && (character == '.' || character == '_' || character == '-')) {
+			continue
+		}
+		return false
+	}
+	return true
 }
 
 func (client *DistributionClient) request(ctx context.Context, capability PushCapability, projectName, method, suffix, contentType string, body io.Reader, length int64) (*http.Response, []byte, error) {

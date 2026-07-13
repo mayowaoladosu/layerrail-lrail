@@ -84,7 +84,8 @@ func kubeAssignment(t *testing.T, network []llbcompiler.NetworkCapability) build
 		Version: llbcompiler.CurrentLockVersion, CompilerVersion: "0.1.0", IRDigest: kubeIR, PolicyDigest: kubePolicy,
 		SourceSnapshot: kubeSnapshot, TargetPlatform: "linux/amd64", BuildArguments: []llbcompiler.NameValue{},
 		BaseMaterials: []llbcompiler.BaseMaterial{}, Network: network, Caches: []llbcompiler.CacheCapability{}, Secrets: []llbcompiler.SecretCapability{},
-		Outputs: []llbcompiler.OutputLock{{Name: "site", Kind: "static_bundle", StateID: "n1", LLBDigest: llbDigest, ConfigDigest: configDigest}},
+		SupplyChain: llbcompiler.PlatformSupplyChainPolicy([]string{"sha256:1111111111111111111111111111111111111111111111111111111111111111"}),
+		Outputs:     []llbcompiler.OutputLock{{Name: "site", Kind: "static_bundle", StateID: "n1", LLBDigest: llbDigest, ConfigDigest: configDigest}},
 	}
 	lockDigest, err := llbcompiler.LockDigest(lock)
 	if err != nil {

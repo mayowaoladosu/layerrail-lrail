@@ -42,6 +42,7 @@ func (store *memoryStaticManifestStore) PutImmutable(_ context.Context, manifest
 func TestPublisherPackagesStaticBundleAndCommitsPublicationManifest(t *testing.T) {
 	t.Parallel()
 	artifact := staticArtifactFixture(t)
+	artifact, evidence := withRegistryEvidence(t, artifact)
 	projectName, _ := ProjectName(artifact.OrganizationID)
 	repository, _ := RepositoryName(artifact.ProjectID, artifact.OutputName)
 	fullName, _ := fullRepository(projectName, repository)
@@ -51,7 +52,8 @@ func TestPublisherPackagesStaticBundleAndCommitsPublicationManifest(t *testing.T
 	manifests := new(memoryStaticManifestStore)
 	staging := t.TempDir()
 	publisher, err := NewPublisher(PublisherConfig{
-		Broker: broker, Registry: distribution, Clock: func() time.Time { return registryNow }, StagingRoot: staging, StaticStore: manifests,
+		Broker: broker, Registry: distribution, RegistryOrigin: registry.server.URL, Evidence: evidence,
+		Clock: func() time.Time { return registryNow }, StagingRoot: staging, StaticStore: manifests,
 	})
 	if err != nil {
 		t.Fatalf("NewPublisher: %v", err)
@@ -64,7 +66,7 @@ func TestPublisherPackagesStaticBundleAndCommitsPublicationManifest(t *testing.T
 	if err != nil {
 		t.Fatalf("idempotent Commit: %v", err)
 	}
-	if first != second || first.ManifestDigest == "" || first.PublicationManifestRef != "s3://static-publications/manifest.json" || registry.blobPuts != 2 || registry.manifestPuts != 1 {
+	if first != second || first.ManifestDigest == "" || first.PublicationManifestRef != "s3://static-publications/manifest.json" || registry.blobPuts != 8 || registry.manifestPuts != 7 || first.SupplyChain.PolicyState != "accepted" {
 		t.Fatalf("first=%#v second=%#v registry=%#v", first, second, registry)
 	}
 	if manifests.puts != 2 || manifests.manifest.SourceDigest != artifact.Digest || manifests.manifest.SourceSize != artifact.Size || len(manifests.manifest.Files) != 2 || manifests.manifest.OCIReference != first.Reference {
@@ -79,6 +81,7 @@ func TestPublisherPackagesStaticBundleAndCommitsPublicationManifest(t *testing.T
 func TestPublisherStaticManifestFailureFailsBuildAfterRevocation(t *testing.T) {
 	t.Parallel()
 	artifact := staticArtifactFixture(t)
+	artifact, evidence := withRegistryEvidence(t, artifact)
 	projectName, _ := ProjectName(artifact.OrganizationID)
 	repository, _ := RepositoryName(artifact.ProjectID, artifact.OutputName)
 	fullName, _ := fullRepository(projectName, repository)
@@ -86,7 +89,8 @@ func TestPublisherStaticManifestFailureFailsBuildAfterRevocation(t *testing.T) {
 	broker := &publisherBroker{registry: registry.server.URL, repository: repository, token: registry.token}
 	distribution, _ := NewDistributionClient(registry.server.Client())
 	publisher, _ := NewPublisher(PublisherConfig{
-		Broker: broker, Registry: distribution, Clock: func() time.Time { return registryNow }, StagingRoot: t.TempDir(),
+		Broker: broker, Registry: distribution, RegistryOrigin: registry.server.URL, Evidence: evidence,
+		Clock: func() time.Time { return registryNow }, StagingRoot: t.TempDir(),
 		StaticStore: &memoryStaticManifestStore{err: errors.New("object store unavailable")},
 	})
 	if committed, err := publisher.Commit(t.Context(), artifact); err == nil || committed.Reference != "" || broker.revokes != 1 {

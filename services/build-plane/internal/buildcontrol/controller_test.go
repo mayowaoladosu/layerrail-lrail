@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/mayowaoladosu/layerrail-lrail/services/build-plane/internal/buildcell"
+	"github.com/mayowaoladosu/layerrail-lrail/services/build-plane/internal/buildsupply"
 	"github.com/mayowaoladosu/layerrail-lrail/services/build-plane/internal/buildworker"
 	"github.com/mayowaoladosu/layerrail-lrail/services/build-plane/internal/llbcompiler"
 	"github.com/moby/buildkit/client/llb"
@@ -80,7 +81,8 @@ func controlFixture(t *testing.T, withSecret bool) (buildcell.Envelope, *buildce
 		PolicyDigest: controlPolicyDigest, SourceSnapshot: controlSnapshotDigest, TargetPlatform: "linux/amd64",
 		BuildArguments: []llbcompiler.NameValue{}, BaseMaterials: []llbcompiler.BaseMaterial{},
 		Network: network, Caches: []llbcompiler.CacheCapability{}, Secrets: secrets,
-		Outputs: []llbcompiler.OutputLock{{Name: "site", Kind: "static_bundle", StateID: "n1", LLBDigest: digest(definitionBytes), ConfigDigest: digest(config)}},
+		SupplyChain: llbcompiler.PlatformSupplyChainPolicy([]string{"sha256:1111111111111111111111111111111111111111111111111111111111111111"}),
+		Outputs:     []llbcompiler.OutputLock{{Name: "site", Kind: "static_bundle", StateID: "n1", LLBDigest: digest(definitionBytes), ConfigDigest: digest(config)}},
 	}
 	definitionDigest, err := llbcompiler.LockDigest(lock)
 	if err != nil {
@@ -227,12 +229,28 @@ func successWorker(id string) *fakeWorker {
 					Name: "site", Kind: "static_bundle", ArtifactRef: "registry.example.invalid/lrail/site@" + controlIRDigest,
 					ArtifactDigest: controlIRDigest, ArtifactSize: 10, ConfigDigest: digest([]byte(`{"config":{"Cmd":["true"]}}`)), ManifestDigest: controlIRDigest,
 					PublicationManifestRef: "s3://build-artifacts/static/site.json", ExporterResponse: map[string]string{},
+					SupplyChain: successfulSupplyChain("registry.example.invalid/lrail/site", controlPolicyDigest),
 				}},
 				StartedAt: controlNow, FinishedAt: controlNow.Add(time.Second), Cleanup: cleanReport(),
 			}, nil
 		},
 		force:   func(context.Context) (buildworker.CleanupReport, error) { return cleanReport(), nil },
 		release: func(context.Context) (buildworker.CleanupReport, error) { return cleanReport(), nil },
+	}
+}
+
+func successfulSupplyChain(repository, policyDigest string) buildworker.SupplyChainResult {
+	kinds := []string{buildsupply.KindSBOM, buildsupply.KindScan, buildsupply.KindProvenance, buildsupply.KindSignature, buildsupply.KindPolicy}
+	var references [5]buildworker.EvidenceReference
+	for index, kind := range kinds {
+		manifestDigest := fmt.Sprintf("sha256:%064x", index+10)
+		payloadDigest := fmt.Sprintf("sha256:%064x", index+20)
+		references[index] = buildworker.EvidenceReference{Kind: kind, Reference: repository + "@" + manifestDigest, ManifestDigest: manifestDigest, PayloadDigest: payloadDigest}
+	}
+	return buildworker.SupplyChainResult{
+		PolicyState: "accepted", ScanState: "passed", PolicyDigest: policyDigest,
+		SignerKeyID: llbcompiler.DefaultBuildSignerKeyID, SignerKeyVersion: 1,
+		SignerPublicKeyDigest: "sha256:1111111111111111111111111111111111111111111111111111111111111111", Evidence: references,
 	}
 }
 
@@ -261,6 +279,41 @@ func TestValidOutputContentIdentityRequiresStaticPublicationManifest(t *testing.
 	}
 	if validOutputContentIdentity(imageWithStaticManifest) {
 		t.Fatal("image output with a static publication manifest was accepted")
+	}
+}
+
+func TestValidSupplyChainIdentityRejectsIncompleteOrForeignEvidence(t *testing.T) {
+	t.Parallel()
+	output := buildworker.OutputResult{
+		ArtifactRef: "registry.example.invalid/lrail/site@" + controlIRDigest,
+		SupplyChain: successfulSupplyChain("registry.example.invalid/lrail/site", controlPolicyDigest),
+	}
+	policy := llbcompiler.PlatformSupplyChainPolicy([]string{"sha256:1111111111111111111111111111111111111111111111111111111111111111"})
+	if !validSupplyChainIdentity(output, controlPolicyDigest, policy) {
+		t.Fatal("complete supply-chain identity was rejected")
+	}
+	for name, mutate := range map[string]func(*buildworker.OutputResult){
+		"missing": func(candidate *buildworker.OutputResult) {
+			candidate.SupplyChain.Evidence[0] = buildworker.EvidenceReference{}
+		},
+		"foreign repository": func(candidate *buildworker.OutputResult) {
+			candidate.SupplyChain.Evidence[0].Reference = "registry.example.invalid/foreign@" + candidate.SupplyChain.Evidence[0].ManifestDigest
+		},
+		"duplicate kind": func(candidate *buildworker.OutputResult) {
+			candidate.SupplyChain.Evidence[1].Kind = candidate.SupplyChain.Evidence[0].Kind
+		},
+		"policy": func(candidate *buildworker.OutputResult) { candidate.SupplyChain.PolicyDigest = controlIRDigest },
+		"signer": func(candidate *buildworker.OutputResult) {
+			candidate.SupplyChain.SignerPublicKeyDigest = controlIRDigest
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			candidate := output
+			mutate(&candidate)
+			if validSupplyChainIdentity(candidate, controlPolicyDigest, policy) {
+				t.Fatal("invalid supply-chain identity was accepted")
+			}
+		})
 	}
 }
 

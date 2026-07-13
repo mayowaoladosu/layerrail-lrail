@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/ed25519"
 	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
@@ -12,6 +13,7 @@ import (
 	lrailv1 "github.com/mayowaoladosu/layerrail-lrail/gen/go/lrail/v1"
 	"github.com/mayowaoladosu/layerrail-lrail/services/build-plane/internal/buildcell"
 	"github.com/mayowaoladosu/layerrail-lrail/services/build-plane/internal/buildcontrol"
+	"github.com/mayowaoladosu/layerrail-lrail/services/build-plane/internal/buildsupply"
 	"github.com/mayowaoladosu/layerrail-lrail/services/build-plane/internal/buildworker"
 	"github.com/mayowaoladosu/layerrail-lrail/services/build-plane/internal/llbcompiler"
 	"google.golang.org/grpc/codes"
@@ -42,7 +44,8 @@ func transportEnvelope(t *testing.T) ([]byte, buildcell.Envelope, *buildcell.Ver
 		PolicyDigest: transportPolicy, SourceSnapshot: transportSnapshot, TargetPlatform: "linux/amd64",
 		BuildArguments: []llbcompiler.NameValue{}, BaseMaterials: []llbcompiler.BaseMaterial{},
 		Network: []llbcompiler.NetworkCapability{}, Caches: []llbcompiler.CacheCapability{}, Secrets: []llbcompiler.SecretCapability{},
-		Outputs: []llbcompiler.OutputLock{{Name: "site", Kind: "static_bundle", StateID: "n1", LLBDigest: transportLLB, ConfigDigest: transportConfig}},
+		SupplyChain: llbcompiler.PlatformSupplyChainPolicy([]string{"sha256:1111111111111111111111111111111111111111111111111111111111111111"}),
+		Outputs:     []llbcompiler.OutputLock{{Name: "site", Kind: "static_bundle", StateID: "n1", LLBDigest: transportLLB, ConfigDigest: transportConfig}},
 	}
 	lockDigest, err := llbcompiler.LockDigest(lock)
 	if err != nil {
@@ -116,7 +119,23 @@ func terminalTransportResult() buildcontrol.Result {
 				Name: "site", Kind: "static_bundle", ArtifactRef: "registry.example.invalid/lrail/site@" + transportIR,
 				ArtifactDigest: transportIR, ArtifactSize: 10, ConfigDigest: transportConfig, ManifestDigest: transportIR,
 				PublicationManifestRef: "s3://build-artifacts/static/site.json",
+				SupplyChain:            transportSupplyChain("registry.example.invalid/lrail/site"),
 			}}},
+	}
+}
+
+func transportSupplyChain(repository string) buildworker.SupplyChainResult {
+	kinds := []string{buildsupply.KindSBOM, buildsupply.KindScan, buildsupply.KindProvenance, buildsupply.KindSignature, buildsupply.KindPolicy}
+	var references [5]buildworker.EvidenceReference
+	for index, kind := range kinds {
+		manifestDigest := fmt.Sprintf("sha256:%064x", index+10)
+		payloadDigest := fmt.Sprintf("sha256:%064x", index+20)
+		references[index] = buildworker.EvidenceReference{Kind: kind, Reference: repository + "@" + manifestDigest, ManifestDigest: manifestDigest, PayloadDigest: payloadDigest}
+	}
+	return buildworker.SupplyChainResult{
+		PolicyState: "accepted", ScanState: "passed", PolicyDigest: transportPolicy,
+		SignerKeyID: llbcompiler.DefaultBuildSignerKeyID, SignerKeyVersion: 1,
+		SignerPublicKeyDigest: "sha256:1111111111111111111111111111111111111111111111111111111111111111", Evidence: references,
 	}
 }
 
@@ -138,7 +157,9 @@ func TestServerStreamsProgressAndTerminalResult(t *testing.T) {
 	if len(stream.events) != 2 || stream.events[0].Kind != "vertex" || stream.events[1].Kind != "result" || stream.events[1].Result.GetCleanup().GetStatus() != string(buildworker.CleanupClean) {
 		t.Fatalf("events = %#v", stream.events)
 	}
-	if stream.events[1].Sequence != stream.events[0].Sequence+1 || stream.events[1].Result.GetOutputs()[0].GetArtifactRef() == "" || stream.events[1].Result.GetOutputs()[0].GetConfigDigest() != transportConfig || stream.events[1].Result.GetLogsDigest() != transportIR || stream.events[1].Result.GetCacheHits() != 2 || stream.events[1].Result.GetCacheMisses() != 3 {
+	if stream.events[1].Sequence != stream.events[0].Sequence+1 || stream.events[1].Result.GetOutputs()[0].GetArtifactRef() == "" || stream.events[1].Result.GetOutputs()[0].GetConfigDigest() != transportConfig ||
+		len(stream.events[1].Result.GetOutputs()[0].GetSupplyChain().GetEvidence()) != 5 || stream.events[1].Result.GetOutputs()[0].GetSupplyChain().GetPolicyState() != "accepted" ||
+		stream.events[1].Result.GetLogsDigest() != transportIR || stream.events[1].Result.GetCacheHits() != 2 || stream.events[1].Result.GetCacheMisses() != 3 {
 		t.Fatalf("terminal event = %#v", stream.events[1])
 	}
 }

@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -309,12 +310,18 @@ func (executor *BuildKitExecutor) Execute(ctx context.Context, request Request) 
 			ProjectID:      request.Assignment.Verified.Payload.ProjectID,
 			BuildID:        result.BuildID, Attempt: result.Attempt, OutputName: output.Name, Kind: output.Kind,
 			Path: artifactPath, Digest: artifactDigest, Size: artifactSize,
+			Provenance: provenanceContext(request, startedAt),
 		})
 		commitCancel()
 		if commitErr != nil || committed.Reference == "" || committed.Digest != artifactDigest || committed.Size != artifactSize ||
-			(output.Kind == "oci_image" && committed.ManifestDigest != "" && committed.ManifestDigest != ociIdentity.ManifestDigest) {
+			(output.Kind == "oci_image" && committed.ManifestDigest != "" && committed.ManifestDigest != ociIdentity.ManifestDigest) ||
+			!validCommittedSupplyChain(committed, request.Assignment.Verified.Payload.Lock.PolicyDigest, request.Assignment.Verified.Payload.Lock.SupplyChain) {
 			result.Phase = phaseForContext(executionContext)
 			result.ErrorCode = "artifact_commit"
+			var coded interface{ BuildErrorCode() string }
+			if errors.As(commitErr, &coded) && coded.BuildErrorCode() != "" {
+				result.ErrorCode = coded.BuildErrorCode()
+			}
 			emit(Event{Phase: result.Phase, Kind: "error", Output: output.Name, Code: result.ErrorCode, Message: "Exported artifact could not be committed."})
 			resultErr = fmt.Errorf("%w: artifact commit", ErrExecute)
 			if commitErr != nil {
@@ -336,6 +343,7 @@ func (executor *BuildKitExecutor) Execute(ctx context.Context, request Request) 
 			ManifestDigest: manifestDigest, PublicationManifestRef: committed.PublicationManifestRef,
 			LayerDigests:     append([]string{}, ociIdentity.LayerDigests...),
 			ExporterResponse: cloneStringMap(response.ExporterResponse),
+			SupplyChain:      committed.SupplyChain,
 		})
 		cacheSucceeded = true
 	}
@@ -345,6 +353,59 @@ func (executor *BuildKitExecutor) Execute(ctx context.Context, request Request) 
 		return result, fmt.Errorf("%w: %w", ErrExecute, context.Cause(executionContext))
 	}
 	return result, nil
+}
+
+func validCommittedSupplyChain(committed CommittedArtifact, policyDigest string, policy llbcompiler.SupplyChainPolicy) bool {
+	evidence := committed.SupplyChain
+	if evidence.PolicyState != "accepted" || evidence.ScanState != "passed" || evidence.PolicyDigest != policyDigest ||
+		evidence.SignerKeyID != policy.SignerKeyID || evidence.SignerKeyVersion < 1 ||
+		!artifactDigestPattern.MatchString(evidence.SignerPublicKeyDigest) || !slices.Contains(policy.AllowedSignerPublicKeyDigests, evidence.SignerPublicKeyDigest) {
+		return false
+	}
+	repository, _, found := strings.Cut(committed.Reference, "@")
+	if !found || repository == "" {
+		return false
+	}
+	expectedKinds := map[string]struct{}{
+		"sbom": {}, "vulnerability_scan": {}, "provenance": {}, "signature": {}, "policy_decision": {},
+	}
+	manifestDigests := make(map[string]struct{}, len(evidence.Evidence))
+	for _, reference := range evidence.Evidence {
+		if _, expected := expectedKinds[reference.Kind]; !expected || reference.Reference != repository+"@"+reference.ManifestDigest ||
+			!artifactDigestPattern.MatchString(reference.ManifestDigest) || !artifactDigestPattern.MatchString(reference.PayloadDigest) {
+			return false
+		}
+		if _, duplicate := manifestDigests[reference.ManifestDigest]; duplicate {
+			return false
+		}
+		manifestDigests[reference.ManifestDigest] = struct{}{}
+		delete(expectedKinds, reference.Kind)
+	}
+	return len(expectedKinds) == 0
+}
+
+func provenanceContext(request Request, _ time.Time) ProvenanceContext {
+	payload := request.Assignment.Verified.Payload
+	secretNames := make([]string, 0, len(payload.Lock.Secrets))
+	for _, secret := range payload.Lock.Secrets {
+		secretNames = append(secretNames, secret.Name)
+	}
+	sort.Strings(secretNames)
+	return ProvenanceContext{
+		AssignmentDigest: payloadDigest(request.Assignment.Verified), DefinitionDigest: payload.DefinitionDigest,
+		IRDigest: payload.Lock.IRDigest, PolicyDigest: payload.Lock.PolicyDigest, SourceSnapshot: payload.Source.SnapshotDigest,
+		SourceArchive: payload.Source.ArchiveDigest, TargetPlatform: payload.Lock.TargetPlatform,
+		BuilderIdentity: "spiffe://lrail.internal/build-cell/" + payload.CellID, CompilerVersion: payload.Lock.CompilerVersion,
+		AssignmentIssuedAt: payload.IssuedAt, AssignmentExpiresAt: payload.ExpiresAt,
+		BuildArguments: append([]llbcompiler.NameValue(nil), payload.Lock.BuildArguments...),
+		BaseMaterials:  append([]llbcompiler.BaseMaterial(nil), payload.Lock.BaseMaterials...),
+		Network:        append([]llbcompiler.NetworkCapability(nil), payload.Lock.Network...), SecretNames: secretNames,
+		SupplyChain: payload.Lock.SupplyChain,
+	}
+}
+
+func payloadDigest(verified buildcell.VerifiedAssignment) string {
+	return verified.PayloadDigest
 }
 
 func (executor *BuildKitExecutor) streamStatuses(statuses <-chan *client.SolveStatus, output string, redactor *Redactor, emit func(Event)) CacheStats {

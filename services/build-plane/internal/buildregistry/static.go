@@ -51,6 +51,8 @@ type StaticManifestStore interface {
 
 type staticPrepared struct {
 	path     string
+	digest   string
+	size     int64
 	identity buildworker.OCIArtifactIdentity
 	files    []StaticFile
 }
@@ -215,7 +217,22 @@ func prepareStaticOCI(ctx context.Context, artifact buildworker.ExportedArtifact
 		_ = os.Remove(archivePath)
 		return staticPrepared{}, errors.New("verify generated static OCI artifact")
 	}
-	return staticPrepared{path: archivePath, identity: identity, files: files}, nil
+	archiveFile, err := os.Open(archivePath)
+	if err != nil {
+		_ = os.Remove(archivePath)
+		return staticPrepared{}, errors.New("open generated static OCI artifact")
+	}
+	archiveHash := sha256.New()
+	archiveSize, hashErr := io.Copy(archiveHash, archiveFile)
+	hashCloseErr := archiveFile.Close()
+	if hashErr != nil || hashCloseErr != nil || archiveSize <= 0 {
+		_ = os.Remove(archivePath)
+		return staticPrepared{}, errors.New("hash generated static OCI artifact")
+	}
+	return staticPrepared{
+		path: archivePath, digest: "sha256:" + hex.EncodeToString(archiveHash.Sum(nil)), size: archiveSize,
+		identity: identity, files: files,
+	}, nil
 }
 
 func inspectStaticSource(ctx context.Context, root string) ([]staticSourceEntry, error) {

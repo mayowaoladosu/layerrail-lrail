@@ -43,7 +43,8 @@ func verifiedCapabilityAssignment(t *testing.T, required bool) buildcell.Verifie
 		Version: llbcompiler.CurrentLockVersion, CompilerVersion: "0.1.0", IRDigest: capIR, PolicyDigest: capPolicy,
 		SourceSnapshot: capSnapshot, TargetPlatform: "linux/amd64", BuildArguments: []llbcompiler.NameValue{},
 		BaseMaterials: []llbcompiler.BaseMaterial{}, Network: []llbcompiler.NetworkCapability{}, Caches: []llbcompiler.CacheCapability{}, Secrets: secrets,
-		Outputs: []llbcompiler.OutputLock{{Name: "site", Kind: "static_bundle", StateID: "n1", LLBDigest: capLLB, ConfigDigest: capConfig}},
+		SupplyChain: llbcompiler.PlatformSupplyChainPolicy([]string{"sha256:1111111111111111111111111111111111111111111111111111111111111111"}),
+		Outputs:     []llbcompiler.OutputLock{{Name: "site", Kind: "static_bundle", StateID: "n1", LLBDigest: capLLB, ConfigDigest: capConfig}},
 	}
 	lockDigest, err := llbcompiler.LockDigest(lock)
 	if err != nil {

@@ -8,9 +8,13 @@ import (
 )
 
 const (
-	CurrentPolicyAPIVersion = "lrail.build-policy/v1"
-	CurrentLockVersion      = 1
-	BuildEgressProxyURL     = "http://127.0.0.1:3128"
+	CurrentPolicyAPIVersion         = "lrail.build-policy/v1"
+	CurrentLockVersion              = 2
+	CurrentSupplyChainPolicyVersion = 1
+	CurrentSyftVersion              = "1.46.0"
+	CurrentTrivyVersion             = "0.72.0"
+	DefaultBuildSignerKeyID         = "lrail-build-evidence"
+	BuildEgressProxyURL             = "http://127.0.0.1:3128"
 )
 
 type Compiler struct {
@@ -36,6 +40,20 @@ type Policy struct {
 	Cache          CachePolicy         `json:"cache"`
 	Secrets        SecretPolicy        `json:"secrets"`
 	BuildArguments BuildArgumentPolicy `json:"build_arguments"`
+	SupplyChain    SupplyChainPolicy   `json:"supply_chain"`
+}
+
+type SupplyChainPolicy struct {
+	Version                       int      `json:"version"`
+	SyftVersion                   string   `json:"syft_version"`
+	TrivyVersion                  string   `json:"trivy_version"`
+	SignerKeyID                   string   `json:"signer_key_id"`
+	AllowedSignerPublicKeyDigests []string `json:"allowed_signer_public_key_digests"`
+	DeniedVulnerabilitySeverities []string `json:"denied_vulnerability_severities"`
+	DeniedConfigurationSeverities []string `json:"denied_configuration_severities"`
+	DeniedLicenseClassifications  []string `json:"denied_license_classifications"`
+	RequireSecretFree             bool     `json:"require_secret_free"`
+	RequireImageConfigurationScan bool     `json:"require_image_configuration_scan"`
 }
 
 type BasePolicy struct {
@@ -115,6 +133,7 @@ type DefinitionLock struct {
 	Network         []NetworkCapability `json:"network"`
 	Caches          []CacheCapability   `json:"caches"`
 	Secrets         []SecretCapability  `json:"secrets"`
+	SupplyChain     SupplyChainPolicy   `json:"supply_chain"`
 	Outputs         []OutputLock        `json:"outputs"`
 }
 
@@ -177,6 +196,15 @@ func LockDigest(lock DefinitionLock) (string, error) {
 func ResolutionDigest(material BaseMaterial) (string, error) {
 	material.Platforms = sortedUnique(material.Platforms)
 	return materialResolutionDigest(material)
+}
+
+func PlatformSupplyChainPolicy(allowedSignerPublicKeyDigests []string) SupplyChainPolicy {
+	return SupplyChainPolicy{
+		Version: CurrentSupplyChainPolicyVersion, SyftVersion: CurrentSyftVersion, TrivyVersion: CurrentTrivyVersion,
+		SignerKeyID: DefaultBuildSignerKeyID, AllowedSignerPublicKeyDigests: sortedUnique(allowedSignerPublicKeyDigests),
+		DeniedVulnerabilitySeverities: []string{"CRITICAL"}, DeniedConfigurationSeverities: []string{"CRITICAL", "HIGH"},
+		DeniedLicenseClassifications: []string{"Forbidden"}, RequireSecretFree: true, RequireImageConfigurationScan: true,
+	}
 }
 
 func (compiler *Compiler) Compile(ctx context.Context, request Request) (Result, error) {

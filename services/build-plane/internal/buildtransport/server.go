@@ -167,11 +167,23 @@ func eventMessage(event buildworker.Event) *lrailv1.BuildCellEvent {
 func resultMessage(result buildcontrol.Result) *lrailv1.BuildCellResult {
 	outputs := make([]*lrailv1.BuildCellOutput, 0, len(result.Worker.Outputs))
 	for _, output := range result.Worker.Outputs {
+		evidence := make([]*lrailv1.BuildEvidenceReference, 0, len(output.SupplyChain.Evidence))
+		for _, reference := range output.SupplyChain.Evidence {
+			evidence = append(evidence, &lrailv1.BuildEvidenceReference{
+				Kind: reference.Kind, Reference: reference.Reference, ManifestDigest: reference.ManifestDigest, PayloadDigest: reference.PayloadDigest,
+			})
+		}
 		outputs = append(outputs, &lrailv1.BuildCellOutput{
 			Name: output.Name, Kind: output.Kind, ArtifactRef: output.ArtifactRef,
 			ArtifactDigest: output.ArtifactDigest, ArtifactSize: output.ArtifactSize, ConfigDigest: output.ConfigDigest,
 			ManifestDigest: output.ManifestDigest, LayerDigests: append([]string(nil), output.LayerDigests...),
 			PublicationManifestRef: output.PublicationManifestRef,
+			SupplyChain: &lrailv1.BuildSupplyChainResult{
+				PolicyState: output.SupplyChain.PolicyState, ScanState: output.SupplyChain.ScanState,
+				PolicyDigest: output.SupplyChain.PolicyDigest, SignerKeyId: output.SupplyChain.SignerKeyID,
+				SignerKeyVersion: uint32(output.SupplyChain.SignerKeyVersion), SignerPublicKeyDigest: output.SupplyChain.SignerPublicKeyDigest,
+				Evidence: evidence,
+			},
 		})
 	}
 	return &lrailv1.BuildCellResult{

@@ -99,6 +99,7 @@ func TestRunStorePersistsGenerationBoundCancellation(t *testing.T) {
 				Name: "site", Kind: "static_bundle", ArtifactRef: "registry.example.invalid/lrail/site@" + controlIRDigest,
 				ArtifactDigest: controlIRDigest, ArtifactSize: 1, ConfigDigest: controlPolicyDigest, ManifestDigest: controlIRDigest,
 				PublicationManifestRef: "s3://build-artifacts/static/site.json",
+				SupplyChain:            successfulSupplyChain("registry.example.invalid/lrail/site", controlPolicyDigest),
 			}},
 		},
 		Cleanup: noResourceCleanup(controlBuildID), LogsDigest: controlIRDigest, StartedAt: controlNow, FinishedAt: resume.Now,

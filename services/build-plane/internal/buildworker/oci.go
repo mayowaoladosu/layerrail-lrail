@@ -12,6 +12,7 @@ import (
 	"io"
 	"os"
 	"path"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -192,6 +193,111 @@ func VisitOCIArtifactBlobs(ctx context.Context, filePath string, identity OCIArt
 		return errors.New("OCI artifact publication lacks a required blob")
 	}
 	return nil
+}
+
+func ExtractOCIArtifact(ctx context.Context, filePath, destination, expectedDigest string, expectedSize int64, identity OCIArtifactIdentity) (resultErr error) {
+	if ctx == nil || destination == "" || !artifactDigestPattern.MatchString(expectedDigest) || expectedSize <= 0 {
+		return errors.New("OCI artifact extraction request is invalid")
+	}
+	verified, err := InspectOCIArtifact(filePath)
+	if err != nil || verified.ManifestDigest != identity.ManifestDigest || verified.ManifestMediaType != identity.ManifestMediaType ||
+		verified.Config != identity.Config || !slices.Equal(verified.Layers, identity.Layers) || !bytes.Equal(verified.Manifest, identity.Manifest) {
+		return errors.New("OCI artifact changed before extraction")
+	}
+	absolute, err := filepath.Abs(destination)
+	if err != nil {
+		return errors.New("OCI extraction destination is invalid")
+	}
+	parent := filepath.Dir(absolute)
+	resolvedParent, err := filepath.EvalSymlinks(parent)
+	if err != nil || filepath.Clean(resolvedParent) != filepath.Clean(parent) {
+		return errors.New("OCI extraction destination traverses a symlink")
+	}
+	if _, err := os.Lstat(absolute); !errors.Is(err, os.ErrNotExist) {
+		return errors.New("OCI extraction destination already exists or is unreadable")
+	}
+	file, err := os.Open(filePath)
+	if err != nil {
+		return errors.New("open OCI artifact for extraction")
+	}
+	defer file.Close()
+	if err := verifyOpenOCIArchive(file, expectedDigest, expectedSize); err != nil {
+		return err
+	}
+	if err := os.Mkdir(absolute, 0o700); err != nil {
+		return errors.New("create OCI extraction destination")
+	}
+	defer func() {
+		if resultErr != nil {
+			_ = os.RemoveAll(absolute)
+		}
+	}()
+	archive := tar.NewReader(file)
+	for entries := 0; ; entries++ {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		if entries > MaxOCIEntries {
+			return errors.New("OCI artifact extraction entry limit exceeded")
+		}
+		header, err := archive.Next()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return errors.New("read OCI artifact during extraction")
+		}
+		rawName := strings.TrimPrefix(header.Name, "./")
+		name := path.Clean(strings.TrimSuffix(rawName, "/"))
+		if rawName == "" || path.IsAbs(rawName) || strings.Contains(rawName, "\\") || name == "." || name != strings.TrimSuffix(rawName, "/") || strings.HasPrefix(name, "../") {
+			return errors.New("OCI artifact extraction path is unsafe")
+		}
+		target := filepath.Join(absolute, filepath.FromSlash(name))
+		if target != absolute && !strings.HasPrefix(target, absolute+string(os.PathSeparator)) {
+			return errors.New("OCI artifact extraction escaped destination")
+		}
+		switch header.Typeflag {
+		case tar.TypeDir:
+			if err := os.MkdirAll(target, 0o700); err != nil {
+				return errors.New("create OCI artifact directory")
+			}
+		case tar.TypeReg:
+			if header.Size < 0 || header.Size > expectedSize {
+				return errors.New("OCI artifact extraction entry size is invalid")
+			}
+			if err := os.MkdirAll(filepath.Dir(target), 0o700); err != nil {
+				return errors.New("create OCI artifact parent directory")
+			}
+			output, err := os.OpenFile(target, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+			if err != nil {
+				return errors.New("create OCI artifact file")
+			}
+			written, copyErr := io.CopyN(output, archive, header.Size)
+			closeErr := output.Close()
+			if copyErr != nil || closeErr != nil || written != header.Size {
+				return errors.New("write OCI artifact file")
+			}
+		default:
+			return errors.New("OCI artifact extraction entry type is unsupported")
+		}
+	}
+	if err := verifyOpenOCIArchive(file, expectedDigest, expectedSize); err != nil {
+		return errors.New("OCI artifact changed during extraction")
+	}
+	return nil
+}
+
+func verifyOpenOCIArchive(file *os.File, expectedDigest string, expectedSize int64) error {
+	if _, err := file.Seek(0, io.SeekStart); err != nil {
+		return errors.New("seek OCI artifact")
+	}
+	hash := sha256.New()
+	count, err := io.Copy(hash, io.LimitReader(file, expectedSize+1))
+	if err != nil || count != expectedSize || "sha256:"+hex.EncodeToString(hash.Sum(nil)) != expectedDigest {
+		return errors.New("OCI archive identity differs during extraction")
+	}
+	_, err = file.Seek(0, io.SeekStart)
+	return err
 }
 
 type countingReader struct {

@@ -10,36 +10,45 @@ import (
 	"strings"
 	"time"
 
+	"github.com/mayowaoladosu/layerrail-lrail/services/build-plane/internal/buildsupply"
 	"github.com/mayowaoladosu/layerrail-lrail/services/build-plane/internal/buildworker"
 )
 
 const DefaultPublicationTimeout = 10 * time.Minute
 
 type Publisher struct {
-	broker     CapabilityBroker
-	registry   *DistributionClient
-	clock      func() time.Time
-	maxBytes   int64
-	capability time.Duration
-	cleanup    time.Duration
-	staging    string
-	static     StaticManifestStore
+	broker         CapabilityBroker
+	registry       *DistributionClient
+	clock          func() time.Time
+	maxBytes       int64
+	capability     time.Duration
+	cleanup        time.Duration
+	staging        string
+	static         StaticManifestStore
+	evidence       buildsupply.Generator
+	registryOrigin string
 }
 
 type PublisherConfig struct {
-	Broker        CapabilityBroker
-	Registry      *DistributionClient
-	Clock         func() time.Time
-	MaxBytes      int64
-	CapabilityTTL time.Duration
-	Cleanup       time.Duration
-	StagingRoot   string
-	StaticStore   StaticManifestStore
+	Broker         CapabilityBroker
+	Registry       *DistributionClient
+	Clock          func() time.Time
+	MaxBytes       int64
+	CapabilityTTL  time.Duration
+	Cleanup        time.Duration
+	StagingRoot    string
+	StaticStore    StaticManifestStore
+	Evidence       buildsupply.Generator
+	RegistryOrigin string
 }
 
 func NewPublisher(config PublisherConfig) (*Publisher, error) {
-	if config.Broker == nil || config.Registry == nil {
+	if config.Broker == nil || config.Registry == nil || config.Evidence == nil {
 		return nil, errors.New("registry publisher dependencies are incomplete")
+	}
+	registryOrigin, err := normalizeRegistryURL(config.RegistryOrigin)
+	if err != nil {
+		return nil, errors.New("registry publisher origin is invalid")
 	}
 	if config.Clock == nil {
 		config.Clock = time.Now
@@ -77,6 +86,7 @@ func NewPublisher(config PublisherConfig) (*Publisher, error) {
 	return &Publisher{
 		broker: config.Broker, registry: config.Registry, clock: config.Clock, maxBytes: config.MaxBytes,
 		capability: config.CapabilityTTL, cleanup: config.Cleanup, staging: staging, static: config.StaticStore,
+		evidence: config.Evidence, registryOrigin: registryOrigin,
 	}, nil
 }
 
@@ -85,6 +95,8 @@ func (publisher *Publisher) Commit(ctx context.Context, artifact buildworker.Exp
 		return buildworker.CommittedArtifact{}, err
 	}
 	publicationPath := artifact.Path
+	publicationDigest := artifact.Digest
+	publicationSize := artifact.Size
 	identity := buildworker.OCIArtifactIdentity{}
 	staticFiles := []StaticFile(nil)
 	if artifact.Kind == "oci_image" {
@@ -106,8 +118,37 @@ func (publisher *Publisher) Commit(ctx context.Context, artifact buildworker.Exp
 			return buildworker.CommittedArtifact{}, errors.New("static source changed during OCI packaging")
 		}
 		publicationPath = prepared.path
+		publicationDigest = prepared.digest
+		publicationSize = prepared.size
 		identity = prepared.identity
 		staticFiles = prepared.files
+	}
+	projectName, err := ProjectName(artifact.OrganizationID)
+	if err != nil {
+		return buildworker.CommittedArtifact{}, err
+	}
+	repository, err := RepositoryName(artifact.ProjectID, artifact.OutputName)
+	if err != nil {
+		return buildworker.CommittedArtifact{}, err
+	}
+	fullName, err := fullRepository(projectName, repository)
+	if err != nil {
+		return buildworker.CommittedArtifact{}, err
+	}
+	repositoryReference := strings.TrimPrefix(publisher.registryOrigin, "https://") + "/" + fullName
+	evidenceRequest := buildsupply.GenerateRequest{
+		Artifact: artifact, OCIPath: publicationPath, OCIArchiveDigest: publicationDigest, OCIArchiveSize: publicationSize,
+		Identity: identity, RepositoryReference: repositoryReference,
+	}
+	bundle, err := publisher.evidence.Generate(ctx, evidenceRequest)
+	if err != nil {
+		return buildworker.CommittedArtifact{}, err
+	}
+	if err := buildsupply.ValidateBundle(evidenceRequest, bundle); err != nil {
+		return buildworker.CommittedArtifact{}, fmt.Errorf("%w: generated evidence bundle is invalid", ErrRegistry)
+	}
+	if err := buildworker.ValidateExportedArtifact(artifact, publisher.maxBytes); err != nil {
+		return buildworker.CommittedArtifact{}, errors.New("build output changed during evidence generation")
 	}
 	now := publisher.clock().UTC()
 	scope := PublicationScope{
@@ -134,9 +175,8 @@ func (publisher *Publisher) Commit(ctx context.Context, artifact buildworker.Exp
 			resultErr = errors.Join(resultErr, fmt.Errorf("%w: revoke publication capability: %v", ErrRegistry, err))
 		}
 	}()
-	projectName, err := ProjectName(artifact.OrganizationID)
-	if err != nil {
-		return buildworker.CommittedArtifact{}, err
+	if capability.Registry != publisher.registryOrigin || capability.Repository != repository {
+		return buildworker.CommittedArtifact{}, errors.New("registry publication capability origin differs from configuration")
 	}
 	exists, err := publisher.registry.ManifestExists(ctx, capability, projectName, identity)
 	if err != nil {
@@ -155,8 +195,11 @@ func (publisher *Publisher) Commit(ctx context.Context, artifact buildworker.Exp
 	if err := buildworker.ValidateExportedArtifact(artifact, publisher.maxBytes); err != nil {
 		return buildworker.CommittedArtifact{}, errors.New("build output changed during registry publication")
 	}
-	fullName, _ := fullRepository(projectName, capability.Repository)
-	reference := strings.TrimPrefix(capability.Registry, "https://") + "/" + fullName + "@" + identity.ManifestDigest
+	reference := repositoryReference + "@" + identity.ManifestDigest
+	evidenceReferences, err := publisher.publishEvidence(ctx, capability, projectName, repositoryReference, identity, bundle)
+	if err != nil {
+		return buildworker.CommittedArtifact{}, err
+	}
 	publicationManifestRef := ""
 	if artifact.Kind == "static_bundle" {
 		publicationManifestRef, err = publisher.static.PutImmutable(ctx, StaticPublicationManifest{
@@ -171,6 +214,11 @@ func (publisher *Publisher) Commit(ctx context.Context, artifact buildworker.Exp
 	return buildworker.CommittedArtifact{
 		Reference: reference, Digest: artifact.Digest, Size: artifact.Size, ManifestDigest: identity.ManifestDigest,
 		PublicationManifestRef: publicationManifestRef,
+		SupplyChain: buildworker.SupplyChainResult{
+			PolicyState: bundle.PolicyState, ScanState: bundle.ScanState, PolicyDigest: bundle.PolicyDigest,
+			SignerKeyID: bundle.SignerKeyID, SignerKeyVersion: bundle.SignerKeyVersion,
+			SignerPublicKeyDigest: bundle.SignerPublicKeyDigest, Evidence: evidenceReferences,
+		},
 	}, nil
 }
 

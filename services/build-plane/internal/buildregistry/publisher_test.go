@@ -19,6 +19,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/mayowaoladosu/layerrail-lrail/services/build-plane/internal/buildsupply"
 	"github.com/mayowaoladosu/layerrail-lrail/services/build-plane/internal/buildworker"
 	digest "github.com/opencontainers/go-digest"
 	"github.com/opencontainers/image-spec/specs-go"
@@ -59,6 +60,7 @@ type fakeDistribution struct {
 	token          string
 	blobs          map[string][]byte
 	manifests      map[string][]byte
+	tags           map[string]string
 	blobPuts       int
 	manifestPuts   int
 	wrongDigest    bool
@@ -66,7 +68,7 @@ type fakeDistribution struct {
 
 func newFakeDistribution(t *testing.T, fullRepository, token string) *fakeDistribution {
 	t.Helper()
-	registry := &fakeDistribution{fullRepository: fullRepository, token: token, blobs: map[string][]byte{}, manifests: map[string][]byte{}}
+	registry := &fakeDistribution{fullRepository: fullRepository, token: token, blobs: map[string][]byte{}, manifests: map[string][]byte{}, tags: map[string]string{}}
 	registry.server = httptest.NewTLSServer(http.HandlerFunc(registry.handle))
 	t.Cleanup(registry.server.Close)
 	return registry
@@ -86,6 +88,21 @@ func (registry *fakeDistribution) handle(response http.ResponseWriter, request *
 	}
 	suffix := strings.TrimPrefix(request.URL.Path, prefix)
 	switch {
+	case request.Method == http.MethodGet && strings.HasPrefix(suffix, "/referrers/"):
+		subjectDigest := strings.TrimPrefix(suffix, "/referrers/")
+		descriptors := []ocispecs.Descriptor{}
+		for manifestDigest, contents := range registry.manifests {
+			var manifest ocispecs.Manifest
+			if json.Unmarshal(contents, &manifest) != nil || manifest.Subject == nil || manifest.Subject.Digest.String() != subjectDigest {
+				continue
+			}
+			descriptors = append(descriptors, ocispecs.Descriptor{
+				MediaType: ocispecs.MediaTypeImageManifest, Digest: digest.Digest(manifestDigest), Size: int64(len(contents)),
+				ArtifactType: manifest.ArtifactType, Annotations: manifest.Annotations,
+			})
+		}
+		response.Header().Set("Content-Type", ocispecs.MediaTypeImageIndex)
+		writeTestJSON(response, http.StatusOK, ocispecs.Index{Versioned: specsVersion(), MediaType: ocispecs.MediaTypeImageIndex, Manifests: descriptors})
 	case request.Method == http.MethodHead && strings.HasPrefix(suffix, "/blobs/"):
 		digest := strings.TrimPrefix(suffix, "/blobs/")
 		contents, found := registry.blobs[digest]
@@ -118,24 +135,39 @@ func (registry *fakeDistribution) handle(response http.ResponseWriter, request *
 		digestText := strings.TrimPrefix(suffix, "/manifests/")
 		switch request.Method {
 		case http.MethodGet:
-			contents, found := registry.manifests[digestText]
+			lookup := digestText
+			if tagged, found := registry.tags[digestText]; found {
+				lookup = tagged
+			}
+			contents, found := registry.manifests[lookup]
 			if !found {
 				response.WriteHeader(http.StatusNotFound)
 				return
 			}
-			response.Header().Set("Content-Type", ocispecs.MediaTypeImageManifest)
-			response.Header().Set("Docker-Content-Digest", digestText)
+			var document struct {
+				MediaType string `json:"mediaType"`
+			}
+			if json.Unmarshal(contents, &document) != nil || document.MediaType == "" {
+				response.WriteHeader(http.StatusInternalServerError)
+				return
+			}
+			response.Header().Set("Content-Type", document.MediaType)
+			response.Header().Set("Docker-Content-Digest", lookup)
 			response.WriteHeader(http.StatusOK)
 			_, _ = response.Write(contents)
 		case http.MethodPut:
 			contents, err := io.ReadAll(request.Body)
-			if err != nil || digest.FromBytes(contents).String() != digestText || request.Header.Get("Content-Type") != ocispecs.MediaTypeImageManifest {
+			actualDigest := digest.FromBytes(contents).String()
+			if err != nil || (strings.HasPrefix(digestText, "sha256:") && actualDigest != digestText) || request.Header.Get("Content-Type") == "" {
 				response.WriteHeader(http.StatusBadRequest)
 				return
 			}
-			registry.manifests[digestText] = contents
+			registry.manifests[actualDigest] = contents
+			if !strings.HasPrefix(digestText, "sha256:") {
+				registry.tags[digestText] = actualDigest
+			}
 			registry.manifestPuts++
-			response.Header().Set("Docker-Content-Digest", digestText)
+			response.Header().Set("Docker-Content-Digest", actualDigest)
 			response.WriteHeader(http.StatusCreated)
 		default:
 			response.WriteHeader(http.StatusMethodNotAllowed)
@@ -148,6 +180,7 @@ func (registry *fakeDistribution) handle(response http.ResponseWriter, request *
 func TestPublisherPushesAndVerifiesOCIByDigestIdempotently(t *testing.T) {
 	t.Parallel()
 	artifact, expectedManifest := registryOCIFixture(t)
+	artifact, evidence := withRegistryEvidence(t, artifact)
 	projectName, _ := ProjectName(artifact.OrganizationID)
 	repository, _ := RepositoryName(artifact.ProjectID, artifact.OutputName)
 	fullName, _ := fullRepository(projectName, repository)
@@ -157,7 +190,7 @@ func TestPublisherPushesAndVerifiesOCIByDigestIdempotently(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewDistributionClient: %v", err)
 	}
-	publisher, err := NewPublisher(PublisherConfig{Broker: broker, Registry: distribution, Clock: func() time.Time { return registryNow }})
+	publisher, err := NewPublisher(PublisherConfig{Broker: broker, Registry: distribution, RegistryOrigin: registry.server.URL, Evidence: evidence, Clock: func() time.Time { return registryNow }})
 	if err != nil {
 		t.Fatalf("NewPublisher: %v", err)
 	}
@@ -173,7 +206,7 @@ func TestPublisherPushesAndVerifiesOCIByDigestIdempotently(t *testing.T) {
 		first.Reference != strings.TrimPrefix(registry.server.URL, "https://")+"/"+fullName+"@"+expectedManifest {
 		t.Fatalf("first=%#v second=%#v", first, second)
 	}
-	if registry.blobPuts != 2 || registry.manifestPuts != 1 || broker.issues != 2 || broker.revokes != 2 {
+	if registry.blobPuts != 8 || registry.manifestPuts != 7 || broker.issues != 2 || broker.revokes != 2 || first.SupplyChain.PolicyState != "accepted" {
 		t.Fatalf("registry blobs=%d manifests=%d broker=%#v", registry.blobPuts, registry.manifestPuts, broker)
 	}
 }
@@ -181,13 +214,14 @@ func TestPublisherPushesAndVerifiesOCIByDigestIdempotently(t *testing.T) {
 func TestPublisherRecoversWhenBlobsExistBeforeManifest(t *testing.T) {
 	t.Parallel()
 	artifact, expectedManifest := registryOCIFixture(t)
+	artifact, evidence := withRegistryEvidence(t, artifact)
 	projectName, _ := ProjectName(artifact.OrganizationID)
 	repository, _ := RepositoryName(artifact.ProjectID, artifact.OutputName)
 	fullName, _ := fullRepository(projectName, repository)
 	registry := newFakeDistribution(t, fullName, "scoped-token")
 	broker := &publisherBroker{registry: registry.server.URL, repository: repository, token: registry.token}
 	distribution, _ := NewDistributionClient(registry.server.Client())
-	publisher, _ := NewPublisher(PublisherConfig{Broker: broker, Registry: distribution, Clock: func() time.Time { return registryNow }})
+	publisher, _ := NewPublisher(PublisherConfig{Broker: broker, Registry: distribution, RegistryOrigin: registry.server.URL, Evidence: evidence, Clock: func() time.Time { return registryNow }})
 	if _, err := publisher.Commit(t.Context(), artifact); err != nil {
 		t.Fatalf("initial Commit: %v", err)
 	}
@@ -197,7 +231,7 @@ func TestPublisherRecoversWhenBlobsExistBeforeManifest(t *testing.T) {
 	if _, err := publisher.Commit(t.Context(), artifact); err != nil {
 		t.Fatalf("recovery Commit: %v", err)
 	}
-	if registry.blobPuts != 2 || registry.manifestPuts != 2 || broker.revokes != 2 {
+	if registry.blobPuts != 8 || registry.manifestPuts != 8 || broker.revokes != 2 {
 		t.Fatalf("registry blobs=%d manifests=%d broker=%#v", registry.blobPuts, registry.manifestPuts, broker)
 	}
 }
@@ -205,6 +239,7 @@ func TestPublisherRecoversWhenBlobsExistBeforeManifest(t *testing.T) {
 func TestPublisherFailsClosedOnRegistryOrCapabilityMismatch(t *testing.T) {
 	t.Parallel()
 	artifact, _ := registryOCIFixture(t)
+	artifact, evidence := withRegistryEvidence(t, artifact)
 	projectName, _ := ProjectName(artifact.OrganizationID)
 	repository, _ := RepositoryName(artifact.ProjectID, artifact.OutputName)
 	fullName, _ := fullRepository(projectName, repository)
@@ -220,9 +255,43 @@ func TestPublisherFailsClosedOnRegistryOrCapabilityMismatch(t *testing.T) {
 			broker := &publisherBroker{registry: registry.server.URL, repository: repository, token: registry.token}
 			configure(registry, broker)
 			distribution, _ := NewDistributionClient(registry.server.Client())
-			publisher, _ := NewPublisher(PublisherConfig{Broker: broker, Registry: distribution, Clock: func() time.Time { return registryNow }})
+			publisher, _ := NewPublisher(PublisherConfig{Broker: broker, Registry: distribution, RegistryOrigin: registry.server.URL, Evidence: evidence, Clock: func() time.Time { return registryNow }})
 			if committed, err := publisher.Commit(t.Context(), artifact); err == nil || committed.Reference != "" {
 				t.Fatalf("committed=%#v error=%v", committed, err)
+			}
+		})
+	}
+}
+
+func TestPublisherRejectsPolicyDenialAndMutatedEvidenceBeforeRegistryAuthority(t *testing.T) {
+	t.Parallel()
+	baseArtifact, _ := registryOCIFixture(t)
+	artifact, evidence := withRegistryEvidence(t, baseArtifact)
+	projectName, _ := ProjectName(artifact.OrganizationID)
+	repository, _ := RepositoryName(artifact.ProjectID, artifact.OutputName)
+	fullName, _ := fullRepository(projectName, repository)
+	for name, generator := range map[string]buildsupply.Generator{
+		"secret denied": generatorFunc(func(context.Context, buildsupply.GenerateRequest) (buildsupply.Bundle, error) {
+			return buildsupply.Bundle{}, &buildsupply.Denial{Code: "security_secret_found"}
+		}),
+		"evidence mutated": generatorFunc(func(ctx context.Context, request buildsupply.GenerateRequest) (buildsupply.Bundle, error) {
+			bundle, err := evidence.Generate(ctx, request)
+			if err == nil {
+				bundle.Attestations[0].Payload[0] ^= 0xff
+			}
+			return bundle, err
+		}),
+	} {
+		t.Run(name, func(t *testing.T) {
+			registry := newFakeDistribution(t, fullName, "scoped-token")
+			broker := &publisherBroker{registry: registry.server.URL, repository: repository, token: registry.token}
+			distribution, _ := NewDistributionClient(registry.server.Client())
+			publisher, err := NewPublisher(PublisherConfig{Broker: broker, Registry: distribution, RegistryOrigin: registry.server.URL, Evidence: generator})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if committed, err := publisher.Commit(t.Context(), artifact); err == nil || committed.Reference != "" || broker.issues != 0 || registry.blobPuts != 0 || registry.manifestPuts != 0 {
+				t.Fatalf("committed=%#v error=%v broker=%#v registry=%#v", committed, err, broker, registry)
 			}
 		})
 	}

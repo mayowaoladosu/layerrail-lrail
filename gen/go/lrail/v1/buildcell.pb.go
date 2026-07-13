@@ -587,16 +587,17 @@ func (x *BuildCellResult) GetCacheMisses() int64 {
 }
 
 type BuildCellOutput struct {
-	state                  protoimpl.MessageState `protogen:"open.v1"`
-	Name                   string                 `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
-	Kind                   string                 `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`
-	ArtifactRef            string                 `protobuf:"bytes,3,opt,name=artifact_ref,json=artifactRef,proto3" json:"artifact_ref,omitempty"`
-	ArtifactDigest         string                 `protobuf:"bytes,4,opt,name=artifact_digest,json=artifactDigest,proto3" json:"artifact_digest,omitempty"`
-	ArtifactSize           int64                  `protobuf:"zigzag64,5,opt,name=artifact_size,json=artifactSize,proto3" json:"artifact_size,omitempty"`
-	ConfigDigest           string                 `protobuf:"bytes,6,opt,name=config_digest,json=configDigest,proto3" json:"config_digest,omitempty"`
-	ManifestDigest         string                 `protobuf:"bytes,7,opt,name=manifest_digest,json=manifestDigest,proto3" json:"manifest_digest,omitempty"`
-	LayerDigests           []string               `protobuf:"bytes,8,rep,name=layer_digests,json=layerDigests,proto3" json:"layer_digests,omitempty"`
-	PublicationManifestRef string                 `protobuf:"bytes,9,opt,name=publication_manifest_ref,json=publicationManifestRef,proto3" json:"publication_manifest_ref,omitempty"`
+	state                  protoimpl.MessageState  `protogen:"open.v1"`
+	Name                   string                  `protobuf:"bytes,1,opt,name=name,proto3" json:"name,omitempty"`
+	Kind                   string                  `protobuf:"bytes,2,opt,name=kind,proto3" json:"kind,omitempty"`
+	ArtifactRef            string                  `protobuf:"bytes,3,opt,name=artifact_ref,json=artifactRef,proto3" json:"artifact_ref,omitempty"`
+	ArtifactDigest         string                  `protobuf:"bytes,4,opt,name=artifact_digest,json=artifactDigest,proto3" json:"artifact_digest,omitempty"`
+	ArtifactSize           int64                   `protobuf:"zigzag64,5,opt,name=artifact_size,json=artifactSize,proto3" json:"artifact_size,omitempty"`
+	ConfigDigest           string                  `protobuf:"bytes,6,opt,name=config_digest,json=configDigest,proto3" json:"config_digest,omitempty"`
+	ManifestDigest         string                  `protobuf:"bytes,7,opt,name=manifest_digest,json=manifestDigest,proto3" json:"manifest_digest,omitempty"`
+	LayerDigests           []string                `protobuf:"bytes,8,rep,name=layer_digests,json=layerDigests,proto3" json:"layer_digests,omitempty"`
+	PublicationManifestRef string                  `protobuf:"bytes,9,opt,name=publication_manifest_ref,json=publicationManifestRef,proto3" json:"publication_manifest_ref,omitempty"`
+	SupplyChain            *BuildSupplyChainResult `protobuf:"bytes,10,opt,name=supply_chain,json=supplyChain,proto3" json:"supply_chain,omitempty"`
 	unknownFields          protoimpl.UnknownFields
 	sizeCache              protoimpl.SizeCache
 }
@@ -694,6 +695,173 @@ func (x *BuildCellOutput) GetPublicationManifestRef() string {
 	return ""
 }
 
+func (x *BuildCellOutput) GetSupplyChain() *BuildSupplyChainResult {
+	if x != nil {
+		return x.SupplyChain
+	}
+	return nil
+}
+
+type BuildSupplyChainResult struct {
+	state                 protoimpl.MessageState    `protogen:"open.v1"`
+	PolicyState           string                    `protobuf:"bytes,1,opt,name=policy_state,json=policyState,proto3" json:"policy_state,omitempty"`
+	ScanState             string                    `protobuf:"bytes,2,opt,name=scan_state,json=scanState,proto3" json:"scan_state,omitempty"`
+	PolicyDigest          string                    `protobuf:"bytes,3,opt,name=policy_digest,json=policyDigest,proto3" json:"policy_digest,omitempty"`
+	SignerKeyId           string                    `protobuf:"bytes,4,opt,name=signer_key_id,json=signerKeyId,proto3" json:"signer_key_id,omitempty"`
+	SignerKeyVersion      uint32                    `protobuf:"varint,5,opt,name=signer_key_version,json=signerKeyVersion,proto3" json:"signer_key_version,omitempty"`
+	SignerPublicKeyDigest string                    `protobuf:"bytes,6,opt,name=signer_public_key_digest,json=signerPublicKeyDigest,proto3" json:"signer_public_key_digest,omitempty"`
+	Evidence              []*BuildEvidenceReference `protobuf:"bytes,7,rep,name=evidence,proto3" json:"evidence,omitempty"`
+	unknownFields         protoimpl.UnknownFields
+	sizeCache             protoimpl.SizeCache
+}
+
+func (x *BuildSupplyChainResult) Reset() {
+	*x = BuildSupplyChainResult{}
+	mi := &file_lrail_v1_buildcell_proto_msgTypes[8]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BuildSupplyChainResult) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BuildSupplyChainResult) ProtoMessage() {}
+
+func (x *BuildSupplyChainResult) ProtoReflect() protoreflect.Message {
+	mi := &file_lrail_v1_buildcell_proto_msgTypes[8]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BuildSupplyChainResult.ProtoReflect.Descriptor instead.
+func (*BuildSupplyChainResult) Descriptor() ([]byte, []int) {
+	return file_lrail_v1_buildcell_proto_rawDescGZIP(), []int{8}
+}
+
+func (x *BuildSupplyChainResult) GetPolicyState() string {
+	if x != nil {
+		return x.PolicyState
+	}
+	return ""
+}
+
+func (x *BuildSupplyChainResult) GetScanState() string {
+	if x != nil {
+		return x.ScanState
+	}
+	return ""
+}
+
+func (x *BuildSupplyChainResult) GetPolicyDigest() string {
+	if x != nil {
+		return x.PolicyDigest
+	}
+	return ""
+}
+
+func (x *BuildSupplyChainResult) GetSignerKeyId() string {
+	if x != nil {
+		return x.SignerKeyId
+	}
+	return ""
+}
+
+func (x *BuildSupplyChainResult) GetSignerKeyVersion() uint32 {
+	if x != nil {
+		return x.SignerKeyVersion
+	}
+	return 0
+}
+
+func (x *BuildSupplyChainResult) GetSignerPublicKeyDigest() string {
+	if x != nil {
+		return x.SignerPublicKeyDigest
+	}
+	return ""
+}
+
+func (x *BuildSupplyChainResult) GetEvidence() []*BuildEvidenceReference {
+	if x != nil {
+		return x.Evidence
+	}
+	return nil
+}
+
+type BuildEvidenceReference struct {
+	state          protoimpl.MessageState `protogen:"open.v1"`
+	Kind           string                 `protobuf:"bytes,1,opt,name=kind,proto3" json:"kind,omitempty"`
+	Reference      string                 `protobuf:"bytes,2,opt,name=reference,proto3" json:"reference,omitempty"`
+	ManifestDigest string                 `protobuf:"bytes,3,opt,name=manifest_digest,json=manifestDigest,proto3" json:"manifest_digest,omitempty"`
+	PayloadDigest  string                 `protobuf:"bytes,4,opt,name=payload_digest,json=payloadDigest,proto3" json:"payload_digest,omitempty"`
+	unknownFields  protoimpl.UnknownFields
+	sizeCache      protoimpl.SizeCache
+}
+
+func (x *BuildEvidenceReference) Reset() {
+	*x = BuildEvidenceReference{}
+	mi := &file_lrail_v1_buildcell_proto_msgTypes[9]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *BuildEvidenceReference) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*BuildEvidenceReference) ProtoMessage() {}
+
+func (x *BuildEvidenceReference) ProtoReflect() protoreflect.Message {
+	mi := &file_lrail_v1_buildcell_proto_msgTypes[9]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use BuildEvidenceReference.ProtoReflect.Descriptor instead.
+func (*BuildEvidenceReference) Descriptor() ([]byte, []int) {
+	return file_lrail_v1_buildcell_proto_rawDescGZIP(), []int{9}
+}
+
+func (x *BuildEvidenceReference) GetKind() string {
+	if x != nil {
+		return x.Kind
+	}
+	return ""
+}
+
+func (x *BuildEvidenceReference) GetReference() string {
+	if x != nil {
+		return x.Reference
+	}
+	return ""
+}
+
+func (x *BuildEvidenceReference) GetManifestDigest() string {
+	if x != nil {
+		return x.ManifestDigest
+	}
+	return ""
+}
+
+func (x *BuildEvidenceReference) GetPayloadDigest() string {
+	if x != nil {
+		return x.PayloadDigest
+	}
+	return ""
+}
+
 type BuildCellCleanup struct {
 	state            protoimpl.MessageState `protogen:"open.v1"`
 	Status           string                 `protobuf:"bytes,1,opt,name=status,proto3" json:"status,omitempty"`
@@ -705,7 +873,7 @@ type BuildCellCleanup struct {
 
 func (x *BuildCellCleanup) Reset() {
 	*x = BuildCellCleanup{}
-	mi := &file_lrail_v1_buildcell_proto_msgTypes[8]
+	mi := &file_lrail_v1_buildcell_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -717,7 +885,7 @@ func (x *BuildCellCleanup) String() string {
 func (*BuildCellCleanup) ProtoMessage() {}
 
 func (x *BuildCellCleanup) ProtoReflect() protoreflect.Message {
-	mi := &file_lrail_v1_buildcell_proto_msgTypes[8]
+	mi := &file_lrail_v1_buildcell_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -730,7 +898,7 @@ func (x *BuildCellCleanup) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BuildCellCleanup.ProtoReflect.Descriptor instead.
 func (*BuildCellCleanup) Descriptor() ([]byte, []int) {
-	return file_lrail_v1_buildcell_proto_rawDescGZIP(), []int{8}
+	return file_lrail_v1_buildcell_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *BuildCellCleanup) GetStatus() string {
@@ -766,7 +934,7 @@ type CleanupBuildResidueRequest struct {
 
 func (x *CleanupBuildResidueRequest) Reset() {
 	*x = CleanupBuildResidueRequest{}
-	mi := &file_lrail_v1_buildcell_proto_msgTypes[9]
+	mi := &file_lrail_v1_buildcell_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -778,7 +946,7 @@ func (x *CleanupBuildResidueRequest) String() string {
 func (*CleanupBuildResidueRequest) ProtoMessage() {}
 
 func (x *CleanupBuildResidueRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_lrail_v1_buildcell_proto_msgTypes[9]
+	mi := &file_lrail_v1_buildcell_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -791,7 +959,7 @@ func (x *CleanupBuildResidueRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CleanupBuildResidueRequest.ProtoReflect.Descriptor instead.
 func (*CleanupBuildResidueRequest) Descriptor() ([]byte, []int) {
-	return file_lrail_v1_buildcell_proto_rawDescGZIP(), []int{9}
+	return file_lrail_v1_buildcell_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *CleanupBuildResidueRequest) GetBuildId() string {
@@ -833,7 +1001,7 @@ type CleanupBuildResidueResponse struct {
 
 func (x *CleanupBuildResidueResponse) Reset() {
 	*x = CleanupBuildResidueResponse{}
-	mi := &file_lrail_v1_buildcell_proto_msgTypes[10]
+	mi := &file_lrail_v1_buildcell_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -845,7 +1013,7 @@ func (x *CleanupBuildResidueResponse) String() string {
 func (*CleanupBuildResidueResponse) ProtoMessage() {}
 
 func (x *CleanupBuildResidueResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_lrail_v1_buildcell_proto_msgTypes[10]
+	mi := &file_lrail_v1_buildcell_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -858,7 +1026,7 @@ func (x *CleanupBuildResidueResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use CleanupBuildResidueResponse.ProtoReflect.Descriptor instead.
 func (*CleanupBuildResidueResponse) Descriptor() ([]byte, []int) {
-	return file_lrail_v1_buildcell_proto_rawDescGZIP(), []int{10}
+	return file_lrail_v1_buildcell_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *CleanupBuildResidueResponse) GetCleanup() *BuildCellCleanup {
@@ -893,7 +1061,7 @@ type BuildResidue struct {
 
 func (x *BuildResidue) Reset() {
 	*x = BuildResidue{}
-	mi := &file_lrail_v1_buildcell_proto_msgTypes[11]
+	mi := &file_lrail_v1_buildcell_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -905,7 +1073,7 @@ func (x *BuildResidue) String() string {
 func (*BuildResidue) ProtoMessage() {}
 
 func (x *BuildResidue) ProtoReflect() protoreflect.Message {
-	mi := &file_lrail_v1_buildcell_proto_msgTypes[11]
+	mi := &file_lrail_v1_buildcell_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -918,7 +1086,7 @@ func (x *BuildResidue) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use BuildResidue.ProtoReflect.Descriptor instead.
 func (*BuildResidue) Descriptor() ([]byte, []int) {
-	return file_lrail_v1_buildcell_proto_rawDescGZIP(), []int{11}
+	return file_lrail_v1_buildcell_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *BuildResidue) GetKind() string {
@@ -1002,7 +1170,7 @@ const file_lrail_v1_buildcell_proto_rawDesc = "" +
 	"logsDigest\x12\x1d\n" +
 	"\n" +
 	"cache_hits\x18\r \x01(\x12R\tcacheHits\x12!\n" +
-	"\fcache_misses\x18\x0e \x01(\x12R\vcacheMisses\"\xd7\x02\n" +
+	"\fcache_misses\x18\x0e \x01(\x12R\vcacheMisses\"\x9c\x03\n" +
 	"\x0fBuildCellOutput\x12\x12\n" +
 	"\x04name\x18\x01 \x01(\tR\x04name\x12\x12\n" +
 	"\x04kind\x18\x02 \x01(\tR\x04kind\x12!\n" +
@@ -1012,7 +1180,23 @@ const file_lrail_v1_buildcell_proto_rawDesc = "" +
 	"\rconfig_digest\x18\x06 \x01(\tR\fconfigDigest\x12'\n" +
 	"\x0fmanifest_digest\x18\a \x01(\tR\x0emanifestDigest\x12#\n" +
 	"\rlayer_digests\x18\b \x03(\tR\flayerDigests\x128\n" +
-	"\x18publication_manifest_ref\x18\t \x01(\tR\x16publicationManifestRef\"|\n" +
+	"\x18publication_manifest_ref\x18\t \x01(\tR\x16publicationManifestRef\x12C\n" +
+	"\fsupply_chain\x18\n" +
+	" \x01(\v2 .lrail.v1.BuildSupplyChainResultR\vsupplyChain\"\xc8\x02\n" +
+	"\x16BuildSupplyChainResult\x12!\n" +
+	"\fpolicy_state\x18\x01 \x01(\tR\vpolicyState\x12\x1d\n" +
+	"\n" +
+	"scan_state\x18\x02 \x01(\tR\tscanState\x12#\n" +
+	"\rpolicy_digest\x18\x03 \x01(\tR\fpolicyDigest\x12\"\n" +
+	"\rsigner_key_id\x18\x04 \x01(\tR\vsignerKeyId\x12,\n" +
+	"\x12signer_key_version\x18\x05 \x01(\rR\x10signerKeyVersion\x127\n" +
+	"\x18signer_public_key_digest\x18\x06 \x01(\tR\x15signerPublicKeyDigest\x12<\n" +
+	"\bevidence\x18\a \x03(\v2 .lrail.v1.BuildEvidenceReferenceR\bevidence\"\x9a\x01\n" +
+	"\x16BuildEvidenceReference\x12\x12\n" +
+	"\x04kind\x18\x01 \x01(\tR\x04kind\x12\x1c\n" +
+	"\treference\x18\x02 \x01(\tR\treference\x12'\n" +
+	"\x0fmanifest_digest\x18\x03 \x01(\tR\x0emanifestDigest\x12%\n" +
+	"\x0epayload_digest\x18\x04 \x01(\tR\rpayloadDigest\"|\n" +
 	"\x10BuildCellCleanup\x12\x16\n" +
 	"\x06status\x18\x01 \x01(\tR\x06status\x12#\n" +
 	"\rresidue_count\x18\x02 \x01(\rR\fresidueCount\x12+\n" +
@@ -1049,7 +1233,7 @@ func file_lrail_v1_buildcell_proto_rawDescGZIP() []byte {
 	return file_lrail_v1_buildcell_proto_rawDescData
 }
 
-var file_lrail_v1_buildcell_proto_msgTypes = make([]protoimpl.MessageInfo, 12)
+var file_lrail_v1_buildcell_proto_msgTypes = make([]protoimpl.MessageInfo, 14)
 var file_lrail_v1_buildcell_proto_goTypes = []any{
 	(*ExecuteBuildAssignmentRequest)(nil), // 0: lrail.v1.ExecuteBuildAssignmentRequest
 	(*CancelBuildAssignmentRequest)(nil),  // 1: lrail.v1.CancelBuildAssignmentRequest
@@ -1059,31 +1243,35 @@ var file_lrail_v1_buildcell_proto_goTypes = []any{
 	(*BuildCellEvent)(nil),                // 5: lrail.v1.BuildCellEvent
 	(*BuildCellResult)(nil),               // 6: lrail.v1.BuildCellResult
 	(*BuildCellOutput)(nil),               // 7: lrail.v1.BuildCellOutput
-	(*BuildCellCleanup)(nil),              // 8: lrail.v1.BuildCellCleanup
-	(*CleanupBuildResidueRequest)(nil),    // 9: lrail.v1.CleanupBuildResidueRequest
-	(*CleanupBuildResidueResponse)(nil),   // 10: lrail.v1.CleanupBuildResidueResponse
-	(*BuildResidue)(nil),                  // 11: lrail.v1.BuildResidue
+	(*BuildSupplyChainResult)(nil),        // 8: lrail.v1.BuildSupplyChainResult
+	(*BuildEvidenceReference)(nil),        // 9: lrail.v1.BuildEvidenceReference
+	(*BuildCellCleanup)(nil),              // 10: lrail.v1.BuildCellCleanup
+	(*CleanupBuildResidueRequest)(nil),    // 11: lrail.v1.CleanupBuildResidueRequest
+	(*CleanupBuildResidueResponse)(nil),   // 12: lrail.v1.CleanupBuildResidueResponse
+	(*BuildResidue)(nil),                  // 13: lrail.v1.BuildResidue
 }
 var file_lrail_v1_buildcell_proto_depIdxs = []int32{
 	6,  // 0: lrail.v1.GetBuildAssignmentResponse.result:type_name -> lrail.v1.BuildCellResult
 	6,  // 1: lrail.v1.BuildCellEvent.result:type_name -> lrail.v1.BuildCellResult
 	7,  // 2: lrail.v1.BuildCellResult.outputs:type_name -> lrail.v1.BuildCellOutput
-	8,  // 3: lrail.v1.BuildCellResult.cleanup:type_name -> lrail.v1.BuildCellCleanup
-	8,  // 4: lrail.v1.CleanupBuildResidueResponse.cleanup:type_name -> lrail.v1.BuildCellCleanup
-	11, // 5: lrail.v1.CleanupBuildResidueResponse.residues:type_name -> lrail.v1.BuildResidue
-	0,  // 6: lrail.v1.BuildCellService.ExecuteAssignment:input_type -> lrail.v1.ExecuteBuildAssignmentRequest
-	1,  // 7: lrail.v1.BuildCellService.CancelAssignment:input_type -> lrail.v1.CancelBuildAssignmentRequest
-	3,  // 8: lrail.v1.BuildCellService.GetAssignment:input_type -> lrail.v1.GetBuildAssignmentRequest
-	9,  // 9: lrail.v1.BuildResidueService.CleanupResidue:input_type -> lrail.v1.CleanupBuildResidueRequest
-	5,  // 10: lrail.v1.BuildCellService.ExecuteAssignment:output_type -> lrail.v1.BuildCellEvent
-	2,  // 11: lrail.v1.BuildCellService.CancelAssignment:output_type -> lrail.v1.CancelBuildAssignmentResponse
-	4,  // 12: lrail.v1.BuildCellService.GetAssignment:output_type -> lrail.v1.GetBuildAssignmentResponse
-	10, // 13: lrail.v1.BuildResidueService.CleanupResidue:output_type -> lrail.v1.CleanupBuildResidueResponse
-	10, // [10:14] is the sub-list for method output_type
-	6,  // [6:10] is the sub-list for method input_type
-	6,  // [6:6] is the sub-list for extension type_name
-	6,  // [6:6] is the sub-list for extension extendee
-	0,  // [0:6] is the sub-list for field type_name
+	10, // 3: lrail.v1.BuildCellResult.cleanup:type_name -> lrail.v1.BuildCellCleanup
+	8,  // 4: lrail.v1.BuildCellOutput.supply_chain:type_name -> lrail.v1.BuildSupplyChainResult
+	9,  // 5: lrail.v1.BuildSupplyChainResult.evidence:type_name -> lrail.v1.BuildEvidenceReference
+	10, // 6: lrail.v1.CleanupBuildResidueResponse.cleanup:type_name -> lrail.v1.BuildCellCleanup
+	13, // 7: lrail.v1.CleanupBuildResidueResponse.residues:type_name -> lrail.v1.BuildResidue
+	0,  // 8: lrail.v1.BuildCellService.ExecuteAssignment:input_type -> lrail.v1.ExecuteBuildAssignmentRequest
+	1,  // 9: lrail.v1.BuildCellService.CancelAssignment:input_type -> lrail.v1.CancelBuildAssignmentRequest
+	3,  // 10: lrail.v1.BuildCellService.GetAssignment:input_type -> lrail.v1.GetBuildAssignmentRequest
+	11, // 11: lrail.v1.BuildResidueService.CleanupResidue:input_type -> lrail.v1.CleanupBuildResidueRequest
+	5,  // 12: lrail.v1.BuildCellService.ExecuteAssignment:output_type -> lrail.v1.BuildCellEvent
+	2,  // 13: lrail.v1.BuildCellService.CancelAssignment:output_type -> lrail.v1.CancelBuildAssignmentResponse
+	4,  // 14: lrail.v1.BuildCellService.GetAssignment:output_type -> lrail.v1.GetBuildAssignmentResponse
+	12, // 15: lrail.v1.BuildResidueService.CleanupResidue:output_type -> lrail.v1.CleanupBuildResidueResponse
+	12, // [12:16] is the sub-list for method output_type
+	8,  // [8:12] is the sub-list for method input_type
+	8,  // [8:8] is the sub-list for extension type_name
+	8,  // [8:8] is the sub-list for extension extendee
+	0,  // [0:8] is the sub-list for field type_name
 }
 
 func init() { file_lrail_v1_buildcell_proto_init() }
@@ -1097,7 +1285,7 @@ func file_lrail_v1_buildcell_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_lrail_v1_buildcell_proto_rawDesc), len(file_lrail_v1_buildcell_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   12,
+			NumMessages:   14,
 			NumExtensions: 0,
 			NumServices:   2,
 		},

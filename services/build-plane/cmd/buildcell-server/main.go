@@ -29,8 +29,11 @@ import (
 	"github.com/mayowaoladosu/layerrail-lrail/services/build-plane/internal/buildegress"
 	"github.com/mayowaoladosu/layerrail-lrail/services/build-plane/internal/buildkube"
 	"github.com/mayowaoladosu/layerrail-lrail/services/build-plane/internal/buildregistry"
+	"github.com/mayowaoladosu/layerrail-lrail/services/build-plane/internal/buildsigning"
+	"github.com/mayowaoladosu/layerrail-lrail/services/build-plane/internal/buildsupply"
 	"github.com/mayowaoladosu/layerrail-lrail/services/build-plane/internal/buildtransport"
 	"github.com/mayowaoladosu/layerrail-lrail/services/build-plane/internal/buildworker"
+	"github.com/mayowaoladosu/layerrail-lrail/services/build-plane/internal/llbcompiler"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
 	"google.golang.org/grpc"
@@ -114,6 +117,48 @@ func run() error {
 	if err != nil {
 		return err
 	}
+	signingTLS, err := buildtransport.NewReloadingClientTLSConfig(
+		os.Getenv("LRAIL_SIGNING_CLIENT_CERT"), os.Getenv("LRAIL_SIGNING_CLIENT_KEY"), os.Getenv("LRAIL_SIGNING_SERVER_CA"),
+		os.Getenv("LRAIL_SIGNING_SERVER_NAME"), splitCSV(os.Getenv("LRAIL_SIGNING_SERVER_URIS")),
+	)
+	if err != nil {
+		return err
+	}
+	signingConnection, err := grpc.NewClient(
+		os.Getenv("LRAIL_SIGNING_ADDRESS"), grpc.WithTransportCredentials(grpccredentials.NewTLS(signingTLS)),
+		grpc.WithDefaultCallOptions(grpc.MaxCallSendMsgSize(buildsupply.MaxEvidenceBytes+128<<10), grpc.MaxCallRecvMsgSize(128<<10)),
+	)
+	if err != nil {
+		return errors.New("connect to build evidence signer")
+	}
+	defer signingConnection.Close()
+	signer, err := buildsigning.NewGRPCSigner(lrailv1.NewBuildEvidenceSigningServiceClient(signingConnection), 30*time.Second)
+	if err != nil {
+		return err
+	}
+	maxDBAge, err := time.ParseDuration(os.Getenv("LRAIL_TRIVY_MAX_DB_AGE"))
+	if err != nil {
+		return errors.New("LRAIL_TRIVY_MAX_DB_AGE is invalid")
+	}
+	scanner, err := buildsupply.NewCommandScanner(buildsupply.CommandScannerConfig{
+		SyftPath: os.Getenv("LRAIL_SYFT_PATH"), TrivyPath: os.Getenv("LRAIL_TRIVY_PATH"),
+		TrivyCacheDir: os.Getenv("LRAIL_TRIVY_CACHE_DIR"), TrivyDBMetadata: os.Getenv("LRAIL_TRIVY_DB_METADATA"),
+		SecretConfigPath: os.Getenv("LRAIL_TRIVY_SECRET_CONFIG"), WorkRoot: os.Getenv("LRAIL_EVIDENCE_WORK_ROOT"),
+		ScanTimeout: 12 * time.Minute, MaxDBAge: maxDBAge, Clock: clock,
+	})
+	if err != nil {
+		return err
+	}
+	toolCheckContext, toolCheckCancel := context.WithTimeout(context.Background(), time.Minute)
+	toolCheckErr := scanner.CheckTools(toolCheckContext, llbcompiler.CurrentSyftVersion, llbcompiler.CurrentTrivyVersion)
+	toolCheckCancel()
+	if toolCheckErr != nil {
+		return toolCheckErr
+	}
+	evidence, err := buildsupply.NewPipeline(scanner, signer)
+	if err != nil {
+		return err
+	}
 	distributionHTTP, err := registryHTTPClient(os.Getenv("LRAIL_HARBOR_CA_FILE"))
 	if err != nil {
 		return err
@@ -128,6 +173,7 @@ func run() error {
 	}
 	committer, err := buildregistry.NewPublisher(buildregistry.PublisherConfig{
 		Broker: registryBroker, Registry: distribution, Clock: clock,
+		RegistryOrigin: os.Getenv("LRAIL_HARBOR_REGISTRY"), Evidence: evidence,
 		StagingRoot: os.Getenv("LRAIL_REGISTRY_STAGING_ROOT"), StaticStore: staticStore,
 	})
 	if err != nil {

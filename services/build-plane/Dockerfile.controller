@@ -8,8 +8,14 @@ COPY internal ./internal
 COPY services/build-plane ./services/build-plane
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags='-s -w' -o /out/lrail-buildcell-server ./services/build-plane/cmd/buildcell-server
 
+FROM anchore/syft@sha256:473a60e3a58e29aca3aedb3e99e787bb4ef273917e44d10fcbea4330a07320bb AS syft
+FROM aquasec/trivy@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f AS trivy
+
 FROM gcr.io/distroless/static-debian12:nonroot@sha256:b7bb25d9f7c31d2bdd1982feb4dafcaf137703c7075dbe2febb41c24212b946f
 COPY --from=build --chown=65532:65532 /out/lrail-buildcell-server /usr/local/bin/lrail-buildcell-server
+COPY --from=syft --chown=65532:65532 /syft /usr/local/bin/syft
+COPY --from=trivy --chown=65532:65532 /usr/local/bin/trivy /usr/local/bin/trivy
+COPY --chown=65532:65532 services/build-plane/config/trivy-secret.yaml /etc/lrail/trivy-secret.yaml
 LABEL org.opencontainers.image.source="https://github.com/mayowaoladosu/layerrail-lrail" \
 	org.opencontainers.image.licenses="LicenseRef-Proprietary" \
 	org.opencontainers.image.title="Lrail build-cell controller"

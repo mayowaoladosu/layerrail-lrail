@@ -1,0 +1,31 @@
+syntax = "proto3";
+
+package lrail.v1;
+
+option go_package = "github.com/mayowaoladosu/layerrail-lrail/gen/go/lrail/v1;lrailv1";
+
+// BuildEvidenceSigningService is the mTLS-only non-exportable signing seam.
+// It accepts only bounded Cosign/DSSE payloads that bind an immutable build subject.
+service BuildEvidenceSigningService {
+  rpc SignEvidence(SignBuildEvidenceRequest) returns (SignBuildEvidenceResponse);
+}
+
+message SignBuildEvidenceRequest {
+  string organization_id = 1;
+  string project_id = 2;
+  string build_id = 3;
+  uint32 attempt = 4;
+  string output_name = 5;
+  string kind = 6;
+  string subject_digest = 7;
+  bytes payload = 8;
+  string payload_digest = 9;
+}
+
+message SignBuildEvidenceResponse {
+  string key_id = 1;
+  uint32 key_version = 2;
+  string algorithm = 3;
+  bytes public_key_pem = 4;
+  bytes signature = 5;
+}

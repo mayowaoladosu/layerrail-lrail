@@ -87,6 +87,24 @@ message BuildCellOutput {
   string manifest_digest = 7;
   repeated string layer_digests = 8;
   string publication_manifest_ref = 9;
+  BuildSupplyChainResult supply_chain = 10;
+}
+
+message BuildSupplyChainResult {
+  string policy_state = 1;
+  string scan_state = 2;
+  string policy_digest = 3;
+  string signer_key_id = 4;
+  uint32 signer_key_version = 5;
+  string signer_public_key_digest = 6;
+  repeated BuildEvidenceReference evidence = 7;
+}
+
+message BuildEvidenceReference {
+  string kind = 1;
+  string reference = 2;
+  string manifest_digest = 3;
+  string payload_digest = 4;
 }
 
 message BuildCellCleanup {

@@ -1,0 +1,37 @@
+syntax = "proto3";
+
+package lrail.v1;
+
+option go_package = "github.com/mayowaoladosu/layerrail-lrail/gen/go/lrail/v1;lrailv1";
+
+// BuildRegistryCapabilityService keeps Harbor administrator and robot secrets
+// outside the build controller while issuing one short-lived repository token.
+service BuildRegistryCapabilityService {
+  rpc IssuePushCapability(IssueRegistryPushCapabilityRequest) returns (IssueRegistryPushCapabilityResponse);
+  rpc RevokeCapability(RevokeRegistryCapabilityRequest) returns (RevokeRegistryCapabilityResponse);
+}
+
+message IssueRegistryPushCapabilityRequest {
+  string organization_id = 1;
+  string project_id = 2;
+  string build_id = 3;
+  uint32 attempt = 4;
+  string output_name = 5;
+  string expires_at = 6;
+}
+
+message IssueRegistryPushCapabilityResponse {
+  string lease_id = 1;
+  string registry = 2;
+  string repository = 3;
+  string bearer_token = 4;
+  string expires_at = 5;
+}
+
+message RevokeRegistryCapabilityRequest {
+  string lease_id = 1;
+}
+
+message RevokeRegistryCapabilityResponse {
+  bool revoked = 1;
+}

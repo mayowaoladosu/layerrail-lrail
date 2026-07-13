@@ -202,7 +202,7 @@ func TestCompileEmitsExplicitCacheSecretAndNetworkCapabilities(t *testing.T) {
 		}
 		for _, action := range file.Actions {
 			directory := action.GetMkdir()
-			if directory != nil && directory.Path == "/cache" && directory.Mode == 0o700 &&
+			if directory != nil && directory.Path == "/cache" && directory.Mode == 0o755 &&
 				directory.Owner.GetUser().GetByID() == 10001 && directory.Owner.GetGroup().GetByID() == 10001 {
 				cacheOwned = true
 			}

@@ -230,7 +230,7 @@ func (compiler *graphCompiler) compileRun(node buildir.Node) (llb.State, error) 
 	for _, mountID := range mountIDs {
 		if cache, exists := compiler.capabilities.cacheByNode[mountID]; exists {
 			cacheState := llb.Scratch().File(
-				llb.Mkdir("/cache", 0o700, llb.WithUIDGID(uid, gid)),
+				llb.Mkdir("/cache", 0o755, llb.WithUIDGID(uid, gid)),
 				llb.WithCustomName("lrail cache "+mountID),
 			)
 			options = append(options, llb.AddMount(

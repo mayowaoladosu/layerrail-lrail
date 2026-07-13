@@ -158,7 +158,7 @@ func (scanner *CommandScanner) Analyze(ctx context.Context, request ScanRequest)
 	}
 	trivyRaw, err := scanner.runner.Run(scanContext, scanner.config.TrivyPath, []string{
 		"image", "--input", layout + "@" + request.ManifestDigest, "--format", "json",
-		"--scanners", "vuln,secret,license,misconfig", "--image-config-scanners", "secret,misconfig",
+		"--scanners", "vuln,secret,license", "--image-config-scanners", "secret",
 		"--license-full", "--cache-dir", databasePaths.Cache, "--cache-backend", "memory",
 		"--secret-config", scanner.config.SecretConfigPath, "--skip-db-update", "--skip-java-db-update",
 		"--skip-check-update", "--skip-vex-repo-update", "--offline-scan", "--disable-telemetry",
@@ -166,6 +166,20 @@ func (scanner *CommandScanner) Analyze(ctx context.Context, request ScanRequest)
 	}, scanner.environment(), MaxToolOutputBytes)
 	if err != nil {
 		return Analysis{}, errors.New("Trivy image analysis failed")
+	}
+	configurationRaw, err := scanner.runner.Run(scanContext, scanner.config.TrivyPath, []string{
+		"image", "--input", layout + "@" + request.ManifestDigest, "--format", "json",
+		"--scanners", "misconfig", "--image-config-scanners", "misconfig", "--skip-files", "**",
+		"--cache-dir", databasePaths.Cache, "--cache-backend", "memory",
+		"--skip-db-update", "--skip-java-db-update", "--skip-check-update", "--skip-vex-repo-update",
+		"--offline-scan", "--disable-telemetry", "--no-progress", "--quiet", "--max-image-size", "20GB",
+	}, scanner.environment(), MaxToolOutputBytes)
+	if err != nil {
+		return Analysis{}, errors.New("Trivy image configuration analysis failed")
+	}
+	trivyRaw, err = mergeTrivyReports(trivyRaw, configurationRaw)
+	if err != nil {
+		return Analysis{}, err
 	}
 	databaseAfter, err := scanner.trivyDatabaseIdentity(databasePaths)
 	if err != nil {
@@ -182,6 +196,22 @@ func (scanner *CommandScanner) Analyze(ctx context.Context, request ScanRequest)
 		return Analysis{}, errors.New("normalized scanner evidence exceeds bounds")
 	}
 	return Analysis{SBOM: sbom, Scan: report, Summary: summary}, nil
+}
+
+func mergeTrivyReports(contents ...[]byte) ([]byte, error) {
+	combined := trivyReport{SchemaVersion: 2}
+	for _, raw := range contents {
+		var report trivyReport
+		if len(raw) == 0 || len(raw) > MaxToolOutputBytes || decodeExternalJSON(raw, &report) != nil || report.SchemaVersion != 2 {
+			return nil, errors.New("Trivy JSON report is malformed or unsupported")
+		}
+		combined.Results = append(combined.Results, report.Results...)
+	}
+	merged, err := json.Marshal(combined)
+	if err != nil || len(merged) > MaxToolOutputBytes {
+		return nil, errors.New("combined Trivy report exceeds bounds")
+	}
+	return merged, nil
 }
 
 func (scanner *CommandScanner) environment() []string {

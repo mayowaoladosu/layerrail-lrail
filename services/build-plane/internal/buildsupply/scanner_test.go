@@ -72,19 +72,38 @@ func TestCommandScannerUsesOfflinePinnedToolsAndVerifiedLayout(t *testing.T) {
 		OCIPath: request.OCIPath, OCIArchiveDigest: request.OCIArchiveDigest, OCIArchiveSize: request.OCIArchiveSize,
 		ManifestDigest: request.Identity.ManifestDigest, OutputName: "api", TargetPlatform: "linux/amd64", SyftVersion: "1.46.0", TrivyVersion: "0.72.0",
 	})
-	if err != nil || len(analysis.SBOM) == 0 || len(analysis.Scan) == 0 || len(runner.commands) != 4 {
+	if err != nil || len(analysis.SBOM) == 0 || len(analysis.Scan) == 0 || len(runner.commands) != 5 {
 		t.Fatalf("analysis=%#v commands=%#v error=%v", analysis, runner.commands, err)
 	}
-	trivyCommand := strings.Join(runner.commands[3].arguments, " ")
-	for _, required := range []string{"--offline-scan", "--skip-db-update", "--skip-check-update", "--scanners vuln,secret,license,misconfig", "@" + request.Identity.ManifestDigest} {
-		if !strings.Contains(trivyCommand, required) {
-			t.Fatalf("Trivy command lacks %q: %s", required, trivyCommand)
+	artifactCommand := strings.Join(runner.commands[3].arguments, " ")
+	for _, required := range []string{"--offline-scan", "--skip-db-update", "--skip-check-update", "--scanners vuln,secret,license", "--image-config-scanners secret", "@" + request.Identity.ManifestDigest} {
+		if !strings.Contains(artifactCommand, required) {
+			t.Fatalf("artifact Trivy command lacks %q: %s", required, artifactCommand)
+		}
+	}
+	configurationCommand := strings.Join(runner.commands[4].arguments, " ")
+	for _, required := range []string{"--scanners misconfig", "--image-config-scanners misconfig", "--skip-files **", "@" + request.Identity.ManifestDigest} {
+		if !strings.Contains(configurationCommand, required) {
+			t.Fatalf("configuration Trivy command lacks %q: %s", required, configurationCommand)
 		}
 	}
 	for _, command := range runner.commands {
 		if strings.Contains(strings.Join(command.environment, "\x00"), "TOKEN") || strings.Contains(strings.Join(command.environment, "\x00"), "PASSWORD") {
 			t.Fatalf("tool environment contains credential-like data: %#v", command.environment)
 		}
+	}
+}
+
+func TestMergeTrivyReportsPreservesArtifactAndImageConfigFindings(t *testing.T) {
+	t.Parallel()
+	artifact := []byte(`{"SchemaVersion":2,"Results":[{"Target":"app","Vulnerabilities":[{"VulnerabilityID":"CVE-test","PkgID":"pkg@1","PkgName":"pkg","InstalledVersion":"1","Severity":"LOW"}]}]}`)
+	configuration := []byte(`{"SchemaVersion":2,"Results":[{"Target":"app","Misconfigurations":[{"ID":"DS-0026","Title":"No HEALTHCHECK defined","Severity":"LOW","Status":"FAIL"}]}]}`)
+	merged, err := mergeTrivyReports(artifact, configuration)
+	if err != nil || !strings.Contains(string(merged), "CVE-test") || !strings.Contains(string(merged), "DS-0026") {
+		t.Fatalf("merged=%s error=%v", merged, err)
+	}
+	if _, err := mergeTrivyReports(artifact, []byte(`{"SchemaVersion":1,"Results":[]}`)); err == nil {
+		t.Fatal("expected unsupported report rejection")
 	}
 }
 

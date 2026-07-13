@@ -1,0 +1,305 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: lrail-build-control
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: lrail-build-system
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: lrail-build
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: build-control
+  namespace: lrail-build-control
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: lrail-build-control
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: lrail-control
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: lrail-build-broker
+      ports:
+        - {protocol: TCP, port: 9443}
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: lrail-build
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: lrail-build-worker
+      ports:
+        - {protocol: TCP, port: 1234}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: lrail-build-system
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: lrail-residue-agent
+      ports:
+        - {protocol: TCP, port: 9444}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: lrail-security
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: openbao
+      ports:
+        - {protocol: TCP, port: 8200}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: lrail-storage
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: minio
+      ports:
+        - {protocol: TCP, port: 9000}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: residue-agent
+  namespace: lrail-build-system
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: lrail-residue-agent
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: lrail-build-control
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: lrail-build-control
+      ports:
+        - {protocol: TCP, port: 9444}
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: build-control
+  namespace: lrail-build-control
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: lrail-build-control
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: lrail-control
+            k8s:app.kubernetes.io/name: lrail-build-broker
+      toPorts:
+        - ports:
+            - {port: "9443", protocol: TCP}
+  egress:
+    - toEntities: [kube-apiserver]
+      toPorts:
+        - ports:
+            - {port: "443", protocol: TCP}
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s:k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - {port: "53", protocol: UDP}
+            - {port: "53", protocol: TCP}
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: lrail-build
+            k8s:app.kubernetes.io/name: lrail-build-worker
+      toPorts:
+        - ports:
+            - {port: "1234", protocol: TCP}
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: lrail-build-system
+            k8s:app.kubernetes.io/name: lrail-residue-agent
+      toPorts:
+        - ports:
+            - {port: "9444", protocol: TCP}
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: lrail-security
+            k8s:app.kubernetes.io/name: openbao
+      toPorts:
+        - ports:
+            - {port: "8200", protocol: TCP}
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: lrail-storage
+            k8s:app.kubernetes.io/name: minio
+      toPorts:
+        - ports:
+            - {port: "9000", protocol: TCP}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: build-egress
+  namespace: lrail-build-control
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: lrail-build-egress
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: lrail-build
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: lrail-build-worker
+      ports:
+        - {protocol: TCP, port: 8443}
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - {protocol: UDP, port: 53}
+        - {protocol: TCP, port: 53}
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 0.0.0.0/8
+              - 10.0.0.0/8
+              - 100.64.0.0/10
+              - 127.0.0.0/8
+              - 169.254.0.0/16
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+              - 192.0.0.0/24
+              - 192.0.2.0/24
+              - 192.88.99.0/24
+              - 198.18.0.0/15
+              - 198.51.100.0/24
+              - 203.0.113.0/24
+              - 224.0.0.0/4
+              - 240.0.0.0/4
+      ports:
+        - {protocol: TCP, port: 443}
+    - to:
+        - ipBlock:
+            cidr: "::/0"
+            except:
+              - "::/128"
+              - "::1/128"
+              - "fc00::/7"
+              - "fe80::/10"
+              - "fec0::/10"
+              - "ff00::/8"
+              - "64:ff9b:1::/48"
+              - "100::/64"
+              - "2001:2::/48"
+              - "2001:10::/28"
+              - "2001:db8::/32"
+              - "3fff::/20"
+      ports:
+        - {protocol: TCP, port: 443}
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: build-egress
+  namespace: lrail-build-control
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: lrail-build-egress
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: lrail-build
+            k8s:app.kubernetes.io/name: lrail-build-worker
+      toPorts:
+        - ports:
+            - {port: "8443", protocol: TCP}
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s:k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - {port: "53", protocol: UDP}
+            - {port: "53", protocol: TCP}
+    - toEntities: [world]
+      toPorts:
+        - ports:
+            - {port: "443", protocol: TCP}
+  egressDeny:
+    - toCIDRSet:
+        - {cidr: 0.0.0.0/8}
+        - {cidr: 10.0.0.0/8}
+        - {cidr: 100.64.0.0/10}
+        - {cidr: 127.0.0.0/8}
+        - {cidr: 169.254.0.0/16}
+        - {cidr: 172.16.0.0/12}
+        - {cidr: 192.0.0.0/24}
+        - {cidr: 192.0.2.0/24}
+        - {cidr: 192.88.99.0/24}
+        - {cidr: 192.168.0.0/16}
+        - {cidr: 198.18.0.0/15}
+        - {cidr: 198.51.100.0/24}
+        - {cidr: 203.0.113.0/24}
+        - {cidr: 224.0.0.0/4}
+        - {cidr: 240.0.0.0/4}
+        - {cidr: "::/128"}
+        - {cidr: "::1/128"}
+        - {cidr: "64:ff9b:1::/48"}
+        - {cidr: "100::/64"}
+        - {cidr: "2001:2::/48"}
+        - {cidr: "2001:10::/28"}
+        - {cidr: "2001:db8::/32"}
+        - {cidr: "3fff::/20"}
+        - {cidr: "fc00::/7"}
+        - {cidr: "fe80::/10"}
+        - {cidr: "fec0::/10"}
+        - {cidr: "ff00::/8"}

@@ -1,0 +1,126 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: lrail-build-egress
+  namespace: lrail-build-control
+automountServiceAccountToken: false
+imagePullSecrets:
+  - name: lrail-build-images
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: lrail-build-egress
+  namespace: lrail-build-control
+  labels:
+    app.kubernetes.io/name: lrail-build-egress
+    app.kubernetes.io/component: policy-proxy
+spec:
+  selector:
+    app.kubernetes.io/name: lrail-build-egress
+  ports:
+    - name: connect
+      port: 8443
+      targetPort: connect
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lrail-build-egress
+  namespace: lrail-build-control
+  labels:
+    app.kubernetes.io/name: lrail-build-egress
+    app.kubernetes.io/component: policy-proxy
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: lrail-build-egress
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: lrail-build-egress
+        app.kubernetes.io/component: policy-proxy
+    spec:
+      serviceAccountName: lrail-build-egress
+      automountServiceAccountToken: false
+      imagePullSecrets:
+        - name: lrail-build-images
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 15
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+        appArmorProfile:
+          type: RuntimeDefault
+      containers:
+        - name: egress-proxy
+          image: ghcr.io/mayowaoladosu/layerrail-lrail/build-egress-proxy@sha256:979fc0a35d77b1ef809740a8d612f194734acc86d0fb3449532dd0686f06890d
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+            appArmorProfile:
+              type: RuntimeDefault
+          ports:
+            - name: connect
+              containerPort: 8443
+              protocol: TCP
+          env:
+            - name: LRAIL_SERVER_CERT
+              value: /run/lrail-server/tls.crt
+            - name: LRAIL_SERVER_KEY
+              value: /run/lrail-server/tls.key
+            - name: LRAIL_CLIENT_CA
+              value: /run/lrail-server/ca.crt
+            - name: LRAIL_DNS_SERVER
+              valueFrom: {configMapKeyRef: {name: lrail-build-cell-site, key: cluster-dns-address}}
+            - name: LRAIL_LISTEN_ADDRESS
+              value: :8443
+          resources:
+            requests: {cpu: 250m, memory: 128Mi, ephemeral-storage: 64Mi}
+            limits: {cpu: "2", memory: 512Mi, ephemeral-storage: 256Mi}
+          readinessProbe:
+            tcpSocket: {port: connect}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+            timeoutSeconds: 1
+            failureThreshold: 12
+          livenessProbe:
+            tcpSocket: {port: connect}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 1
+            failureThreshold: 6
+          volumeMounts:
+            - {name: server-tls, mountPath: /run/lrail-server, readOnly: true}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: server-tls
+          secret: {secretName: lrail-build-egress-server-tls, defaultMode: 0440}
+        - name: tmp
+          emptyDir: {medium: Memory, sizeLimit: 32Mi}
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: lrail-build-egress
+  namespace: lrail-build-control
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: lrail-build-egress

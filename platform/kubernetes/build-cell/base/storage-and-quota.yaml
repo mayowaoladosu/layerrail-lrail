@@ -1,0 +1,72 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: lrail-build-state
+  namespace: lrail-build-control
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 2Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: lrail-build-artifacts
+  namespace: lrail-build-control
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 100Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: lrail-build-cache
+  namespace: lrail-build-control
+spec:
+  accessModes: ["ReadWriteOnce"]
+  resources:
+    requests:
+      storage: 200Gi
+---
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: lrail-build-cell
+  namespace: lrail-build
+spec:
+  hard:
+    count/jobs.batch: "200"
+    count/pods: "200"
+    count/services: "200"
+    count/secrets: "200"
+    count/serviceaccounts: "200"
+    requests.cpu: "200"
+    requests.memory: 200Gi
+    requests.ephemeral-storage: 800Gi
+    limits.cpu: "800"
+    limits.memory: 1600Gi
+    limits.ephemeral-storage: 4800Gi
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: lrail-build-worker
+  namespace: lrail-build
+spec:
+  limits:
+    - type: Container
+      defaultRequest:
+        cpu: "1"
+        memory: 1Gi
+        ephemeral-storage: 4Gi
+      default:
+        cpu: "4"
+        memory: 8Gi
+        ephemeral-storage: 24Gi
+      max:
+        cpu: "8"
+        memory: 16Gi
+        ephemeral-storage: 32Gi

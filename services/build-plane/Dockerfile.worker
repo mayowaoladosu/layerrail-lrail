@@ -1,0 +1,46 @@
+# syntax=docker/dockerfile:1.12
+FROM golang:1.26.5-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2 AS build
+WORKDIR /src
+COPY go.mod go.sum ./
+RUN go mod download
+COPY internal ./internal
+COPY services/build-plane ./services/build-plane
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags='-s -w' -o /out/lrail-buildkit-wrapper ./services/build-plane/cmd/buildkit-wrapper
+
+
+FROM golang:1.26.5-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2 AS buildkit-build
+WORKDIR /src
+RUN go mod init lrail.local/buildkit-runtime \
+	&& go get github.com/moby/buildkit/cmd/buildkitd@v0.31.1 \
+	&& go get github.com/containerd/containerd/v2@v2.2.5 golang.org/x/crypto@v0.54.0 golang.org/x/net@v0.57.0 \
+	&& CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags='-s -w' -o /out/buildkitd github.com/moby/buildkit/cmd/buildkitd
+
+FROM golang:1.26.5-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2 AS rootlesskit-build
+WORKDIR /src
+RUN go mod init lrail.local/rootlesskit-runtime \
+	&& go get github.com/rootless-containers/rootlesskit/v3/cmd/rootlesskit@v3.0.2 \
+	&& go get golang.org/x/crypto@v0.54.0 golang.org/x/net@v0.57.0 \
+	&& CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags='-s -w' -o /out/rootlesskit github.com/rootless-containers/rootlesskit/v3/cmd/rootlesskit
+
+FROM golang:1.26.5-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2 AS runc-build
+RUN apk add --no-cache gcc musl-dev pkgconf libseccomp-dev libseccomp-static
+WORKDIR /src
+RUN go mod init lrail.local/runc-runtime \
+	&& go get github.com/opencontainers/runc@v1.3.6 \
+	&& go get golang.org/x/net@v0.57.0 \
+	&& CGO_ENABLED=1 GOOS=linux go build -trimpath -tags='apparmor seccomp netgo cgo static_build osusergo' -ldflags='-s -w -linkmode external -extldflags -static' -o /out/buildkit-runc github.com/opencontainers/runc
+
+FROM moby/buildkit:v0.31.1-rootless@sha256:946cf909534b789c9b84af75e6d4f8cb23c3b9cb387daec5ba0f4878a3e4647c
+USER 0:0
+RUN apk del --no-scripts git openssh libcurl \
+	&& rm -f /usr/bin/buildctl /usr/bin/buildkit-cni-* \
+	&& rm -rf /var/cache/apk/* /root/.cache /home/user/.cache
+COPY --from=buildkit-build /out/buildkitd /usr/bin/buildkitd
+COPY --from=rootlesskit-build /out/rootlesskit /usr/bin/rootlesskit
+COPY --from=runc-build /out/buildkit-runc /usr/bin/buildkit-runc
+COPY --from=build --chown=1000:1000 /out/lrail-buildkit-wrapper /usr/local/bin/lrail-buildkit-wrapper
+LABEL org.opencontainers.image.source="https://github.com/mayowaoladosu/layerrail-lrail" \
+	org.opencontainers.image.licenses="LicenseRef-Proprietary" \
+	org.opencontainers.image.title="Lrail rootless BuildKit worker"
+USER 1000:1000
+ENTRYPOINT ["/usr/local/bin/lrail-buildkit-wrapper"]

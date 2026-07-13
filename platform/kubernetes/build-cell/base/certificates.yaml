@@ -1,0 +1,113 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: lrail-build-cell-server
+  namespace: lrail-build-control
+spec:
+  secretName: lrail-build-cell-server-tls
+  duration: 24h
+  renewBefore: 8h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  dnsNames:
+    - lrail-build-cell.lrail-build-control.svc
+    - lrail-build-cell.lrail-build-control.svc.cluster.local
+  uris:
+    - spiffe://lrail.internal/build-cell
+  usages: [server auth]
+  issuerRef:
+    group: cert-manager.io
+    kind: ClusterIssuer
+    name: lrail-internal-ca
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: lrail-build-egress-client-ca
+  namespace: lrail-build-control
+spec:
+  secretName: lrail-build-egress-client-ca
+  commonName: Lrail build egress client CA
+  isCA: true
+  duration: 168h
+  renewBefore: 24h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  usages: [cert sign, crl sign, digital signature]
+  issuerRef:
+    group: cert-manager.io
+    kind: ClusterIssuer
+    name: lrail-internal-ca
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: lrail-build-egress-server
+  namespace: lrail-build-control
+spec:
+  secretName: lrail-build-egress-server-tls
+  duration: 24h
+  renewBefore: 8h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  dnsNames:
+    - lrail-build-egress.lrail-build-control.svc
+    - lrail-build-egress.lrail-build-control.svc.cluster.local
+  uris:
+    - spiffe://lrail.internal/build-egress-proxy
+  usages: [server auth]
+  issuerRef:
+    group: cert-manager.io
+    kind: ClusterIssuer
+    name: lrail-internal-ca
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: lrail-residue-client
+  namespace: lrail-build-control
+spec:
+  secretName: lrail-residue-client-tls
+  duration: 24h
+  renewBefore: 8h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  uris:
+    - spiffe://lrail.internal/build-controller
+  usages: [client auth]
+  issuerRef:
+    group: cert-manager.io
+    kind: ClusterIssuer
+    name: lrail-internal-ca
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: lrail-residue-agent-server
+  namespace: lrail-build-system
+spec:
+  secretName: lrail-residue-agent-server-tls
+  duration: 24h
+  renewBefore: 8h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  dnsNames:
+    - lrail-residue-agent.lrail-build-system.svc
+    - lrail-residue-agent.lrail-build-system.svc.cluster.local
+  uris:
+    - spiffe://lrail.internal/residue-agent
+  usages: [server auth]
+  issuerRef:
+    group: cert-manager.io
+    kind: ClusterIssuer
+    name: lrail-internal-ca

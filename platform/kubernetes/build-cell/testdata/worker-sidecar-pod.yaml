@@ -1,0 +1,45 @@
+apiVersion: v1
+kind: Pod
+metadata:
+  name: build-fixture-a1
+  namespace: lrail-build
+  labels:
+    app.kubernetes.io/name: lrail-build-worker
+    lrail.dev/assignment: build-fixture-a1
+spec:
+  runtimeClassName: kata-qemu
+  serviceAccountName: build-fixture-a1
+  automountServiceAccountToken: false
+  imagePullSecrets:
+    - name: lrail-build-images
+  hostNetwork: false
+  hostPID: false
+  hostIPC: false
+  shareProcessNamespace: false
+  enableServiceLinks: false
+  containers:
+    - name: buildkit
+      image: ghcr.io/example.invalid/lrail/buildkit-worker@sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+      securityContext:
+        privileged: false
+        allowPrivilegeEscalation: false
+        readOnlyRootFilesystem: true
+        capabilities:
+          drop: [ALL]
+        seccompProfile:
+          type: RuntimeDefault
+        appArmorProfile:
+          type: RuntimeDefault
+    - name: forbidden-sidecar
+      image: ghcr.io/example.invalid/lrail/sidecar@sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
+  volumes:
+    - name: state
+      emptyDir:
+        sizeLimit: 20Gi
+    - name: tmp
+      emptyDir:
+        medium: Memory
+        sizeLimit: 64Mi
+    - name: tls
+      secret:
+        secretName: build-fixture-a1-tls

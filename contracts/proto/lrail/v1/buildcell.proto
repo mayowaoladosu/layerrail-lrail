@@ -1,0 +1,114 @@
+syntax = "proto3";
+
+package lrail.v1;
+
+option go_package = "github.com/mayowaoladosu/layerrail-lrail/gen/go/lrail/v1;lrailv1";
+
+// BuildCellService is the mTLS-only assignment boundary for one dedicated build cell.
+service BuildCellService {
+  rpc ExecuteAssignment(ExecuteBuildAssignmentRequest) returns (stream BuildCellEvent);
+  rpc CancelAssignment(CancelBuildAssignmentRequest) returns (CancelBuildAssignmentResponse);
+  rpc GetAssignment(GetBuildAssignmentRequest) returns (GetBuildAssignmentResponse);
+}
+
+// BuildResidueService is exposed by the privileged node-local residue agent.
+service BuildResidueService {
+  rpc CleanupResidue(CleanupBuildResidueRequest) returns (CleanupBuildResidueResponse);
+}
+
+message ExecuteBuildAssignmentRequest {
+  // Canonical JSON buildcell.Envelope. Secret values are forbidden; only signed references appear here.
+  bytes canonical_envelope = 1;
+}
+
+message CancelBuildAssignmentRequest {
+  string build_id = 1;
+  uint64 generation = 2;
+  string reason = 3;
+}
+
+message CancelBuildAssignmentResponse {
+  bool accepted = 1;
+}
+
+message GetBuildAssignmentRequest {
+  string build_id = 1;
+}
+
+message GetBuildAssignmentResponse {
+  bool found = 1;
+  bool active = 2;
+  BuildCellResult result = 3;
+}
+
+message BuildCellEvent {
+  uint64 sequence = 1;
+  uint32 attempt = 2;
+  string phase = 3;
+  string kind = 4;
+  string output = 5;
+  string vertex = 6;
+  string name = 7;
+  sint64 current = 8;
+  sint64 total = 9;
+  bool cached = 10;
+  uint32 stream = 11;
+  string line = 12;
+  string code = 13;
+  string message = 14;
+  string occurred_at = 15;
+  BuildCellResult result = 16;
+}
+
+message BuildCellResult {
+  string build_id = 1;
+  string payload_digest = 2;
+  string phase = 3;
+  uint32 attempts = 4;
+  string worker_identity = 5;
+  repeated BuildCellOutput outputs = 6;
+  string error_code = 7;
+  string started_at = 8;
+  string finished_at = 9;
+  bool replay = 10;
+  BuildCellCleanup cleanup = 11;
+  string logs_digest = 12;
+  sint64 cache_hits = 13;
+  sint64 cache_misses = 14;
+}
+
+message BuildCellOutput {
+  string name = 1;
+  string kind = 2;
+  string artifact_ref = 3;
+  string artifact_digest = 4;
+  sint64 artifact_size = 5;
+  string config_digest = 6;
+  string manifest_digest = 7;
+  repeated string layer_digests = 8;
+}
+
+message BuildCellCleanup {
+  string status = 1;
+  uint32 residue_count = 2;
+  string quarantine_reason = 3;
+}
+
+message CleanupBuildResidueRequest {
+  string build_id = 1;
+  string pod_uid = 2;
+  string pod_name = 3;
+  string node_name = 4;
+}
+
+message CleanupBuildResidueResponse {
+  BuildCellCleanup cleanup = 1;
+  repeated BuildResidue residues = 2;
+  repeated string removed_paths = 3;
+}
+
+message BuildResidue {
+  string kind = 1;
+  string target = 2;
+  string detail = 3;
+}

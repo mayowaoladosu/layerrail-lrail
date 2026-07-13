@@ -14,7 +14,7 @@
     "test": "pnpm -r --if-present test",
     "build": "pnpm -r --if-present build",
     "format:check": "prettier --check .",
-    "contracts:lint": "redocly lint contracts/openapi/lrail-v1.yaml && tsx tools/validate-contracts.ts",
+    "contracts:lint": "redocly lint contracts/openapi/lrail-v1.yaml && node --disable-warning=MODULE_TYPELESS_PACKAGE_JSON tools/validate-contracts.ts",
     "contracts:generate": "openapi-typescript"
   },
   "devDependencies": {

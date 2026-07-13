@@ -39,7 +39,7 @@ Rails stores versioned desired specifications. Commands evaluate invariants and 
 - `control-worker`: outbox, notifications, webhooks, and Temporal workflows
 - `source-gateway`: isolated fetch/upload finalization
 - `detector`: non-executing Python framework detector
-- `build-control`: Starlark, Build IR, BuildKit, Harbor, and evidence
+- `build-control`: signed assignment verification, Starlark/Build IR/LLB, disposable Kata BuildKit workers, and residue quarantine
 - `regional-control`: TargetBundle gateway, placement, capacity, and CRD controllers
 - `edge-control`: EdgeGeneration compiler and delta xDS/SDS
 - `dns-cert-control`: ownership, PowerDNS, ACME, and PKI

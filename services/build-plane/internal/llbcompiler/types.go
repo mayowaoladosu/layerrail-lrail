@@ -10,6 +10,7 @@ import (
 const (
 	CurrentPolicyAPIVersion = "lrail.build-policy/v1"
 	CurrentLockVersion      = 1
+	BuildEgressProxyURL     = "http://127.0.0.1:3128"
 )
 
 type Compiler struct {
@@ -167,6 +168,15 @@ type GraphVertex struct {
 
 func New(version string) (*Compiler, error) {
 	return newCompiler(version)
+}
+
+func LockDigest(lock DefinitionLock) (string, error) {
+	return digestValue(lock)
+}
+
+func ResolutionDigest(material BaseMaterial) (string, error) {
+	material.Platforms = sortedUnique(material.Platforms)
+	return materialResolutionDigest(material)
 }
 
 func (compiler *Compiler) Compile(ctx context.Context, request Request) (Result, error) {

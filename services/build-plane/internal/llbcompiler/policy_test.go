@@ -331,13 +331,66 @@ func TestDefinitionDigestBindsPolicyMaterialArgumentAndCompiler(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Compile argument: %v", err)
 	}
+	materialRequest := validCompileRequest(t)
+	materialRequest.BaseMaterials[0].SBOMDigest = "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee"
+	materialRequest.BaseMaterials[0].ResolutionDigest, _ = materialResolutionDigest(materialRequest.BaseMaterials[0])
+	material, err := baseCompiler.Compile(context.Background(), materialRequest)
+	if err != nil {
+		t.Fatalf("Compile material: %v", err)
+	}
 	otherCompiler, _ := New("0.1.1")
 	compilerResult, err := otherCompiler.Compile(context.Background(), validCompileRequest(t))
 	if err != nil {
 		t.Fatalf("Compile version: %v", err)
 	}
-	if base.DefinitionDigest == policy.DefinitionDigest || base.DefinitionDigest == argument.DefinitionDigest || base.DefinitionDigest == compilerResult.DefinitionDigest {
+	if base.DefinitionDigest == policy.DefinitionDigest || base.DefinitionDigest == argument.DefinitionDigest || base.DefinitionDigest == material.DefinitionDigest || base.DefinitionDigest == compilerResult.DefinitionDigest {
 		t.Fatal("definition digest omitted a locked input")
+	}
+}
+
+func TestDefinitionAndLLBDigestsBindEveryExecutionAuthority(t *testing.T) {
+	t.Parallel()
+	compiler, _ := New("0.1.0")
+	compile := func(name string, request Request) Result {
+		t.Helper()
+		request.ExpectedIRDigest, _ = buildir.DefinitionDigest(request.IR)
+		result, err := compiler.Compile(context.Background(), request)
+		if err != nil {
+			t.Fatalf("Compile %s: %v", name, err)
+		}
+		return result
+	}
+	base := compile("base", validCompileRequest(t))
+
+	lockRequest := validCompileRequest(t)
+	lockRequest.Policy.Network.ExternalHosts = append(lockRequest.Policy.Network.ExternalHosts, "mirror.example.invalid")
+	lock := compile("lock authority", lockRequest)
+	if base.DefinitionDigest == lock.DefinitionDigest {
+		t.Fatal("definition digest omitted policy-lock authority")
+	}
+
+	networkRequest := validCompileRequest(t)
+	networkRequest.IR.NetworkProfile = "none"
+	networkRequest.IR.Nodes[4].Attributes["network"] = "none"
+	network := compile("network authority", networkRequest)
+
+	cacheRequest := validCompileRequest(t)
+	cacheRequest.Policy.Cache.TrustDomain = "trusted-builds-v2"
+	cache := compile("cache authority", cacheRequest)
+
+	secretRequest := validCompileRequest(t)
+	secretRequest.IR.Nodes[3].Attributes["name"] = "release-signing-key"
+	secretRequest.IR.Nodes[3].Attributes["target"] = "/run/secrets/release-signing-key"
+	secretRequest.Policy.Secrets.AllowedNames = []string{"release-signing-key"}
+	secret := compile("secret authority", secretRequest)
+
+	for name, result := range map[string]Result{"network": network, "cache": cache, "secret": secret} {
+		if base.DefinitionDigest == result.DefinitionDigest {
+			t.Errorf("definition digest omitted %s authority", name)
+		}
+		if base.Outputs[0].LLBDigest == result.Outputs[0].LLBDigest {
+			t.Errorf("LLB digest omitted %s authority", name)
+		}
 	}
 }
 

@@ -13,6 +13,7 @@ GO_IMAGE = (
 
 
 def main() -> int:
+    packages = sys.argv[1:] or ["./..."]
     if platform.system() == "Windows":
         command = [
             "docker",
@@ -28,10 +29,10 @@ def main() -> int:
             "go",
             "test",
             "-race",
-            "./...",
+            *packages,
         ]
     else:
-        command = ["go", "test", "-race", "./..."]
+        command = ["go", "test", "-race", *packages]
     result = subprocess.run(command, cwd=ROOT, check=False)
     return result.returncode
 

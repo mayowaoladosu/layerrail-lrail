@@ -1,0 +1,8 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lrail-build-cell-static
+  namespace: lrail-build-control
+data:
+  private-endpoints.json: |
+    {"private-gateway":{"cidrs":["10.20.30.40/32"],"ports":[443],"hosts":["packages.internal.example"]}}

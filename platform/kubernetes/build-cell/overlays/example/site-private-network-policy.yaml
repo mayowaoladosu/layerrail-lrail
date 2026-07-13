@@ -1,0 +1,32 @@
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: build-egress-private-example
+  namespace: lrail-build-control
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: lrail-build-egress
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 10.20.30.40/32
+      ports:
+        - {protocol: TCP, port: 443}
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: build-egress-private-example
+  namespace: lrail-build-control
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: lrail-build-egress
+  egress:
+    - toCIDR:
+        - 10.20.30.40/32
+      toPorts:
+        - ports:
+            - {port: "443", protocol: TCP}

@@ -190,6 +190,10 @@ func TestCompileEmitsExplicitCacheSecretAndNetworkCapabilities(t *testing.T) {
 	if execution.Network != pb.NetMode_UNSET {
 		t.Fatalf("packages network mode = %v", execution.Network)
 	}
+	if execution.Meta == nil || execution.Meta.ProxyEnv == nil || execution.Meta.ProxyEnv.HttpProxy != BuildEgressProxyURL || execution.Meta.ProxyEnv.HttpsProxy != BuildEgressProxyURL ||
+		execution.Meta.ProxyEnv.AllProxy != "" || execution.Meta.ProxyEnv.NoProxy != "" || execution.Meta.ProxyEnv.FtpProxy != "" {
+		t.Fatalf("packages proxy authority = %#v", execution.Meta)
+	}
 }
 
 func TestCompileNoneNetworkUsesBuildKitNoNetwork(t *testing.T) {
@@ -205,10 +209,132 @@ func TestCompileNoneNetworkUsesBuildKitNoNetwork(t *testing.T) {
 		t.Fatalf("Compile: %v", err)
 	}
 	for _, operation := range decodeOperations(t, result.Outputs[0].Definition) {
-		if exec, ok := operation.Op.(*pb.Op_Exec); ok && exec.Exec.Network != pb.NetMode_NONE {
-			t.Fatalf("none network mode = %v", exec.Exec.Network)
+		if exec, ok := operation.Op.(*pb.Op_Exec); ok {
+			if exec.Exec.Network != pb.NetMode_NONE || exec.Exec.Meta == nil || exec.Exec.Meta.ProxyEnv != nil {
+				t.Fatalf("none network execution = %#v", exec.Exec)
+			}
 		}
 	}
+}
+
+func TestAuditDefinitionsBindsEveryAmbientCapabilityToLock(t *testing.T) {
+	t.Parallel()
+	compiler, _ := New("0.1.0")
+	result, err := compiler.Compile(context.Background(), validCompileRequest(t))
+	if err != nil {
+		t.Fatalf("Compile: %v", err)
+	}
+	definitions := make([][]byte, 0, len(result.Outputs))
+	for _, output := range result.Outputs {
+		definitions = append(definitions, output.Definition)
+	}
+	if err := AuditDefinitions(definitions, result.Lock); err != nil {
+		t.Fatalf("AuditDefinitions valid compiler output: %v", err)
+	}
+
+	hostNetwork := mutateDefinitionOperation(t, definitions[0], func(operation *pb.Op) bool {
+		execution := operation.GetExec()
+		if execution == nil {
+			return false
+		}
+		execution.Network = pb.NetMode_HOST
+		return true
+	})
+	if err := AuditDefinitions([][]byte{hostNetwork}, result.Lock); err == nil {
+		t.Fatal("expected host-network LLB rejection")
+	}
+
+	foreignProxy := mutateDefinitionOperation(t, definitions[0], func(operation *pb.Op) bool {
+		execution := operation.GetExec()
+		if execution == nil || execution.Meta == nil || execution.Meta.ProxyEnv == nil {
+			return false
+		}
+		execution.Meta.ProxyEnv.HttpsProxy = "http://decoy.example.invalid:3128"
+		return true
+	})
+	if err := AuditDefinitions([][]byte{foreignProxy}, result.Lock); err == nil {
+		t.Fatal("expected decoy proxy LLB rejection")
+	}
+
+	foreignSource := mutateDefinitionOperation(t, definitions[0], func(operation *pb.Op) bool {
+		source := operation.GetSource()
+		if source == nil || !strings.HasPrefix(source.Identifier, "local://") {
+			return false
+		}
+		source.Identifier = "git://example.invalid/foreign.git"
+		return true
+	})
+	if err := AuditDefinitions([][]byte{foreignSource}, result.Lock); err == nil {
+		t.Fatal("expected undeclared source rejection")
+	}
+
+	unreachable := appendDefinitionOperation(t, definitions[0], &pb.Op{Op: &pb.Op_Source{Source: &pb.SourceOp{
+		Identifier: "local://lrail-source",
+		Attrs: map[string]string{
+			pb.AttrLocalUniqueID: result.Lock.SourceSnapshot, pb.AttrSharedKeyHint: result.Lock.SourceSnapshot,
+			pb.AttrIncludePatterns: `["unreachable/**"]`,
+		},
+	}}})
+	if err := AuditDefinitions([][]byte{unreachable}, result.Lock); err == nil {
+		t.Fatal("expected unreachable decoy operation rejection")
+	}
+
+	broaderLock := result.Lock
+	broaderLock.Network = append(append([]NetworkCapability(nil), result.Lock.Network...), NetworkCapability{
+		NodeID: "n99", Profile: "allowlist", GatewayID: "extra-gateway", Hosts: []string{"extra.example.invalid"},
+	})
+	if err := AuditDefinitions(definitions, broaderLock); err == nil {
+		t.Fatal("expected unused broader network capability rejection")
+	}
+}
+
+func mutateDefinitionOperation(t *testing.T, contents []byte, mutate func(*pb.Op) bool) []byte {
+	t.Helper()
+	var definition pb.Definition
+	if err := proto.Unmarshal(contents, &definition); err != nil {
+		t.Fatalf("Unmarshal definition: %v", err)
+	}
+	mutated := false
+	for index, raw := range definition.Def {
+		var operation pb.Op
+		if err := proto.Unmarshal(raw, &operation); err != nil {
+			t.Fatalf("Unmarshal operation: %v", err)
+		}
+		if !mutated && mutate(&operation) {
+			updated, err := proto.MarshalOptions{Deterministic: true}.Marshal(&operation)
+			if err != nil {
+				t.Fatalf("Marshal operation: %v", err)
+			}
+			definition.Def[index] = updated
+			mutated = true
+		}
+	}
+	if !mutated {
+		t.Fatal("definition mutation target was absent")
+	}
+	updated, err := proto.MarshalOptions{Deterministic: true}.Marshal(&definition)
+	if err != nil {
+		t.Fatalf("Marshal definition: %v", err)
+	}
+	return updated
+}
+
+func appendDefinitionOperation(t *testing.T, contents []byte, operation *pb.Op) []byte {
+	t.Helper()
+	var definition pb.Definition
+	if err := proto.Unmarshal(contents, &definition); err != nil {
+		t.Fatalf("Unmarshal definition: %v", err)
+	}
+	raw, err := proto.MarshalOptions{Deterministic: true}.Marshal(operation)
+	if err != nil {
+		t.Fatalf("Marshal operation: %v", err)
+	}
+	definition.Def = append(definition.Def, raw)
+	updated, err := proto.MarshalOptions{Deterministic: true}.Marshal(&definition)
+	if err != nil {
+		t.Fatalf("Marshal definition: %v", err)
+	}
+	return updated
 }
 
 func TestCompileStaticSourceOutputWithoutBaseMaterial(t *testing.T) {

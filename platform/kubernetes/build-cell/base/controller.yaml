@@ -1,0 +1,242 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lrail-build-cell-static
+  namespace: lrail-build-control
+data:
+  node-selector.json: |
+    {"lrail.dev/kata":"true","lrail.dev/pool":"build"}
+  private-endpoints.json: |
+    {}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: lrail-build-cell
+  namespace: lrail-build-control
+  labels:
+    app.kubernetes.io/name: lrail-build-control
+spec:
+  selector:
+    app.kubernetes.io/name: lrail-build-control
+  ports:
+    - name: grpc
+      port: 9443
+      targetPort: grpc
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lrail-build-control
+  namespace: lrail-build-control
+  labels:
+    app.kubernetes.io/name: lrail-build-control
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: lrail-build-control
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: lrail-build-control
+        app.kubernetes.io/component: controller
+    spec:
+      serviceAccountName: lrail-build-control
+      automountServiceAccountToken: true
+      imagePullSecrets:
+        - name: lrail-build-images
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+        appArmorProfile:
+          type: RuntimeDefault
+      containers:
+        - name: controller
+          image: ghcr.io/mayowaoladosu/layerrail-lrail/buildcell-controller@sha256:b0c0e19c048816c8cc73dd4f57c1308bb44975937d3034ac80a65f4bde5cffcc
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+            seccompProfile:
+              type: RuntimeDefault
+            appArmorProfile:
+              type: RuntimeDefault
+          ports:
+            - name: grpc
+              containerPort: 9443
+              protocol: TCP
+          env:
+            - name: LRAIL_CELL_ID
+              valueFrom: {configMapKeyRef: {name: lrail-build-cell-site, key: cell-id}}
+            - name: LRAIL_OBJECT_PREFIX
+              valueFrom: {configMapKeyRef: {name: lrail-build-cell-site, key: object-prefix}}
+            - name: LRAIL_ASSIGNMENT_KEYS_FILE
+              value: /etc/lrail/assignment-keys/keys.json
+            - name: LRAIL_RUN_STATE_FILE
+              value: /var/lib/lrail/state/runs.db
+            - name: LRAIL_REPLAY_STATE_FILE
+              value: /var/lib/lrail/state/replay.db
+            - name: LRAIL_SCRATCH_ROOT
+              value: /var/lib/lrail/scratch
+            - name: LRAIL_QUARANTINE_ROOT
+              value: /var/lib/lrail/state/quarantine
+            - name: LRAIL_ARTIFACT_ROOT
+              value: /var/lib/lrail/artifacts
+            - name: LRAIL_CACHE_ROOT
+              value: /var/lib/lrail/cache
+            - name: LRAIL_S3_ENDPOINT
+              valueFrom: {configMapKeyRef: {name: lrail-build-cell-site, key: s3-endpoint}}
+            - name: LRAIL_S3_REGION
+              valueFrom: {configMapKeyRef: {name: lrail-build-cell-site, key: s3-region}}
+            - name: LRAIL_S3_SECURE
+              value: "true"
+            - name: LRAIL_S3_ACCESS_KEY_FILE
+              value: /run/lrail-s3/access-key
+            - name: LRAIL_S3_SECRET_KEY_FILE
+              value: /run/lrail-s3/secret-key
+            - name: LRAIL_OPENBAO_ADDRESS
+              valueFrom: {configMapKeyRef: {name: lrail-build-cell-site, key: openbao-address}}
+            - name: LRAIL_OPENBAO_ROLE
+              valueFrom: {configMapKeyRef: {name: lrail-build-cell-site, key: openbao-role}}
+            - name: LRAIL_OPENBAO_AUTH_MOUNT
+              value: kubernetes
+            - name: LRAIL_OPENBAO_KV_MOUNT
+              value: secret
+            - name: LRAIL_OPENBAO_SECRET_PREFIX
+              value: builds
+            - name: LRAIL_OPENBAO_JWT_FILE
+              value: /var/run/secrets/lrail-openbao/token
+            - name: LRAIL_OPENBAO_CA_FILE
+              value: /etc/lrail/openbao/ca.pem
+            - name: LRAIL_BUILD_NAMESPACE
+              value: lrail-build
+            - name: LRAIL_CONTROLLER_NAMESPACE
+              value: lrail-build-control
+            - name: LRAIL_BUILD_RUNTIME_CLASS
+              value: kata-qemu
+            - name: LRAIL_BUILD_WORKER_IMAGE
+              value: ghcr.io/mayowaoladosu/layerrail-lrail/buildkit-worker@sha256:db3dadfc9736ce70dc499c5bff81c03a1be5310dc8889897af612213b33deeb0
+            - {name: LRAIL_BUILD_IMAGE_PULL_SECRET, value: lrail-build-images}
+            - name: LRAIL_BUILD_SECCOMP_PROFILE
+              value: RuntimeDefault
+            - name: LRAIL_BUILD_APPARMOR_PROFILE
+              value: RuntimeDefault
+            - name: LRAIL_NODE_SELECTOR_FILE
+              value: /etc/lrail/static/node-selector.json
+            - name: LRAIL_PRIVATE_ENDPOINTS_FILE
+              value: /etc/lrail/static/private-endpoints.json
+            - name: LRAIL_CLUSTER_DNS_CIDR
+              valueFrom: {configMapKeyRef: {name: lrail-build-cell-site, key: cluster-dns-cidr}}
+            - name: LRAIL_EGRESS_CLIENT_CA_CERT
+              value: /run/lrail-egress-issuer/tls.crt
+            - name: LRAIL_EGRESS_CLIENT_CA_KEY
+              value: /run/lrail-egress-issuer/tls.key
+            - name: LRAIL_EGRESS_SERVER_CA
+              value: /etc/lrail/egress-server-ca/ca.crt
+            - name: LRAIL_RESIDUE_NAMESPACE
+              value: lrail-build-system
+            - name: LRAIL_RESIDUE_CLIENT_CERT
+              value: /run/lrail-residue-client/tls.crt
+            - name: LRAIL_RESIDUE_CLIENT_KEY
+              value: /run/lrail-residue-client/tls.key
+            - name: LRAIL_RESIDUE_SERVER_CA
+              value: /run/lrail-residue-client/ca.crt
+            - name: LRAIL_RESIDUE_SERVER_NAME
+              valueFrom: {configMapKeyRef: {name: lrail-build-cell-site, key: residue-server-name}}
+            - name: LRAIL_RESIDUE_SERVER_URIS
+              valueFrom: {configMapKeyRef: {name: lrail-build-cell-site, key: residue-server-uris}}
+            - name: LRAIL_SERVER_CERT
+              value: /run/lrail-server/tls.crt
+            - name: LRAIL_SERVER_KEY
+              value: /run/lrail-server/tls.key
+            - name: LRAIL_CLIENT_CA
+              value: /run/lrail-server/ca.crt
+            - name: LRAIL_ALLOWED_BROKER_URIS
+              valueFrom: {configMapKeyRef: {name: lrail-build-cell-site, key: allowed-broker-uris}}
+            - name: LRAIL_LISTEN_ADDRESS
+              value: :9443
+          resources:
+            requests: {cpu: 500m, memory: 512Mi, ephemeral-storage: 1Gi}
+            limits: {cpu: "2", memory: 2Gi, ephemeral-storage: 32Gi}
+          readinessProbe:
+            tcpSocket: {port: grpc}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+            timeoutSeconds: 1
+            failureThreshold: 12
+          livenessProbe:
+            tcpSocket: {port: grpc}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 1
+            failureThreshold: 6
+          volumeMounts:
+            - {name: state, mountPath: /var/lib/lrail/state}
+            - {name: artifacts, mountPath: /var/lib/lrail/artifacts}
+            - {name: cache, mountPath: /var/lib/lrail/cache}
+            - {name: scratch, mountPath: /var/lib/lrail/scratch}
+            - {name: assignment-keys, mountPath: /etc/lrail/assignment-keys, readOnly: true}
+            - {name: static, mountPath: /etc/lrail/static, readOnly: true}
+            - {name: openbao-ca, mountPath: /etc/lrail/openbao, readOnly: true}
+            - {name: s3-credentials, mountPath: /run/lrail-s3, readOnly: true}
+            - {name: server-tls, mountPath: /run/lrail-server, readOnly: true}
+            - {name: residue-client-tls, mountPath: /run/lrail-residue-client, readOnly: true}
+            - {name: openbao-token, mountPath: /var/run/secrets/lrail-openbao, readOnly: true}
+            - {name: egress-client-issuer, mountPath: /run/lrail-egress-issuer, readOnly: true}
+            - {name: egress-server-ca, mountPath: /etc/lrail/egress-server-ca, readOnly: true}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: state
+          persistentVolumeClaim: {claimName: lrail-build-state}
+        - name: artifacts
+          persistentVolumeClaim: {claimName: lrail-build-artifacts}
+        - name: cache
+          persistentVolumeClaim: {claimName: lrail-build-cache}
+        - name: scratch
+          emptyDir: {sizeLimit: 24Gi}
+        - name: assignment-keys
+          configMap: {name: lrail-build-assignment-keys, defaultMode: 0444}
+        - name: static
+          configMap: {name: lrail-build-cell-static, defaultMode: 0444}
+        - name: openbao-ca
+          configMap: {name: lrail-openbao-ca, defaultMode: 0444}
+        - name: s3-credentials
+          secret: {secretName: lrail-build-s3, defaultMode: 0440}
+        - name: server-tls
+          secret: {secretName: lrail-build-cell-server-tls, defaultMode: 0440}
+        - name: residue-client-tls
+          secret: {secretName: lrail-residue-client-tls, defaultMode: 0440}
+        - name: openbao-token
+          projected:
+            defaultMode: 0440
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  audience: openbao.lrail.internal
+                  expirationSeconds: 600
+        - name: egress-client-issuer
+          secret: {secretName: lrail-build-egress-client-ca, defaultMode: 0440}
+        - name: egress-server-ca
+          secret:
+            secretName: lrail-build-egress-server-tls
+            defaultMode: 0444
+            items:
+              - {key: ca.crt, path: ca.crt}
+        - name: tmp
+          emptyDir: {sizeLimit: 64Mi}

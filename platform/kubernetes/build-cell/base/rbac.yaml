@@ -1,0 +1,95 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: lrail-build-control
+  namespace: lrail-build-control
+automountServiceAccountToken: true
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: lrail-build-worker-manager
+  namespace: lrail-build
+rules:
+  - apiGroups: [""]
+    resources: ["pods", "pods/status"]
+    verbs: ["get", "list", "watch", "delete"]
+  - apiGroups: [""]
+    resources: ["services", "serviceaccounts", "secrets"]
+    verbs: ["create", "get", "list", "watch", "delete"]
+  - apiGroups: ["batch"]
+    resources: ["jobs", "jobs/status"]
+    verbs: ["create", "get", "list", "watch", "delete"]
+  - apiGroups: ["networking.k8s.io"]
+    resources: ["networkpolicies"]
+    verbs: ["create", "get", "list", "watch", "delete"]
+  - apiGroups: ["cilium.io"]
+    resources: ["ciliumnetworkpolicies"]
+    verbs: ["create", "get", "list", "watch", "delete"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: lrail-build-worker-manager
+  namespace: lrail-build
+subjects:
+  - kind: ServiceAccount
+    name: lrail-build-control
+    namespace: lrail-build-control
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: lrail-build-worker-manager
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: lrail-residue-agent-reader
+  namespace: lrail-build-system
+rules:
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: lrail-residue-agent-reader
+  namespace: lrail-build-system
+subjects:
+  - kind: ServiceAccount
+    name: lrail-build-control
+    namespace: lrail-build-control
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: lrail-residue-agent-reader
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: lrail-build-node-quarantine
+rules:
+  - apiGroups: [""]
+    resources: ["nodes"]
+    verbs: ["get", "update", "patch"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: lrail-build-node-quarantine
+subjects:
+  - kind: ServiceAccount
+    name: lrail-build-control
+    namespace: lrail-build-control
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: lrail-build-node-quarantine
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: lrail-residue-agent
+  namespace: lrail-build-system
+automountServiceAccountToken: false

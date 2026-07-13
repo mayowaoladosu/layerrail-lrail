@@ -1,0 +1,82 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lrail-build-cell-site
+  namespace: lrail-build-control
+data:
+  cell-id: cell_019b01da-7e31-7000-8000-000000000001
+  object-prefix: s3://lrail-build/cell-example/
+  s3-endpoint: s3.example.invalid
+  s3-region: us-east-1
+  openbao-address: https://openbao.example.invalid
+  openbao-role: build-cell
+  cluster-dns-cidr: 10.96.0.10/32
+  cluster-dns-address: 10.96.0.10:53
+  residue-server-name: lrail-residue-agent.lrail-build-system.svc.cluster.local
+  residue-server-uris: spiffe://lrail.internal/residue-agent
+  allowed-broker-uris: spiffe://lrail.internal/build-broker
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lrail-build-assignment-keys
+  namespace: lrail-build-control
+data:
+  keys.json: |
+    {"example-v1":"AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lrail-openbao-ca
+  namespace: lrail-build-control
+data:
+  ca.pem: |
+    -----BEGIN CERTIFICATE-----
+    REPLACE_WITH_SITE_CA_CERTIFICATE
+    -----END CERTIFICATE-----
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: lrail-residue-agent-site
+  namespace: lrail-build-system
+data:
+  allowed-client-uris: spiffe://lrail.internal/build-controller
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: lrail-build-s3
+  namespace: lrail-build-control
+type: Opaque
+stringData:
+  access-key: EXAMPLE_NON_AUTHENTIC_ACCESS_KEY
+  secret-key: EXAMPLE_NON_AUTHENTIC_SECRET_KEY
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: lrail-build-images
+  namespace: lrail-build
+type: kubernetes.io/dockerconfigjson
+stringData:
+  .dockerconfigjson: '{"auths":{"ghcr.io":{"username":"EXAMPLE_NON_AUTHENTIC_USER","password":"EXAMPLE_NON_AUTHENTIC_READ_TOKEN"}}}'
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: lrail-build-images
+  namespace: lrail-build-control
+type: kubernetes.io/dockerconfigjson
+stringData:
+  .dockerconfigjson: '{"auths":{"ghcr.io":{"username":"EXAMPLE_NON_AUTHENTIC_USER","password":"EXAMPLE_NON_AUTHENTIC_READ_TOKEN"}}}'
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: lrail-build-images
+  namespace: lrail-build-system
+type: kubernetes.io/dockerconfigjson
+stringData:
+  .dockerconfigjson: '{"auths":{"ghcr.io":{"username":"EXAMPLE_NON_AUTHENTIC_USER","password":"EXAMPLE_NON_AUTHENTIC_READ_TOKEN"}}}'

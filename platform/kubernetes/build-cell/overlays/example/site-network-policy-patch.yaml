@@ -1,0 +1,93 @@
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: build-control
+  namespace: lrail-build-control
+spec:
+  egress:
+    - toEntities: [kube-apiserver]
+      toPorts:
+        - ports:
+            - {port: "443", protocol: TCP}
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s:k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - {port: "53", protocol: UDP}
+            - {port: "53", protocol: TCP}
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: lrail-build
+            k8s:app.kubernetes.io/name: lrail-build-worker
+      toPorts:
+        - ports:
+            - {port: "1234", protocol: TCP}
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: lrail-build-system
+            k8s:app.kubernetes.io/name: lrail-residue-agent
+      toPorts:
+        - ports:
+            - {port: "9444", protocol: TCP}
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: lrail-security
+            k8s:app.kubernetes.io/name: openbao
+      toPorts:
+        - ports:
+            - {port: "8200", protocol: TCP}
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: lrail-storage
+            k8s:app.kubernetes.io/name: minio
+      toPorts:
+        - ports:
+            - {port: "9000", protocol: TCP}
+    - toFQDNs:
+        - matchName: s3.example.invalid
+      toPorts:
+        - ports:
+            - {port: "443", protocol: TCP}
+    - toFQDNs:
+        - matchName: openbao.example.invalid
+      toPorts:
+        - ports:
+            - {port: "443", protocol: TCP}
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: build-egress
+  namespace: lrail-build-control
+spec:
+  egressDeny:
+    - toCIDRSet:
+        - {cidr: 0.0.0.0/8}
+        - {cidr: 10.0.0.0/8, except: [10.20.30.40/32]}
+        - {cidr: 100.64.0.0/10}
+        - {cidr: 127.0.0.0/8}
+        - {cidr: 169.254.0.0/16}
+        - {cidr: 172.16.0.0/12}
+        - {cidr: 192.0.0.0/24}
+        - {cidr: 192.0.2.0/24}
+        - {cidr: 192.88.99.0/24}
+        - {cidr: 192.168.0.0/16}
+        - {cidr: 198.18.0.0/15}
+        - {cidr: 198.51.100.0/24}
+        - {cidr: 203.0.113.0/24}
+        - {cidr: 224.0.0.0/4}
+        - {cidr: 240.0.0.0/4}
+        - {cidr: "::/128"}
+        - {cidr: "::1/128"}
+        - {cidr: "64:ff9b:1::/48"}
+        - {cidr: "100::/64"}
+        - {cidr: "2001:2::/48"}
+        - {cidr: "2001:10::/28"}
+        - {cidr: "2001:db8::/32"}
+        - {cidr: "3fff::/20"}
+        - {cidr: "fc00::/7"}
+        - {cidr: "fe80::/10"}
+        - {cidr: "fec0::/10"}
+        - {cidr: "ff00::/8"}

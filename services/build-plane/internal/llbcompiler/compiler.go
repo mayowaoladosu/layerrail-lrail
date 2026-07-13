@@ -198,13 +198,15 @@ func (compiler *graphCompiler) compileRun(node buildir.Node) (llb.State, error) 
 		return llb.State{}, fail("llb.network_missing", "Run network capability is unavailable.", node.ID)
 	}
 	options = append(options, llb.WithCustomName(
-		"lrail run "+node.ID+" network="+networkCapability.Profile+" hosts="+strings.Join(networkCapability.Hosts, ","),
+		"lrail run "+node.ID+" network="+networkCapability.Profile+" gateway="+networkCapability.GatewayID+" hosts="+strings.Join(networkCapability.Hosts, ","),
 	))
 	profile := networkCapability.Profile
 	if profile == "none" {
 		options = append(options, llb.Network(pb.NetMode_NONE))
 	} else {
-		options = append(options, llb.Network(pb.NetMode_UNSET))
+		options = append(options, llb.Network(pb.NetMode_UNSET), llb.WithProxy(llb.ProxyEnv{
+			HTTPProxy: BuildEgressProxyURL, HTTPSProxy: BuildEgressProxyURL,
+		}))
 	}
 	for _, argument := range compiler.input.buildArguments {
 		if _, exists := environment[argument.Name]; exists {

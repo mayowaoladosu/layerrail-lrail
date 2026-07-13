@@ -1,0 +1,98 @@
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: lrail-build-worker-isolation
+  annotations:
+    policies.kyverno.io/title: Lrail build worker isolation
+    policies.kyverno.io/category: Pod Security
+spec:
+  validationFailureAction: Enforce
+  background: true
+  rules:
+    - name: require-exact-worker-container-set
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: [lrail-build]
+      validate:
+        message: Build worker Pods require exactly one container and no init or ephemeral containers.
+        deny:
+          conditions:
+            any:
+              - key: "{{ length(request.object.spec.containers || `[]`) }}"
+                operator: NotEquals
+                value: 1
+              - key: "{{ length(request.object.spec.initContainers || `[]`) }}"
+                operator: GreaterThan
+                value: 0
+              - key: "{{ length(request.object.spec.ephemeralContainers || `[]`) }}"
+                operator: GreaterThan
+                value: 0
+              - key: "{{ length(request.object.spec.volumes || `[]`) }}"
+                operator: NotEquals
+                value: 3
+    - name: require-kata-and-no-ambient-authority
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: [lrail-build]
+      validate:
+        message: Build workers require Kata, digest-pinned images, no API token, and restricted container security.
+        pattern:
+          metadata:
+            labels:
+              app.kubernetes.io/name: lrail-build-worker
+              lrail.dev/assignment: "?*"
+          spec:
+            runtimeClassName: kata-qemu
+            serviceAccountName: "{{ request.object.metadata.labels.\"lrail.dev/assignment\" }}"
+            automountServiceAccountToken: false
+            imagePullSecrets:
+              - name: lrail-build-images
+            hostNetwork: false
+            hostPID: false
+            hostIPC: false
+            shareProcessNamespace: false
+            enableServiceLinks: false
+            containers:
+              - name: buildkit
+                image: "*@sha256:*"
+                securityContext:
+                  privileged: false
+                  allowPrivilegeEscalation: false
+                  readOnlyRootFilesystem: true
+                  capabilities:
+                    drop: [ALL]
+                  seccompProfile:
+                    type: "RuntimeDefault | Localhost"
+                  appArmorProfile:
+                    type: "RuntimeDefault | Localhost"
+            volumes:
+              - (name): state
+                emptyDir:
+                  sizeLimit: "?*"
+              - (name): tmp
+                emptyDir:
+                  medium: Memory
+                  sizeLimit: "?*"
+              - (name): tls
+                secret:
+                  secretName: "{{ request.object.metadata.labels.\"lrail.dev/assignment\" }}-tls"
+    - name: deny-worker-host-paths
+      match:
+        any:
+          - resources:
+              kinds: [Pod]
+              namespaces: [lrail-build]
+      validate:
+        message: Customer build Pods may not mount any host path.
+        foreach:
+          - list: request.object.spec.volumes
+            deny:
+              conditions:
+                all:
+                  - key: "{{ element.hostPath || '' }}"
+                    operator: NotEquals
+                    value: ""

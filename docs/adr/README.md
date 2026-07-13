@@ -9,7 +9,7 @@ ADRs are immutable decision history. Superseding decisions link to the prior rec
 | 003 | Temporal for processes; NATS JetStream for distribution; transactional outbox/inbox |
 | 004 | Immutable snapshots and a non-executing Python detector                             |
 | 005 | Constrained Go Starlark compiler to typed Build IR and BuildKit LLB                 |
-| 006 | Kata-isolated build plane and Harbor supply-chain evidence                          |
+| 006 | Kata-isolated build execution, cancellation, residue proof, and quarantine          |
 | 007 | Kubernetes regional cells, Cilium, gVisor/Kata, and signed TargetBundles            |
 | 008 | Argo Rollouts, opt-in Knative serverless, and KEDA workers                          |
 | 009 | OpenBao secret authority, External Secrets, and short-lived internal PKI            |

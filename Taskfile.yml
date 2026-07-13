@@ -52,6 +52,7 @@ tasks:
       - task: control-workers:check
       - task: rails:check
       - corepack pnpm check
+      - uv run --project "{{.DETECTOR}}" ruff format --check "{{.DETECTOR}}"
       - uv run --project "{{.DETECTOR}}" ruff check tools "{{.DETECTOR}}"
       - uv run --project "{{.DETECTOR}}" mypy "{{.DETECTOR}}/src"
       - go test ./...
@@ -183,6 +184,7 @@ tasks:
     cmds:
       - python tools/scan-secrets.py
       - task: control-workers:security
+      - task: detector:security
       - task: rails:security
       - corepack pnpm audit --audit-level high
       - govulncheck ./...
@@ -192,6 +194,12 @@ tasks:
     cmds:
       - docker build --target test -t "{{.CONTROL_WORKERS_TEST_IMAGE}}" "{{.CONTROL_WORKERS}}"
       - docker run --rm "{{.CONTROL_WORKERS_TEST_IMAGE}}" bundle exec bundler-audit check --update
+
+  detector:security:
+    internal: true
+    dir: "{{.DETECTOR}}"
+    cmds:
+      - uv run pip-audit
 
   rails:security:
     internal: true
@@ -206,7 +214,10 @@ tasks:
       - buf generate
       - corepack pnpm contracts:generate
       - uv run --project "{{.DETECTOR}}" python "{{.DETECTOR}}/tools/generate_schema.py"
-      - corepack pnpm exec prettier --write sdk/typescript/src/generated/lrail-v1.ts contracts/jsonschema/detector/detection-result.schema.json
+      - >-
+        corepack pnpm exec prettier --write
+        sdk/typescript/src/generated/lrail-v1.ts
+        contracts/jsonschema/detector/detection-result-v2.schema.json
 
   package:
     desc: Build candidate artifacts from locked inputs

@@ -339,10 +339,12 @@ func (x *FinalizeUploadRequest) GetDeclaredSizeBytes() uint64 {
 }
 
 type DetectRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	Context       *RequestContext        `protobuf:"bytes,1,opt,name=context,proto3" json:"context,omitempty"`
-	SnapshotId    string                 `protobuf:"bytes,2,opt,name=snapshot_id,json=snapshotId,proto3" json:"snapshot_id,omitempty"`
-	Root          string                 `protobuf:"bytes,3,opt,name=root,proto3" json:"root,omitempty"`
+	state   protoimpl.MessageState `protogen:"open.v1"`
+	Context *RequestContext        `protobuf:"bytes,1,opt,name=context,proto3" json:"context,omitempty"`
+	// Immutable snp_ source snapshot identity; branch names are never accepted.
+	SnapshotId string `protobuf:"bytes,2,opt,name=snapshot_id,json=snapshotId,proto3" json:"snapshot_id,omitempty"`
+	// Canonical repository-relative selected root, or '.'.
+	Root          string `protobuf:"bytes,3,opt,name=root,proto3" json:"root,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -459,12 +461,14 @@ func (x *ValidateProposalRequest) GetProposal() *structpb.Struct {
 }
 
 type DetectResponse struct {
-	state               protoimpl.MessageState `protogen:"open.v1"`
-	Proposal            *structpb.Struct       `protobuf:"bytes,1,opt,name=proposal,proto3" json:"proposal,omitempty"`
-	Evidence            []*structpb.Struct     `protobuf:"bytes,2,rep,name=evidence,proto3" json:"evidence,omitempty"`
-	UnsupportedFeatures []string               `protobuf:"bytes,3,rep,name=unsupported_features,json=unsupportedFeatures,proto3" json:"unsupported_features,omitempty"`
-	FilesConsidered     []string               `protobuf:"bytes,4,rep,name=files_considered,json=filesConsidered,proto3" json:"files_considered,omitempty"`
-	Diagnostics         []*PlatformError       `protobuf:"bytes,5,rep,name=diagnostics,proto3" json:"diagnostics,omitempty"`
+	state protoimpl.MessageState `protogen:"open.v1"`
+	// JSON representation of detector.lrail.dev/v2 DetectionResult.
+	Proposal *structpb.Struct `protobuf:"bytes,1,opt,name=proposal,proto3" json:"proposal,omitempty"`
+	// Flattened evidence nodes for consumers that do not inspect the proposal graph.
+	Evidence            []*structpb.Struct `protobuf:"bytes,2,rep,name=evidence,proto3" json:"evidence,omitempty"`
+	UnsupportedFeatures []string           `protobuf:"bytes,3,rep,name=unsupported_features,json=unsupportedFeatures,proto3" json:"unsupported_features,omitempty"`
+	FilesConsidered     []string           `protobuf:"bytes,4,rep,name=files_considered,json=filesConsidered,proto3" json:"files_considered,omitempty"`
+	Diagnostics         []*PlatformError   `protobuf:"bytes,5,rep,name=diagnostics,proto3" json:"diagnostics,omitempty"`
 	unknownFields       protoimpl.UnknownFields
 	sizeCache           protoimpl.SizeCache
 }

@@ -1,0 +1,5 @@
+{
+  "name": "@fixture/api",
+  "scripts": {"build": "tsc", "start": "node dist/server.js"},
+  "dependencies": {"express": "5.1.0", "pg": "8.16.3", "@fixture/worker": "workspace:*"}
+}

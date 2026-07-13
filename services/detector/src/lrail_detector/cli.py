@@ -20,6 +20,11 @@ def parser() -> argparse.ArgumentParser:
         description="Inspect immutable source metadata without executing customer code.",
     )
     value.add_argument("snapshot", type=Path, help="validated immutable snapshot directory")
+    value.add_argument(
+        "--snapshot-id",
+        required=True,
+        help="immutable snp_ prefixed source snapshot identity",
+    )
     value.add_argument("--root", default=".", help="repository-relative service or monorepo root")
     value.add_argument("--pretty", action="store_true", help="indent JSON output")
     value.add_argument(
@@ -33,7 +38,11 @@ def parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     """Detect and write exactly one JSON response to standard output."""
     arguments = parser().parse_args(argv)
-    result = Detector().detect(arguments.snapshot, arguments.root)
+    result = Detector().detect(
+        arguments.snapshot,
+        arguments.snapshot_id,
+        arguments.root,
+    )
     payload = result.model_dump_json(indent=2 if arguments.pretty else None)
     sys.stdout.write(f"{payload}\n")
     return 2 if arguments.fail_on_block and result.blocked else 0

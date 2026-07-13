@@ -1,0 +1,918 @@
+{
+  "$defs": {
+    "AddonHint": {
+      "additionalProperties": false,
+      "description": "Evidence-backed managed data suggestion, never an automatic provision.",
+      "properties": {
+        "engine": {
+          "enum": [
+            "postgresql",
+            "mysql",
+            "mariadb",
+            "valkey",
+            "mongodb",
+            "opensearch",
+            "clickhouse",
+            "rabbitmq"
+          ],
+          "title": "Engine",
+          "type": "string"
+        },
+        "evidence_ids": {
+          "items": {
+            "pattern": "^ev_[0-9a-f]{20}$",
+            "type": "string"
+          },
+          "maxItems": 128,
+          "minItems": 1,
+          "title": "Evidence Ids",
+          "type": "array"
+        },
+        "name": {
+          "pattern": "^[a-z][a-z0-9-]{0,62}$",
+          "title": "Name",
+          "type": "string"
+        },
+        "reason": {
+          "maxLength": 512,
+          "minLength": 1,
+          "title": "Reason",
+          "type": "string"
+        },
+        "required": {
+          "default": false,
+          "title": "Required",
+          "type": "boolean"
+        },
+        "services": {
+          "items": {
+            "pattern": "^[a-z][a-z0-9-]{0,62}$",
+            "type": "string"
+          },
+          "maxItems": 64,
+          "minItems": 1,
+          "title": "Services",
+          "type": "array"
+        }
+      },
+      "required": ["name", "engine", "services", "reason", "evidence_ids"],
+      "title": "AddonHint",
+      "type": "object"
+    },
+    "BuildProposal": {
+      "additionalProperties": false,
+      "description": "Non-executed build recommendation and its required inputs.",
+      "properties": {
+        "build_command": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 64,
+          "title": "Build Command",
+          "type": "array"
+        },
+        "cache_paths": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 64,
+          "title": "Cache Paths",
+          "type": "array"
+        },
+        "install_command": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 64,
+          "title": "Install Command",
+          "type": "array"
+        },
+        "output_path": {
+          "anyOf": [
+            {
+              "maxLength": 1024,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Output Path"
+        },
+        "required_files": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 256,
+          "minItems": 1,
+          "title": "Required Files",
+          "type": "array"
+        },
+        "strategy": {
+          "enum": ["auto", "dockerfile", "starlark"],
+          "title": "Strategy",
+          "type": "string"
+        }
+      },
+      "required": [
+        "strategy",
+        "install_command",
+        "build_command",
+        "cache_paths",
+        "required_files"
+      ],
+      "title": "BuildProposal",
+      "type": "object"
+    },
+    "Diagnostic": {
+      "additionalProperties": false,
+      "description": "Stable warning or unresolved decision requiring confirmation.",
+      "properties": {
+        "code": {
+          "pattern": "^[a-z][a-z0-9_.-]{1,127}$",
+          "title": "Code",
+          "type": "string"
+        },
+        "detector": {
+          "anyOf": [
+            {
+              "pattern": "^[a-z][a-z0-9_.-]{1,63}$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Detector"
+        },
+        "message": {
+          "maxLength": 512,
+          "minLength": 1,
+          "title": "Message",
+          "type": "string"
+        },
+        "path": {
+          "anyOf": [
+            {
+              "maxLength": 1024,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Path"
+        },
+        "service_root": {
+          "anyOf": [
+            {
+              "maxLength": 1024,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Service Root"
+        },
+        "severity": {
+          "enum": ["warning", "blocking"],
+          "title": "Severity",
+          "type": "string"
+        }
+      },
+      "required": ["code", "severity", "message"],
+      "title": "Diagnostic",
+      "type": "object"
+    },
+    "Evidence": {
+      "additionalProperties": false,
+      "description": "One immutable confidence contribution in the evidence graph.",
+      "properties": {
+        "confidence_delta": {
+          "maximum": 0.5,
+          "minimum": -0.5,
+          "title": "Confidence Delta",
+          "type": "number"
+        },
+        "detail": {
+          "maxLength": 512,
+          "minLength": 1,
+          "title": "Detail",
+          "type": "string"
+        },
+        "detector": {
+          "pattern": "^[a-z][a-z0-9_.-]{1,63}$",
+          "title": "Detector",
+          "type": "string"
+        },
+        "fact": {
+          "pattern": "^[a-z][a-z0-9_.-]{1,127}$",
+          "title": "Fact",
+          "type": "string"
+        },
+        "id": {
+          "pattern": "^ev_[0-9a-f]{20}$",
+          "title": "Id",
+          "type": "string"
+        },
+        "path": {
+          "maxLength": 1024,
+          "title": "Path",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "detector",
+        "fact",
+        "path",
+        "detail",
+        "confidence_delta"
+      ],
+      "title": "Evidence",
+      "type": "object"
+    },
+    "EvidenceEdge": {
+      "additionalProperties": false,
+      "description": "A typed relation from evidence to a proposed service.",
+      "properties": {
+        "relation": {
+          "enum": ["supports", "conflicts", "requires_confirmation"],
+          "title": "Relation",
+          "type": "string"
+        },
+        "source": {
+          "pattern": "^ev_[0-9a-f]{20}$",
+          "title": "Source",
+          "type": "string"
+        },
+        "target": {
+          "pattern": "^service:[a-z][a-z0-9-]{0,62}$",
+          "title": "Target",
+          "type": "string"
+        }
+      },
+      "required": ["source", "target", "relation"],
+      "title": "EvidenceEdge",
+      "type": "object"
+    },
+    "EvidenceGraph": {
+      "additionalProperties": false,
+      "description": "Deterministic graph explaining every service confidence score.",
+      "properties": {
+        "edges": {
+          "items": {
+            "$ref": "#/$defs/EvidenceEdge"
+          },
+          "maxItems": 4096,
+          "title": "Edges",
+          "type": "array"
+        },
+        "nodes": {
+          "items": {
+            "$ref": "#/$defs/Evidence"
+          },
+          "maxItems": 1024,
+          "title": "Nodes",
+          "type": "array"
+        }
+      },
+      "required": ["nodes", "edges"],
+      "title": "EvidenceGraph",
+      "type": "object"
+    },
+    "GeneratedManifest": {
+      "additionalProperties": false,
+      "description": "Strict deploy-blocked-until-accepted lrail.yaml proposal.",
+      "properties": {
+        "addons": {
+          "items": {
+            "$ref": "#/$defs/ManifestAddon"
+          },
+          "maxItems": 64,
+          "title": "Addons",
+          "type": "array"
+        },
+        "api_version": {
+          "const": "lrail.dev/v1",
+          "default": "lrail.dev/v1",
+          "title": "Api Version",
+          "type": "string"
+        },
+        "project": {
+          "$ref": "#/$defs/ManifestProject"
+        },
+        "schedules": {
+          "default": [],
+          "items": {},
+          "maxItems": 0,
+          "title": "Schedules",
+          "type": "array"
+        },
+        "services": {
+          "items": {
+            "$ref": "#/$defs/ManifestService"
+          },
+          "maxItems": 64,
+          "minItems": 1,
+          "title": "Services",
+          "type": "array"
+        }
+      },
+      "required": ["project", "services", "addons"],
+      "title": "GeneratedManifest",
+      "type": "object"
+    },
+    "ManifestAddon": {
+      "additionalProperties": false,
+      "description": "Generated add-on proposal compatible with lrail.yaml v1.",
+      "properties": {
+        "deletion_protection": {
+          "default": true,
+          "title": "Deletion Protection",
+          "type": "boolean"
+        },
+        "engine": {
+          "enum": [
+            "postgresql",
+            "mysql",
+            "mariadb",
+            "valkey",
+            "mongodb",
+            "opensearch",
+            "clickhouse",
+            "rabbitmq"
+          ],
+          "title": "Engine",
+          "type": "string"
+        },
+        "name": {
+          "pattern": "^[a-z][a-z0-9-]{0,62}$",
+          "title": "Name",
+          "type": "string"
+        },
+        "plan": {
+          "default": "nano",
+          "pattern": "^[a-z][a-z0-9-]{0,62}$",
+          "title": "Plan",
+          "type": "string"
+        }
+      },
+      "required": ["name", "engine"],
+      "title": "ManifestAddon",
+      "type": "object"
+    },
+    "ManifestBuild": {
+      "additionalProperties": false,
+      "description": "Build subset compatible with the lrail.yaml v1 schema.",
+      "properties": {
+        "dockerfile": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Dockerfile"
+        },
+        "method": {
+          "enum": ["auto", "dockerfile", "starlark"],
+          "title": "Method",
+          "type": "string"
+        },
+        "network": {
+          "default": "packages",
+          "enum": ["none", "packages", "allowlist", "private"],
+          "title": "Network",
+          "type": "string"
+        },
+        "starlark": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Starlark"
+        }
+      },
+      "required": ["method"],
+      "title": "ManifestBuild",
+      "type": "object"
+    },
+    "ManifestProcess": {
+      "additionalProperties": false,
+      "description": "Process subset compatible with the lrail.yaml v1 schema.",
+      "properties": {
+        "command": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 64,
+          "minItems": 1,
+          "title": "Command",
+          "type": "array"
+        },
+        "health_path": {
+          "anyOf": [
+            {
+              "maxLength": 512,
+              "pattern": "^/",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Health Path"
+        },
+        "kind": {
+          "enum": [
+            "web",
+            "worker",
+            "private_service",
+            "release",
+            "job",
+            "static"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "pattern": "^[a-z][a-z0-9-]{0,62}$",
+          "title": "Name",
+          "type": "string"
+        },
+        "port": {
+          "anyOf": [
+            {
+              "maximum": 65535,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Port"
+        },
+        "resources": {
+          "$ref": "#/$defs/ManifestResources",
+          "default": {
+            "profile": "nano"
+          }
+        },
+        "runtime_class": {
+          "default": "sandbox",
+          "enum": ["sandbox", "microvm", "native"],
+          "title": "Runtime Class",
+          "type": "string"
+        }
+      },
+      "required": ["name", "kind", "command"],
+      "title": "ManifestProcess",
+      "type": "object"
+    },
+    "ManifestProject": {
+      "additionalProperties": false,
+      "description": "Generated project identity proposal.",
+      "properties": {
+        "name": {
+          "pattern": "^[a-z][a-z0-9-]{0,62}$",
+          "title": "Name",
+          "type": "string"
+        }
+      },
+      "required": ["name"],
+      "title": "ManifestProject",
+      "type": "object"
+    },
+    "ManifestResources": {
+      "additionalProperties": false,
+      "description": "Conservative initialization resource profile.",
+      "properties": {
+        "profile": {
+          "default": "nano",
+          "enum": ["nano", "small", "medium", "large", "xlarge"],
+          "title": "Profile",
+          "type": "string"
+        }
+      },
+      "title": "ManifestResources",
+      "type": "object"
+    },
+    "ManifestService": {
+      "additionalProperties": false,
+      "description": "Generated service initialization proposal.",
+      "properties": {
+        "build": {
+          "$ref": "#/$defs/ManifestBuild"
+        },
+        "name": {
+          "pattern": "^[a-z][a-z0-9-]{0,62}$",
+          "title": "Name",
+          "type": "string"
+        },
+        "processes": {
+          "items": {
+            "$ref": "#/$defs/ManifestProcess"
+          },
+          "maxItems": 32,
+          "minItems": 1,
+          "title": "Processes",
+          "type": "array"
+        },
+        "root": {
+          "title": "Root",
+          "type": "string"
+        }
+      },
+      "required": ["name", "root", "build", "processes"],
+      "title": "ManifestService",
+      "type": "object"
+    },
+    "PluginVersion": {
+      "additionalProperties": false,
+      "description": "Exact private detector plugin and ruleset identity.",
+      "properties": {
+        "plugin": {
+          "pattern": "^[a-z][a-z0-9_.-]{1,63}$",
+          "title": "Plugin",
+          "type": "string"
+        },
+        "version": {
+          "maxLength": 32,
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+$",
+          "title": "Version",
+          "type": "string"
+        }
+      },
+      "required": ["plugin", "version"],
+      "title": "PluginVersion",
+      "type": "object"
+    },
+    "ProcessProposal": {
+      "additionalProperties": false,
+      "description": "One process group inferred without executing source.",
+      "properties": {
+        "command": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 64,
+          "title": "Command",
+          "type": "array"
+        },
+        "health_path": {
+          "anyOf": [
+            {
+              "maxLength": 512,
+              "pattern": "^/",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Health Path"
+        },
+        "kind": {
+          "enum": [
+            "web",
+            "worker",
+            "private_service",
+            "release",
+            "job",
+            "static"
+          ],
+          "title": "Kind",
+          "type": "string"
+        },
+        "name": {
+          "pattern": "^[a-z][a-z0-9-]{0,62}$",
+          "title": "Name",
+          "type": "string"
+        },
+        "port": {
+          "anyOf": [
+            {
+              "maximum": 65535,
+              "minimum": 1,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Port"
+        },
+        "protocol": {
+          "default": "none",
+          "enum": ["http", "tcp", "none"],
+          "title": "Protocol",
+          "type": "string"
+        }
+      },
+      "required": ["name", "kind", "command"],
+      "title": "ProcessProposal",
+      "type": "object"
+    },
+    "RuntimeProposal": {
+      "additionalProperties": false,
+      "description": "Language runtime inferred from declared repository metadata.",
+      "properties": {
+        "name": {
+          "enum": ["ruby", "node", "python", "go", "static", "docker"],
+          "title": "Name",
+          "type": "string"
+        },
+        "version": {
+          "anyOf": [
+            {
+              "maxLength": 64,
+              "minLength": 1,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Version"
+        },
+        "version_source": {
+          "anyOf": [
+            {
+              "maxLength": 1024,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Version Source"
+        }
+      },
+      "required": ["name"],
+      "title": "RuntimeProposal",
+      "type": "object"
+    },
+    "ServiceProposal": {
+      "additionalProperties": false,
+      "description": "Explainable build and runtime proposal for one service root.",
+      "properties": {
+        "ambiguous": {
+          "title": "Ambiguous",
+          "type": "boolean"
+        },
+        "build": {
+          "$ref": "#/$defs/BuildProposal"
+        },
+        "confidence": {
+          "maximum": 1.0,
+          "minimum": 0.0,
+          "title": "Confidence",
+          "type": "number"
+        },
+        "depends_on": {
+          "items": {
+            "pattern": "^[a-z][a-z0-9-]{0,62}$",
+            "type": "string"
+          },
+          "maxItems": 64,
+          "title": "Depends On",
+          "type": "array"
+        },
+        "evidence_ids": {
+          "items": {
+            "pattern": "^ev_[0-9a-f]{20}$",
+            "type": "string"
+          },
+          "maxItems": 128,
+          "minItems": 1,
+          "title": "Evidence Ids",
+          "type": "array"
+        },
+        "files_considered": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 512,
+          "minItems": 1,
+          "title": "Files Considered",
+          "type": "array"
+        },
+        "framework": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Framework",
+          "type": "string"
+        },
+        "kind": {
+          "enum": ["web", "worker", "private_service", "static"],
+          "title": "Kind",
+          "type": "string"
+        },
+        "language": {
+          "enum": ["ruby", "node", "python", "go", "static", "docker"],
+          "title": "Language",
+          "type": "string"
+        },
+        "name": {
+          "pattern": "^[a-z][a-z0-9-]{0,62}$",
+          "title": "Name",
+          "type": "string"
+        },
+        "processes": {
+          "items": {
+            "$ref": "#/$defs/ProcessProposal"
+          },
+          "maxItems": 32,
+          "minItems": 1,
+          "title": "Processes",
+          "type": "array"
+        },
+        "root": {
+          "maxLength": 1024,
+          "title": "Root",
+          "type": "string"
+        },
+        "runtime": {
+          "$ref": "#/$defs/RuntimeProposal"
+        },
+        "unsupported_features": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 64,
+          "title": "Unsupported Features",
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "root",
+        "kind",
+        "language",
+        "framework",
+        "runtime",
+        "build",
+        "processes",
+        "depends_on",
+        "confidence",
+        "evidence_ids",
+        "unsupported_features",
+        "files_considered",
+        "ambiguous"
+      ],
+      "title": "ServiceProposal",
+      "type": "object"
+    }
+  },
+  "$id": "https://contracts.lrail.dev/detector/v2/detection-result.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "Top-level stable detector v2 response.",
+  "properties": {
+    "blocked": {
+      "title": "Blocked",
+      "type": "boolean"
+    },
+    "detector_version": {
+      "const": "0.2.0",
+      "default": "0.2.0",
+      "title": "Detector Version",
+      "type": "string"
+    },
+    "evidence_graph": {
+      "$ref": "#/$defs/EvidenceGraph"
+    },
+    "files_considered": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 4096,
+      "title": "Files Considered",
+      "type": "array"
+    },
+    "generated_manifest": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/GeneratedManifest"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "plugins": {
+      "items": {
+        "$ref": "#/$defs/PluginVersion"
+      },
+      "maxItems": 32,
+      "minItems": 1,
+      "title": "Plugins",
+      "type": "array"
+    },
+    "proposal_version": {
+      "const": 1,
+      "default": 1,
+      "title": "Proposal Version",
+      "type": "integer"
+    },
+    "ruleset_version": {
+      "const": "2026-07-13.1",
+      "default": "2026-07-13.1",
+      "title": "Ruleset Version",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": "detector.lrail.dev/v2",
+      "default": "detector.lrail.dev/v2",
+      "title": "Schema Version",
+      "type": "string"
+    },
+    "services": {
+      "items": {
+        "$ref": "#/$defs/ServiceProposal"
+      },
+      "maxItems": 64,
+      "title": "Services",
+      "type": "array"
+    },
+    "snapshot_root": {
+      "maxLength": 1024,
+      "title": "Snapshot Root",
+      "type": "string"
+    },
+    "source_snapshot_id": {
+      "pattern": "^[a-z]{2,5}_[0-9a-f]{8}-[0-9a-f]{4}-7[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+      "title": "Source Snapshot Id",
+      "type": "string"
+    },
+    "suggested_addons": {
+      "items": {
+        "$ref": "#/$defs/AddonHint"
+      },
+      "maxItems": 64,
+      "title": "Suggested Addons",
+      "type": "array"
+    },
+    "unresolved": {
+      "items": {
+        "$ref": "#/$defs/Diagnostic"
+      },
+      "maxItems": 256,
+      "title": "Unresolved",
+      "type": "array"
+    },
+    "unsupported_features": {
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 256,
+      "title": "Unsupported Features",
+      "type": "array"
+    },
+    "warnings": {
+      "items": {
+        "$ref": "#/$defs/Diagnostic"
+      },
+      "maxItems": 256,
+      "title": "Warnings",
+      "type": "array"
+    }
+  },
+  "required": [
+    "source_snapshot_id",
+    "snapshot_root",
+    "plugins",
+    "services",
+    "evidence_graph",
+    "warnings",
+    "unresolved",
+    "unsupported_features",
+    "suggested_addons",
+    "files_considered",
+    "generated_manifest",
+    "blocked"
+  ],
+  "title": "DetectionResult",
+  "type": "object"
+}

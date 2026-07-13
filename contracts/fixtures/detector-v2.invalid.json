@@ -1,0 +1,18 @@
+{
+  "schema_version": "detector.lrail.dev/v2",
+  "proposal_version": 2,
+  "detector_version": "latest",
+  "ruleset_version": "unknown",
+  "source_snapshot_id": "mutable-branch-main",
+  "snapshot_root": "../escape",
+  "plugins": [],
+  "services": [],
+  "evidence_graph": { "nodes": [], "edges": [] },
+  "warnings": [],
+  "unresolved": [],
+  "unsupported_features": [],
+  "suggested_addons": [],
+  "files_considered": [],
+  "generated_manifest": null,
+  "blocked": false
+}

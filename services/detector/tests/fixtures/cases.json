@@ -1,0 +1,10 @@
+[
+  {"fixture":"rails-worker","blocked":false,"frameworks":["Rails"],"processes":["web","worker"]},
+  {"fixture":"node-monorepo","blocked":false,"frameworks":["Express","Vite","Node.js"],"service_count":3},
+  {"fixture":"python-fastapi","blocked":false,"frameworks":["FastAPI"],"processes":["web"]},
+  {"fixture":"go-multi","blocked":false,"frameworks":["Go net/http"],"processes":["api","worker"]},
+  {"fixture":"static-site","blocked":false,"frameworks":["Static HTML"],"processes":["web"]},
+  {"fixture":"docker-service","blocked":false,"frameworks":["Dockerfile"],"processes":["web"]},
+  {"fixture":"adversarial-conflicting-locks","blocked":true,"unresolved":"node.conflicting-lockfiles"},
+  {"fixture":"adversarial-procfile-shell","blocked":true,"unresolved":"procfile.shell-command"}
+]

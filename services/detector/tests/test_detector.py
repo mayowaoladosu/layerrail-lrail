@@ -10,9 +10,16 @@ from hypothesis import strategies as st
 from pydantic import ValidationError
 
 from lrail_detector.cli import main
-from lrail_detector.engine import Detector, detect
+from lrail_detector.engine import Detector
+from lrail_detector.engine import detect as detect_snapshot
 from lrail_detector.inventory import MAX_METADATA_BYTES, InventoryError, SnapshotInventory
 from lrail_detector.models import ProcessProposal
+
+SNAPSHOT_ID = "snp_019b01da-7e31-7000-8000-000000000035"
+
+
+def detect(snapshot: Path, selected_root: str = "."):
+    return detect_snapshot(snapshot, SNAPSHOT_ID, selected_root)
 
 
 def write_tree(root: Path, files: dict[str, str]) -> Path:
@@ -62,8 +69,8 @@ def test_detects_next_with_locked_pnpm_commands(tmp_path: Path) -> None:
     service = detect(tmp_path).services[0]
 
     assert service.framework == "Next.js"
-    assert service.install_command == ("pnpm", "install", "--frozen-lockfile")
-    assert service.build_command == ("pnpm", "run", "build")
+    assert service.build.install_command == ("pnpm", "install", "--frozen-lockfile")
+    assert service.build.build_command == ("pnpm", "run", "build")
     assert service.processes[0].command == ("pnpm", "run", "start")
 
 
@@ -72,7 +79,12 @@ def test_detects_fastapi_without_reading_arbitrary_source(tmp_path: Path) -> Non
         tmp_path,
         {
             "pyproject.toml": '[project]\nname="api"\ndependencies=["fastapi", "uvicorn"]\n',
-            "main.py": "raise RuntimeError('must never execute')\n",
+            "uv.lock": "version = 1\n",
+            "main.py": (
+                "from fastapi import FastAPI\n"
+                "app = FastAPI()\n"
+                "raise RuntimeError('must never execute')\n"
+            ),
             "private.py": "API_TOKEN = 'this file is not detector metadata'\n",
         },
     )
@@ -86,22 +98,23 @@ def test_detects_fastapi_without_reading_arbitrary_source(tmp_path: Path) -> Non
     assert "private.py" not in service.files_considered
 
 
-def test_detects_go_command_and_marks_multiple_commands_ambiguous(tmp_path: Path) -> None:
+def test_detects_go_web_and_worker_processes_in_one_module(tmp_path: Path) -> None:
     write_tree(
         tmp_path,
         {
             "go.mod": "module example.invalid/platform\n\ngo 1.26\n",
-            "cmd/api/main.go": "package main\n",
+            "go.sum": "example.invalid/dependency v1.0.0 h1:fixture\n",
+            "cmd/api/main.go": 'package main\n// http.ListenAndServe(":8080", nil)\n',
         },
     )
     single = detect(tmp_path)
     assert single.blocked is False
-    assert single.services[0].processes[0].command == ("/app/api",)
+    assert single.services[0].processes[0].command == ("/app/out/api",)
 
     write_tree(tmp_path, {"cmd/worker/main.go": "package main\n"})
     multiple = detect(tmp_path)
-    assert multiple.blocked is True
-    assert multiple.services[0].ambiguous is True
+    assert multiple.blocked is False
+    assert {process.name for process in multiple.services[0].processes} == {"api", "worker"}
 
 
 def test_dockerfile_overrides_build_method_but_keeps_framework(tmp_path: Path) -> None:
@@ -109,6 +122,7 @@ def test_dockerfile_overrides_build_method_but_keeps_framework(tmp_path: Path) -
         tmp_path,
         {
             "Gemfile": 'gem "rails"\n',
+            "Gemfile.lock": "GEM\n",
             "Dockerfile": 'FROM ruby:3.4\nEXPOSE 8080\nCMD ["bin/rails", "server"]\n',
         },
     )
@@ -116,10 +130,15 @@ def test_dockerfile_overrides_build_method_but_keeps_framework(tmp_path: Path) -
     service = detect(tmp_path).services[0]
 
     assert service.framework == "Rails"
-    assert service.build_method == "dockerfile"
+    assert service.build.strategy == "dockerfile"
     assert service.processes[0].port == 8080
     assert service.processes[0].command == ("bin/rails", "server")
-    assert {item.kind for item in service.evidence} == {"dependency", "docker"}
+    detector_ids = {
+        result.detector
+        for result in detect(tmp_path).evidence_graph.nodes
+        if result.id in service.evidence_ids
+    }
+    assert detector_ids == {"docker", "ruby"}
 
 
 def test_dockerfile_without_runtime_hints_requires_confirmation(tmp_path: Path) -> None:
@@ -147,6 +166,7 @@ def test_detects_multi_service_workspace_deterministically(tmp_path: Path) -> No
         tmp_path,
         {
             "package.json": json.dumps({"name": "root", "workspaces": ["apps/*"]}),
+            "pnpm-lock.yaml": "lockfileVersion: '9.0'\n",
             "apps/web/package.json": json.dumps(
                 {
                     "name": "web",
@@ -169,7 +189,7 @@ def test_detects_multi_service_workspace_deterministically(tmp_path: Path) -> No
 
     assert first == second
     assert [service.root for service in first.services] == ["apps/api", "apps/web"]
-    assert any("monorepo proposal" in warning for warning in first.warnings)
+    assert any("Monorepo proposal" in warning.message for warning in first.warnings)
 
 
 def test_conflicting_frameworks_at_one_root_block_deployment(tmp_path: Path) -> None:
@@ -190,7 +210,7 @@ def test_conflicting_frameworks_at_one_root_block_deployment(tmp_path: Path) -> 
 
     assert result.blocked is True
     assert result.services[0].ambiguous is True
-    assert any("conflicting service candidates" in warning for warning in result.warnings)
+    assert any(item.code == "resolver.framework-conflict" for item in result.unresolved)
 
 
 def test_malformed_metadata_is_safe_and_explainable(tmp_path: Path) -> None:
@@ -200,8 +220,8 @@ def test_malformed_metadata_is_safe_and_explainable(tmp_path: Path) -> None:
 
     assert result.blocked is True
     assert result.services == ()
-    assert "invalid package.json: package.json" in result.warnings
-    assert any("no supported service" in warning for warning in result.warnings)
+    assert any(item.code == "node.invalid-package-json" for item in result.warnings)
+    assert any(item.code == "detector.no-service" for item in result.unresolved)
 
 
 def test_selected_root_limits_monorepo_detection(tmp_path: Path) -> None:
@@ -229,7 +249,7 @@ def test_rejects_selected_root_escape(tmp_path: Path, selected: str) -> None:
 
     assert result.blocked is True
     assert result.services == ()
-    assert "selected root" in result.warnings[0]
+    assert "selected root" in result.unresolved[0].message
 
 
 def test_skips_symlinks_even_when_they_look_like_manifests(tmp_path: Path) -> None:
@@ -255,7 +275,9 @@ def test_rejects_oversized_metadata(tmp_path: Path) -> None:
     result = detect(tmp_path)
 
     assert result.blocked is True
-    assert any("metadata file exceeds" in warning for warning in result.warnings)
+    assert any(
+        "metadata file exceeds" in item.message for item in result.warnings + result.unresolved
+    )
 
 
 def test_depth_limit_prevents_adversarial_tree(tmp_path: Path) -> None:
@@ -268,7 +290,7 @@ def test_depth_limit_prevents_adversarial_tree(tmp_path: Path) -> None:
     result = detect(tmp_path)
 
     assert result.blocked is True
-    assert any("depth exceeds" in warning for warning in result.warnings)
+    assert any("depth exceeds" in item.message for item in result.unresolved)
 
 
 def test_cli_emits_one_contract_and_block_exit(
@@ -276,13 +298,13 @@ def test_cli_emits_one_contract_and_block_exit(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     write_tree(tmp_path, {"index.html": "<h1>ok</h1>"})
-    assert main([str(tmp_path), "--pretty", "--fail-on-block"]) == 0
+    assert main([str(tmp_path), "--snapshot-id", SNAPSHOT_ID, "--pretty", "--fail-on-block"]) == 0
     payload = json.loads(capsys.readouterr().out)
-    assert payload["schema_version"] == "detector.lrail.dev/v1"
+    assert payload["schema_version"] == "detector.lrail.dev/v2"
 
     empty = tmp_path / "empty"
     empty.mkdir()
-    assert main([str(empty), "--fail-on-block"]) == 2
+    assert main([str(empty), "--snapshot-id", SNAPSHOT_ID, "--fail-on-block"]) == 2
     blocked = json.loads(capsys.readouterr().out)
     assert blocked["blocked"] is True
 
@@ -291,11 +313,11 @@ def test_service_limit_blocks_unbounded_monorepo(tmp_path: Path) -> None:
     for index in range(3):
         write_tree(tmp_path, {f"apps/app-{index}/index.html": "<h1>app</h1>"})
 
-    result = Detector(max_services=2).detect(tmp_path)
+    result = Detector(max_services=2).detect(tmp_path, SNAPSHOT_ID)
 
     assert result.blocked is True
     assert len(result.services) == 2
-    assert any("maximum is 2" in warning for warning in result.warnings)
+    assert any(item.code == "detector.service-limit" for item in result.unresolved)
 
 
 def test_inventory_rejects_non_directory(tmp_path: Path) -> None:
@@ -321,9 +343,11 @@ def test_rails_with_vite_assets_selects_rails(tmp_path: Path) -> None:
         tmp_path,
         {
             "Gemfile": 'gem "rails"\n',
+            "Gemfile.lock": "GEM\n",
             "package.json": json.dumps(
                 {"scripts": {"build": "vite build"}, "devDependencies": {"vite": "8"}}
             ),
+            "pnpm-lock.yaml": "lockfileVersion: '9.0'\n",
         },
     )
 
@@ -331,14 +355,19 @@ def test_rails_with_vite_assets_selects_rails(tmp_path: Path) -> None:
 
     assert result.blocked is False
     assert result.services[0].framework == "Rails"
-    assert set(result.services[0].files_considered) == {"Gemfile", "package.json"}
-    assert any("selected Rails" in warning for warning in result.warnings)
+    assert set(result.services[0].files_considered) == {
+        "Gemfile",
+        "Gemfile.lock",
+        "package.json",
+        "pnpm-lock.yaml",
+    }
+    assert any(item.code == "resolver.lower-confidence-candidate" for item in result.warnings)
 
 
 @pytest.mark.parametrize(
     ("metadata", "entry", "framework", "expected"),
     [
-        ("django==6.0", "manage.py", "Django", ("python", "manage.py")),
+        ("django==6.0", "manage.py", "Django", ("gunicorn", "project.wsgi:application")),
         ("flask==4.0", "app.py", "Flask", ("gunicorn", "--bind")),
     ],
 )
@@ -374,6 +403,7 @@ def test_node_reports_unsupported_native_desktop_dependencies(tmp_path: Path) ->
     service = detect(tmp_path).services[0]
 
     assert service.name == "demo-desktop"
+    assert detect(tmp_path).blocked is True
     assert service.unsupported_features == (
         "desktop_runtime",
         "native_addon_requires_build_validation",
@@ -394,7 +424,7 @@ def test_invalid_docker_hints_are_bounded(tmp_path: Path) -> None:
     result = detect(tmp_path)
 
     assert result.services[0].processes[0].port == 8080
-    assert any("invalid port" in warning for warning in result.warnings)
+    assert any("port" in item.code for item in result.unresolved)
 
 
 def test_duplicate_service_names_get_stable_path_suffix(tmp_path: Path) -> None:
@@ -424,14 +454,14 @@ def test_selected_root_symlink_is_rejected(tmp_path: Path) -> None:
     result = detect(tmp_path, "linked")
 
     assert result.blocked is True
-    assert "symlink" in result.warnings[0]
+    assert "symlink" in result.unresolved[0].message
 
 
 def test_non_utf8_metadata_is_rejected(tmp_path: Path) -> None:
     (tmp_path / "package.json").write_bytes(b"\xff\xfe\x00")
     result = detect(tmp_path)
     assert result.blocked is True
-    assert any("not UTF-8" in warning for warning in result.warnings)
+    assert any("not UTF-8" in item.message for item in result.warnings + result.unresolved)
 
 
 @given(st.text(alphabet="abcdefghijklmnopqrstuvwxyz0123456789-", min_size=1, max_size=30))

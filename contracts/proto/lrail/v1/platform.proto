@@ -107,7 +107,9 @@ message FinalizeUploadRequest {
 
 message DetectRequest {
   RequestContext context = 1;
+  // Immutable snp_ source snapshot identity; branch names are never accepted.
   string snapshot_id = 2;
+  // Canonical repository-relative selected root, or '.'.
   string root = 3;
 }
 
@@ -118,7 +120,9 @@ message ValidateProposalRequest {
 }
 
 message DetectResponse {
+  // JSON representation of detector.lrail.dev/v2 DetectionResult.
   google.protobuf.Struct proposal = 1;
+  // Flattened evidence nodes for consumers that do not inspect the proposal graph.
   repeated google.protobuf.Struct evidence = 2;
   repeated string unsupported_features = 3;
   repeated string files_considered = 4;

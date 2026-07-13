@@ -1,0 +1,97 @@
+{
+  "schema_version": "detector.lrail.dev/v2",
+  "proposal_version": 1,
+  "detector_version": "0.2.0",
+  "ruleset_version": "2026-07-13.1",
+  "source_snapshot_id": "snp_019b01da-7e31-7000-8000-000000000038",
+  "snapshot_root": ".",
+  "plugins": [
+    { "plugin": "docker", "version": "1.0.0" },
+    { "plugin": "go", "version": "1.0.0" },
+    { "plugin": "node", "version": "1.0.0" },
+    { "plugin": "python", "version": "1.0.0" },
+    { "plugin": "ruby", "version": "1.0.0" },
+    { "plugin": "static", "version": "1.0.0" }
+  ],
+  "services": [
+    {
+      "name": "app",
+      "root": ".",
+      "kind": "static",
+      "language": "static",
+      "framework": "Static HTML",
+      "runtime": { "name": "static", "version": null, "version_source": null },
+      "build": {
+        "strategy": "auto",
+        "install_command": [],
+        "build_command": [],
+        "output_path": ".",
+        "cache_paths": [],
+        "required_files": ["index.html"]
+      },
+      "processes": [
+        {
+          "name": "web",
+          "kind": "static",
+          "command": [],
+          "port": null,
+          "protocol": "none",
+          "health_path": null
+        }
+      ],
+      "depends_on": [],
+      "confidence": 0.88,
+      "evidence_ids": ["ev_f414fa663349654dd711"],
+      "unsupported_features": [],
+      "files_considered": ["index.html"],
+      "ambiguous": false
+    }
+  ],
+  "evidence_graph": {
+    "nodes": [
+      {
+        "id": "ev_f414fa663349654dd711",
+        "detector": "static",
+        "fact": "static.html-entrypoint",
+        "path": "index.html",
+        "detail": "index.html identifies an immutable static publication root",
+        "confidence_delta": 0.38
+      }
+    ],
+    "edges": [
+      {
+        "source": "ev_f414fa663349654dd711",
+        "target": "service:app",
+        "relation": "supports"
+      }
+    ]
+  },
+  "warnings": [],
+  "unresolved": [],
+  "unsupported_features": [],
+  "suggested_addons": [],
+  "files_considered": ["index.html"],
+  "generated_manifest": {
+    "api_version": "lrail.dev/v1",
+    "project": { "name": "app" },
+    "services": [
+      {
+        "name": "app",
+        "root": ".",
+        "build": { "method": "auto", "network": "none" },
+        "processes": [
+          {
+            "name": "web",
+            "kind": "static",
+            "command": ["lrail-static"],
+            "resources": { "profile": "nano" },
+            "runtime_class": "sandbox"
+          }
+        ]
+      }
+    ],
+    "addons": [],
+    "schedules": []
+  },
+  "blocked": false
+}

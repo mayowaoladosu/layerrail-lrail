@@ -25,3 +25,4 @@ ensure
   cancel&.call(reason: "worker_shutdown")
   starter_thread&.join(5)
   starter&.close
+end

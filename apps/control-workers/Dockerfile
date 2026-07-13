@@ -19,6 +19,7 @@ COPY Gemfile Gemfile.lock ./
 RUN bundle install --jobs 4 --retry 3
 COPY .rubocop.yml Rakefile ./
 COPY lib ./lib
+COPY bin ./bin
 COPY test ./test
 CMD ["bundle", "exec", "rake", "test"]
 

@@ -82,6 +82,7 @@ tasks:
     internal: true
     cmds:
       - docker build --target test -t "{{.CONTROL_WORKERS_TEST_IMAGE}}" "{{.CONTROL_WORKERS}}"
+      - docker run --rm "{{.CONTROL_WORKERS_TEST_IMAGE}}" ruby -c bin/worker
       - docker run --rm "{{.CONTROL_WORKERS_TEST_IMAGE}}" bundle exec rubocop
 
   test:

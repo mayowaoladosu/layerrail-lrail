@@ -61,7 +61,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: egress-proxy
-          image: ghcr.io/mayowaoladosu/layerrail-lrail/build-egress-proxy@sha256:14c9d9cd3f7c27f702b8145d2d227da55884410b072173d51400a0ac96cc3c53
+          image: ghcr.io/mayowaoladosu/layerrail-lrail/build-egress-proxy@sha256:e100b85ba28c2b03901172aca3ac65c15bdf478d68961283f4545267a535ac3c
           imagePullPolicy: IfNotPresent
           securityContext:
             runAsNonRoot: true

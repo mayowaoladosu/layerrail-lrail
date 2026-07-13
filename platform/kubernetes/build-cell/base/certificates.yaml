@@ -136,6 +136,51 @@ spec:
 apiVersion: cert-manager.io/v1
 kind: Certificate
 metadata:
+  name: lrail-build-evidence-signer
+  namespace: lrail-build-control
+spec:
+  secretName: lrail-build-evidence-signer-tls
+  duration: 24h
+  renewBefore: 8h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  dnsNames:
+    - lrail-build-evidence-signer.lrail-build-control.svc
+    - lrail-build-evidence-signer.lrail-build-control.svc.cluster.local
+  uris:
+    - spiffe://lrail.internal/build-evidence-signer
+  usages: [server auth]
+  issuerRef:
+    group: cert-manager.io
+    kind: ClusterIssuer
+    name: lrail-internal-ca
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: lrail-build-evidence-client
+  namespace: lrail-build-control
+spec:
+  secretName: lrail-build-evidence-client-tls
+  duration: 24h
+  renewBefore: 8h
+  privateKey:
+    algorithm: ECDSA
+    size: 256
+    rotationPolicy: Always
+  uris:
+    - spiffe://lrail.internal/build-evidence-client
+  usages: [client auth]
+  issuerRef:
+    group: cert-manager.io
+    kind: ClusterIssuer
+    name: lrail-internal-ca
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
   name: lrail-residue-agent-server
   namespace: lrail-build-system
 spec:

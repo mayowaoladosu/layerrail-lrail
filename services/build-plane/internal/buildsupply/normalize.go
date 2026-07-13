@@ -15,8 +15,9 @@ import (
 )
 
 type databaseIdentity struct {
-	Digest    string
-	UpdatedAt string
+	Digest         string `json:"digest"`
+	MetadataDigest string `json:"metadata_digest"`
+	UpdatedAt      string `json:"updated_at"`
 }
 
 type normalizedScanReport struct {
@@ -150,7 +151,8 @@ func normalizeSPDXDocument(contents []byte, request ScanRequest) ([]byte, error)
 }
 
 func normalizeTrivyReport(contents []byte, request ScanRequest, database databaseIdentity) ([]byte, ScanSummary, error) {
-	if len(contents) == 0 || len(contents) > MaxToolOutputBytes || !digestPattern.MatchString(database.Digest) || database.UpdatedAt == "" {
+	if len(contents) == 0 || len(contents) > MaxToolOutputBytes || !digestPattern.MatchString(database.Digest) ||
+		!digestPattern.MatchString(database.MetadataDigest) || database.UpdatedAt == "" {
 		return nil, ScanSummary{}, errors.New("Trivy report or database identity is invalid")
 	}
 	var external trivyReport

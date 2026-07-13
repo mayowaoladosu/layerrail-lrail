@@ -23,6 +23,17 @@ spec:
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
+  name: lrail-build-trivy-db
+  namespace: lrail-build-control
+spec:
+  accessModes: ["ReadWriteMany"]
+  resources:
+    requests:
+      storage: 10Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
   name: lrail-build-cache
   namespace: lrail-build-control
 spec:

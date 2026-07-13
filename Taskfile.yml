@@ -12,12 +12,16 @@ vars:
   CONTROL_WORKERS_IMAGE: lrail-control-workers:local
   DETECTOR: services/detector
   SOURCE_GATEWAY_IMAGE: lrail-source-gateway:local
-  BUILD_CELL_CONTROLLER_IMAGE: lrail-buildcell-controller:wp039-final
-  BUILD_CELL_WORKER_IMAGE: lrail-buildkit-worker:wp039-final
-  BUILD_CELL_RESIDUE_IMAGE: lrail-residue-agent:wp039-final
-  BUILD_CELL_EGRESS_IMAGE: lrail-build-egress-proxy:wp039-final
-  BUILD_REGISTRY_BROKER_IMAGE: lrail-registry-broker:wp039-final
-  TRIVY_IMAGE: aquasec/trivy@sha256:a22415a38938a56c379387a8163fcb0ce38b10ace73e593475d3658d578b2436
+  BUILD_CELL_CONTROLLER_IMAGE: lrail-buildcell-controller:wp040-final
+  BUILD_CELL_WORKER_IMAGE: lrail-buildkit-worker:wp040-final
+  BUILD_CELL_RESIDUE_IMAGE: lrail-residue-agent:wp040-final
+  BUILD_CELL_EGRESS_IMAGE: lrail-build-egress-proxy:wp040-final
+  BUILD_REGISTRY_BROKER_IMAGE: lrail-registry-broker:wp040-final
+  BUILD_EVIDENCE_SIGNER_IMAGE: lrail-evidence-signer:wp040-final
+  BUILD_TRIVY_DB_UPDATER_IMAGE: lrail-trivy-db-updater:wp040-final
+  BUILD_EVIDENCE_TEST_IMAGE: lrail-evidence-test:wp040
+  TRIVY_IMAGE: lrail-trivy-db-updater:wp040-final
+  ALPINE_IMAGE: alpine:3.24.1@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b
 
 tasks:
   default:
@@ -104,22 +108,33 @@ tasks:
       - task: db:verify
 
   build-cell:test:
-    desc: Run WP-039 assignment, execution, registry, transport, Kubernetes, capability, and residue conformance
+    desc: Run WP-040 assignment, evidence, execution, registry, transport, Kubernetes, capability, and residue conformance
     cmds:
       - python tools/go-test-race.py ./services/build-plane/...
       - python -c "from pathlib import Path; Path('.work').mkdir(exist_ok=True)"
-      - kubectl kustomize platform/kubernetes/build-cell/base > .work/wp038-build-cell-rendered.yaml
-      - kubectl kustomize platform/kubernetes/build-cell/overlays/example > .work/wp038-build-cell-example-rendered.yaml
+      - kubectl kustomize platform/kubernetes/build-cell/base > .work/wp040-build-cell-rendered.yaml
+      - kubectl kustomize platform/kubernetes/build-cell/overlays/example > .work/wp040-build-cell-example-rendered.yaml
       - python tools/validate-build-cell-policy.py
+      - >-
+        docker run --rm
+        -v "{{.ROOT_DIR}}/platform/kubernetes/build-cell/base/scripts/update-trivy-db.sh:/update-trivy-db.sh:ro"
+        --entrypoint /bin/sh "{{.ALPINE_IMAGE}}" -n /update-trivy-db.sh
 
   build-cell:images:
-    desc: Build final-source build controller, worker, egress, registry broker, and residue images
+    desc: Build final-source controller, worker, egress, registry broker, signer, DB updater, and residue images
+    deps: [build-trivy-db-updater:image]
     cmds:
-      - docker build --pull=false -f services/build-plane/Dockerfile.controller -t "{{.BUILD_CELL_CONTROLLER_IMAGE}}" .
-      - docker build --pull=false -f services/build-plane/Dockerfile.worker -t "{{.BUILD_CELL_WORKER_IMAGE}}" .
-      - docker build --pull=false -f services/build-plane/Dockerfile.egress-proxy -t "{{.BUILD_CELL_EGRESS_IMAGE}}" .
-      - docker build --pull=false -f services/build-plane/Dockerfile.registry-broker -t "{{.BUILD_REGISTRY_BROKER_IMAGE}}" .
-      - docker build --pull=false -f services/build-plane/Dockerfile.residue-agent -t "{{.BUILD_CELL_RESIDUE_IMAGE}}" .
+      - docker build --pull=false --provenance=false -f services/build-plane/Dockerfile.controller -t "{{.BUILD_CELL_CONTROLLER_IMAGE}}" .
+      - docker build --pull=false --provenance=false -f services/build-plane/Dockerfile.worker -t "{{.BUILD_CELL_WORKER_IMAGE}}" .
+      - docker build --pull=false --provenance=false -f services/build-plane/Dockerfile.egress-proxy -t "{{.BUILD_CELL_EGRESS_IMAGE}}" .
+      - docker build --pull=false --provenance=false -f services/build-plane/Dockerfile.registry-broker -t "{{.BUILD_REGISTRY_BROKER_IMAGE}}" .
+      - docker build --pull=false --provenance=false -f services/build-plane/Dockerfile.evidence-signer -t "{{.BUILD_EVIDENCE_SIGNER_IMAGE}}" .
+      - docker build --pull=false --provenance=false -f services/build-plane/Dockerfile.residue-agent -t "{{.BUILD_CELL_RESIDUE_IMAGE}}" .
+
+  build-trivy-db-updater:image:
+    internal: true
+    cmds:
+      - docker build --pull=false --provenance=false -f services/build-plane/Dockerfile.trivy-db-updater -t "{{.BUILD_TRIVY_DB_UPDATER_IMAGE}}" .
 
   build-cell:test:egress-real:
     desc: Prove a real final worker routes a networked solve through the mTLS policy proxy
@@ -131,11 +146,55 @@ tasks:
       - go test ./services/build-plane/integration -run TestRealWorkerRoutesNetworkedSolveThroughPolicyProxy -count=1 -v
 
   build-registry:test:real:
-    desc: Prove immutable push, digest pull, and duplicate publication against Distribution 3
-    env:
-      LRAIL_REGISTRY_INTEGRATION: "1"
+    desc: Prove immutable publication and official Cosign verification against Distribution 3
     cmds:
-      - go test ./services/build-plane/internal/buildregistry -run TestRealDistributionPublishesPullsAndDeduplicatesByDigest -count=1 -v
+      - python tools/verify-cosign-registry.py
+
+  build-evidence:test:real:
+    desc: Prove pinned Syft/Trivy accept clean image/static OCI and deny seeded layer secrets offline
+    deps: [build-trivy-db-updater:image]
+    cmds:
+      - docker build --pull=false --provenance=false -f services/build-plane/Dockerfile.evidence-test -t "{{.BUILD_EVIDENCE_TEST_IMAGE}}" .
+      - >-
+        docker run --rm
+        -e TRIVY_DB_REPOSITORY=ghcr.io/aquasecurity/trivy-db:2
+        -v lrail-build-evidence-trivy-db:/var/lib/lrail-trivy
+        -v "{{.ROOT_DIR}}/platform/kubernetes/build-cell/base/scripts/update-trivy-db.sh:/etc/lrail-trivy/update.sh:ro"
+        --entrypoint /bin/sh "{{.TRIVY_IMAGE}}" /etc/lrail-trivy/update.sh
+      - >-
+        docker run --rm
+        -v "{{.ROOT_DIR}}:/workspace"
+        -v lrail-go-mod:/go/pkg/mod
+        -v lrail-build-evidence-trivy-db:/trivy-cache:ro
+        -e LRAIL_EVIDENCE_INTEGRATION=1
+        -e LRAIL_SYFT_PATH=/usr/local/bin/syft
+        -e LRAIL_TRIVY_PATH=/usr/local/bin/trivy
+        -e LRAIL_TRIVY_CACHE_DIR=/trivy-cache/current
+        -e LRAIL_TRIVY_DB_METADATA=/trivy-cache/current/db/metadata.json
+        -e LRAIL_TRIVY_SECRET_CONFIG=/workspace/services/build-plane/config/trivy-secret.yaml
+        "{{.BUILD_EVIDENCE_TEST_IMAGE}}"
+        ./services/build-plane/integration ./services/build-plane/internal/buildregistry
+        -run "TestReal(SyftTrivyPipeline|StaticBundleEvidence)" -count=1 -v
+
+  build-evidence:test:openbao-real:
+    desc: Prove the production signing adapter against pinned OpenBao Transit
+    env:
+      LRAIL_OPENBAO_INTEGRATION: "1"
+    cmds:
+      - >-
+        go test ./services/build-plane/internal/buildsigning
+        -run TestRealOpenBaoTransitConformsToEvidenceSigningAuthority -count=1 -v
+
+  build-evidence:test:database-real:
+    desc: Prove locked atomic Trivy DB refresh and bounded two-generation retention
+    env:
+      LRAIL_TRIVY_DB_INTEGRATION: "1"
+      LRAIL_TRIVY_DB_UPDATER_IMAGE: "{{.BUILD_TRIVY_DB_UPDATER_IMAGE}}"
+    deps: [build-trivy-db-updater:image]
+    cmds:
+      - >-
+        go test ./services/build-plane/integration
+        -run TestRealTrivyDatabaseUpdaterPublishesAtomicBoundedGenerations -count=1 -v
 
   build-cell:security:
     desc: Fail on any effective high or critical component-image vulnerability
@@ -165,6 +224,18 @@ tasks:
         -v lrail-trivy-cache:/root/.cache/
         "{{.TRIVY_IMAGE}}" image --skip-version-check --scanners vuln
         --severity HIGH,CRITICAL --exit-code 1 "{{.BUILD_REGISTRY_BROKER_IMAGE}}"
+      - >-
+        docker run --rm
+        -v /var/run/docker.sock:/var/run/docker.sock
+        -v lrail-trivy-cache:/root/.cache/
+        "{{.TRIVY_IMAGE}}" image --skip-version-check --scanners vuln
+        --severity HIGH,CRITICAL --exit-code 1 "{{.BUILD_EVIDENCE_SIGNER_IMAGE}}"
+      - >-
+        docker run --rm
+        -v /var/run/docker.sock:/var/run/docker.sock
+        -v lrail-trivy-cache:/root/.cache/
+        "{{.TRIVY_IMAGE}}" image --skip-version-check --scanners vuln
+        --severity HIGH,CRITICAL --exit-code 1 "{{.BUILD_TRIVY_DB_UPDATER_IMAGE}}"
       - >-
         docker run --rm
         -v /var/run/docker.sock:/var/run/docker.sock

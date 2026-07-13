@@ -1,11 +1,38 @@
 # syntax=docker/dockerfile:1.12
-FROM anchore/syft@sha256:473a60e3a58e29aca3aedb3e99e787bb4ef273917e44d10fcbea4330a07320bb AS syft
-FROM aquasec/trivy@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f AS trivy
+FROM golang:1.26.5-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2 AS syft-build
+WORKDIR /src
+ADD --checksum=sha256:8bbbb3a27cca304c70192923834faa4c025b75a5ddbc9303ec5eed6e486e224a \
+	https://github.com/anchore/syft/archive/b15c5dbfe2bb21c9d73002c1056a829c8c411c75.tar.gz /tmp/syft.tar.gz
+RUN --mount=type=cache,id=lrail-syft-go-mod,target=/go/pkg/mod \
+	tar -xzf /tmp/syft.tar.gz --strip-components=1 \
+ && go mod download
+RUN --mount=type=cache,id=lrail-syft-go-mod,target=/go/pkg/mod \
+	--mount=type=cache,id=lrail-syft-go-build,target=/root/.cache/go-build \
+	CGO_ENABLED=0 GOOS=linux go build -trimpath -buildvcs=false \
+	  -ldflags='-s -w -X main.version=1.46.0 -X main.buildDate=2026-06-26T09:36:01Z -X main.gitCommit=b15c5dbfe2bb21c9d73002c1056a829c8c411c75 -X main.gitDescription=v1.46.0' \
+	  -o /out/syft ./cmd/syft
+
+FROM golang:1.26.5-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2 AS trivy-build
+ENV GOEXPERIMENT=jsonv2
+WORKDIR /src
+ADD --checksum=sha256:5a922c388846d11345ce8283e4373be312458f002abc667c3cd1f77c43163725 \
+	https://github.com/aquasecurity/trivy/archive/8a32853686209a428179bb3a1688802b25691564.tar.gz /tmp/trivy.tar.gz
+RUN --mount=type=cache,id=lrail-trivy-go-mod,target=/go/pkg/mod \
+	tar -xzf /tmp/trivy.tar.gz --strip-components=1 \
+ && go mod edit -require=oras.land/oras-go/v2@v2.6.2 \
+ && go mod tidy \
+ && go mod download
+RUN --mount=type=cache,id=lrail-trivy-go-mod,target=/go/pkg/mod \
+	--mount=type=cache,id=lrail-trivy-go-build,target=/root/.cache/go-build \
+	CGO_ENABLED=0 GOOS=linux go build -trimpath -buildvcs=false \
+	  -ldflags='-s -w -X=github.com/aquasecurity/trivy/pkg/version/app.ver=0.72.0' \
+	  -o /out/trivy ./cmd/trivy
+
 FROM ghcr.io/sigstore/cosign/cosign@sha256:6bbe0d281d955c79f85b325f0f7e651c1bcab5a4fa4ad4903d74955178a3b2eb AS cosign
 
 FROM golang:1.26.5-bookworm@sha256:18aedc16aa19b3fd7ded7245fc14b109e054d65d22ed53c355c899582bbb2113
-COPY --from=syft /syft /usr/local/bin/syft
-COPY --from=trivy /usr/local/bin/trivy /usr/local/bin/trivy
+COPY --from=syft-build /out/syft /usr/local/bin/syft
+COPY --from=trivy-build /out/trivy /usr/local/bin/trivy
 COPY --from=cosign /ko-app/cosign /usr/local/bin/cosign
 WORKDIR /workspace
 ENTRYPOINT ["go", "test"]

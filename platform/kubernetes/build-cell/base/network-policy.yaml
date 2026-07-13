@@ -119,6 +119,13 @@ spec:
         - ports:
             - {port: "9445", protocol: TCP}
     - toEndpoints:
+      - matchLabels:
+        k8s:io.kubernetes.pod.namespace: lrail-build-control
+        k8s:app.kubernetes.io/name: lrail-build-evidence-signer
+      toPorts:
+      - ports:
+        - {port: "9446", protocol: TCP}
+    - toEndpoints:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: lrail-security
             k8s:app.kubernetes.io/name: openbao
@@ -168,6 +175,77 @@ spec:
       toPorts:
         - ports:
             - {port: "9445", protocol: TCP}
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s:k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - {port: "53", protocol: UDP}
+            - {port: "53", protocol: TCP}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: build-evidence-signer
+  namespace: lrail-build-control
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: lrail-build-evidence-signer
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: lrail-build-control
+      ports:
+        - {protocol: TCP, port: 9446}
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: build-evidence-signer
+  namespace: lrail-build-control
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: lrail-build-evidence-signer
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: lrail-build-control
+            k8s:app.kubernetes.io/name: lrail-build-control
+      toPorts:
+        - ports:
+            - {port: "9446", protocol: TCP}
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s:k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - {port: "53", protocol: UDP}
+            - {port: "53", protocol: TCP}
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: lrail-security
+            k8s:app.kubernetes.io/name: openbao
+      toPorts:
+        - ports:
+            - {port: "8200", protocol: TCP}
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: trivy-db-updater
+  namespace: lrail-build-control
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: lrail-trivy-db-updater
   egress:
     - toEndpoints:
         - matchLabels:

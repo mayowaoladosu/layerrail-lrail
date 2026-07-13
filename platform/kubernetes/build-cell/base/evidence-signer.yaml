@@ -1,0 +1,128 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: lrail-build-evidence-signer
+  namespace: lrail-build-control
+automountServiceAccountToken: false
+imagePullSecrets:
+  - name: lrail-build-images
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: lrail-build-evidence-signer
+  namespace: lrail-build-control
+  labels:
+    app.kubernetes.io/name: lrail-build-evidence-signer
+    app.kubernetes.io/component: signing-service
+spec:
+  selector:
+    app.kubernetes.io/name: lrail-build-evidence-signer
+  ports:
+    - name: grpc
+      port: 9446
+      targetPort: grpc
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lrail-build-evidence-signer
+  namespace: lrail-build-control
+  labels:
+    app.kubernetes.io/name: lrail-build-evidence-signer
+    app.kubernetes.io/component: signing-service
+spec:
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: {maxUnavailable: 0, maxSurge: 1}
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: lrail-build-evidence-signer
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: lrail-build-evidence-signer
+        app.kubernetes.io/component: signing-service
+    spec:
+      serviceAccountName: lrail-build-evidence-signer
+      automountServiceAccountToken: false
+      imagePullSecrets:
+        - name: lrail-build-images
+      enableServiceLinks: false
+      terminationGracePeriodSeconds: 25
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile: {type: RuntimeDefault}
+        appArmorProfile: {type: RuntimeDefault}
+      containers:
+        - name: signer
+          image: ghcr.io/mayowaoladosu/layerrail-lrail/evidence-signer@sha256:bfa43f7a6ba1af466fde70b5072a11a6e95082ca83c313dbac6576de8e286e37
+          imagePullPolicy: IfNotPresent
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+            seccompProfile: {type: RuntimeDefault}
+            appArmorProfile: {type: RuntimeDefault}
+          ports:
+            - {name: grpc, containerPort: 9446, protocol: TCP}
+          env:
+            - name: LRAIL_OPENBAO_ADDRESS
+              valueFrom: {configMapKeyRef: {name: lrail-build-cell-site, key: openbao-address}}
+            - name: LRAIL_OPENBAO_ROLE
+              valueFrom: {configMapKeyRef: {name: lrail-build-cell-site, key: openbao-signing-role}}
+            - {name: LRAIL_OPENBAO_AUTH_MOUNT, value: kubernetes}
+            - {name: LRAIL_OPENBAO_TRANSIT_MOUNT, value: transit}
+            - {name: LRAIL_OPENBAO_SIGNING_KEY, value: build-evidence}
+            - {name: LRAIL_SIGNER_KEY_ID, value: lrail-build-evidence}
+            - {name: LRAIL_OPENBAO_JWT_FILE, value: /var/run/secrets/lrail-openbao/token}
+            - {name: LRAIL_OPENBAO_CA_FILE, value: /etc/lrail/openbao/ca.pem}
+            - {name: LRAIL_SERVER_CERT, value: /run/lrail-server/tls.crt}
+            - {name: LRAIL_SERVER_KEY, value: /run/lrail-server/tls.key}
+            - {name: LRAIL_CLIENT_CA, value: /run/lrail-server/ca.crt}
+            - {name: LRAIL_ALLOWED_CONTROLLER_URIS, value: spiffe://lrail.internal/build-evidence-client}
+            - {name: LRAIL_LISTEN_ADDRESS, value: ":9446"}
+          resources:
+            requests: {cpu: 100m, memory: 128Mi, ephemeral-storage: 32Mi}
+            limits: {cpu: "1", memory: 256Mi, ephemeral-storage: 128Mi}
+          readinessProbe:
+            tcpSocket: {port: grpc}
+            initialDelaySeconds: 2
+            periodSeconds: 5
+            timeoutSeconds: 1
+            failureThreshold: 12
+          livenessProbe:
+            tcpSocket: {port: grpc}
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 1
+            failureThreshold: 6
+          volumeMounts:
+            - {name: openbao-ca, mountPath: /etc/lrail/openbao, readOnly: true}
+            - {name: openbao-token, mountPath: /var/run/secrets/lrail-openbao, readOnly: true}
+            - {name: server-tls, mountPath: /run/lrail-server, readOnly: true}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - name: openbao-ca
+          configMap: {name: lrail-openbao-ca, defaultMode: 0444}
+        - name: openbao-token
+          projected:
+            defaultMode: 0440
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  audience: openbao.lrail.internal
+                  expirationSeconds: 600
+        - name: server-tls
+          secret: {secretName: lrail-build-evidence-signer-tls, defaultMode: 0440}
+        - name: tmp
+          emptyDir: {medium: Memory, sizeLimit: 16Mi}

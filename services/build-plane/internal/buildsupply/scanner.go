@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 	"time"
 
@@ -23,6 +24,7 @@ const DefaultScanTimeout = 15 * time.Minute
 
 var semanticVersionPattern = regexp.MustCompile(`^[0-9]+\.[0-9]+\.[0-9]+$`)
 var digestPattern = regexp.MustCompile(`^sha256:[0-9a-f]{64}$`)
+var trivyDatabaseVersionPattern = regexp.MustCompile(`^\.db-[A-Za-z0-9]{8}$`)
 
 type CommandScannerConfig struct {
 	SyftPath         string
@@ -69,15 +71,34 @@ func newCommandScanner(config CommandScannerConfig, runner commandRunner) (*Comm
 	if config.Clock == nil {
 		config.Clock = time.Now
 	}
-	for _, path := range []string{config.SyftPath, config.TrivyPath, config.TrivyCacheDir, config.TrivyDBMetadata, config.SecretConfigPath, config.WorkRoot} {
+	if err := ensureScannerWorkRoot(config.WorkRoot); err != nil {
+		return nil, err
+	}
+	for _, path := range []string{config.SyftPath, config.TrivyPath, config.SecretConfigPath, config.WorkRoot} {
 		if err := rejectSymlinkPath(path); err != nil {
 			return nil, err
 		}
 	}
-	return &CommandScanner{config: config, runner: runner}, nil
+	scanner := &CommandScanner{config: config, runner: runner}
+	if _, err := scanner.trivyDatabasePaths(); err != nil {
+		return nil, err
+	}
+	return scanner, nil
 }
 
 func (scanner *CommandScanner) CheckTools(ctx context.Context, expectedSyft, expectedTrivy string) error {
+	if err := scanner.checkToolVersions(ctx, expectedSyft, expectedTrivy); err != nil {
+		return err
+	}
+	paths, err := scanner.trivyDatabasePaths()
+	if err != nil {
+		return err
+	}
+	_, err = scanner.trivyDatabaseIdentity(paths)
+	return err
+}
+
+func (scanner *CommandScanner) checkToolVersions(ctx context.Context, expectedSyft, expectedTrivy string) error {
 	if !semanticVersionPattern.MatchString(expectedSyft) || !semanticVersionPattern.MatchString(expectedTrivy) {
 		return errors.New("scanner expected versions are invalid")
 	}
@@ -91,15 +112,22 @@ func (scanner *CommandScanner) CheckTools(ctx context.Context, expectedSyft, exp
 	if err != nil || !versionOutputContains(trivy, expectedTrivy) {
 		return errors.New("Trivy executable version differs from policy")
 	}
-	_, err = scanner.trivyDatabaseIdentity()
-	return err
+	return nil
 }
 
 func (scanner *CommandScanner) Analyze(ctx context.Context, request ScanRequest) (Analysis, error) {
 	if err := validateScanRequest(request); err != nil {
 		return Analysis{}, err
 	}
-	if err := scanner.CheckTools(ctx, request.SyftVersion, request.TrivyVersion); err != nil {
+	if err := scanner.checkToolVersions(ctx, request.SyftVersion, request.TrivyVersion); err != nil {
+		return Analysis{}, err
+	}
+	databasePaths, err := scanner.trivyDatabasePaths()
+	if err != nil {
+		return Analysis{}, err
+	}
+	database, err := scanner.trivyDatabaseIdentity(databasePaths)
+	if err != nil {
 		return Analysis{}, err
 	}
 	identity, err := buildworker.InspectOCIArtifact(request.OCIPath)
@@ -131,7 +159,7 @@ func (scanner *CommandScanner) Analyze(ctx context.Context, request ScanRequest)
 	trivyRaw, err := scanner.runner.Run(scanContext, scanner.config.TrivyPath, []string{
 		"image", "--input", layout + "@" + request.ManifestDigest, "--format", "json",
 		"--scanners", "vuln,secret,license,misconfig", "--image-config-scanners", "secret,misconfig",
-		"--license-full", "--cache-dir", scanner.config.TrivyCacheDir, "--cache-backend", "memory",
+		"--license-full", "--cache-dir", databasePaths.Cache, "--cache-backend", "memory",
 		"--secret-config", scanner.config.SecretConfigPath, "--skip-db-update", "--skip-java-db-update",
 		"--skip-check-update", "--skip-vex-repo-update", "--offline-scan", "--disable-telemetry",
 		"--no-progress", "--quiet", "--max-image-size", "20GB",
@@ -139,9 +167,12 @@ func (scanner *CommandScanner) Analyze(ctx context.Context, request ScanRequest)
 	if err != nil {
 		return Analysis{}, errors.New("Trivy image analysis failed")
 	}
-	database, err := scanner.trivyDatabaseIdentity()
+	databaseAfter, err := scanner.trivyDatabaseIdentity(databasePaths)
 	if err != nil {
 		return Analysis{}, err
+	}
+	if databaseAfter != database {
+		return Analysis{}, errors.New("Trivy vulnerability database changed during analysis")
 	}
 	report, summary, err := normalizeTrivyReport(trivyRaw, request, database)
 	if err != nil {
@@ -162,8 +193,45 @@ func (scanner *CommandScanner) environment() []string {
 	}
 }
 
-func (scanner *CommandScanner) trivyDatabaseIdentity() (databaseIdentity, error) {
-	contents, err := os.ReadFile(scanner.config.TrivyDBMetadata)
+type trivyDatabaseFiles struct {
+	Cache    string
+	Metadata string
+	Database string
+	Digest   string
+}
+
+func (scanner *CommandScanner) trivyDatabasePaths() (trivyDatabaseFiles, error) {
+	cache := filepath.Clean(scanner.config.TrivyCacheDir)
+	metadata := filepath.Clean(scanner.config.TrivyDBMetadata)
+	relativeMetadata, err := filepath.Rel(cache, metadata)
+	if err != nil || relativeMetadata == "." || relativeMetadata == ".." || strings.HasPrefix(relativeMetadata, ".."+string(filepath.Separator)) {
+		return trivyDatabaseFiles{}, errors.New("Trivy database metadata escapes cache")
+	}
+	info, err := os.Lstat(cache)
+	if err != nil {
+		return trivyDatabaseFiles{}, errors.New("Trivy database cache is unavailable")
+	}
+	resolvedCache := cache
+	if info.Mode()&os.ModeSymlink != 0 {
+		target, readErr := os.Readlink(cache)
+		if readErr != nil || filepath.IsAbs(target) || filepath.Base(target) != target || !trivyDatabaseVersionPattern.MatchString(target) {
+			return trivyDatabaseFiles{}, errors.New("Trivy database cache target is invalid")
+		}
+		resolvedCache = filepath.Join(filepath.Dir(cache), target)
+	}
+	resolvedInfo, err := os.Lstat(resolvedCache)
+	if err != nil || !resolvedInfo.IsDir() || resolvedInfo.Mode()&os.ModeSymlink != 0 {
+		return trivyDatabaseFiles{}, errors.New("Trivy database cache target is unavailable")
+	}
+	resolvedMetadata := filepath.Join(resolvedCache, relativeMetadata)
+	return trivyDatabaseFiles{
+		Cache: resolvedCache, Metadata: resolvedMetadata, Database: filepath.Join(filepath.Dir(resolvedMetadata), "trivy.db"),
+		Digest: filepath.Join(filepath.Dir(resolvedMetadata), "trivy.db.sha256"),
+	}, nil
+}
+
+func (scanner *CommandScanner) trivyDatabaseIdentity(paths trivyDatabaseFiles) (databaseIdentity, error) {
+	contents, err := os.ReadFile(paths.Metadata)
 	if err != nil || len(contents) == 0 || len(contents) > 1<<20 {
 		return databaseIdentity{}, errors.New("Trivy database metadata is unavailable")
 	}
@@ -186,8 +254,23 @@ func (scanner *CommandScanner) trivyDatabaseIdentity() (databaseIdentity, error)
 	if metadata.UpdatedAt.After(now.Add(5*time.Minute)) || now.Sub(metadata.UpdatedAt) > scanner.config.MaxDBAge {
 		return databaseIdentity{}, errors.New("Trivy vulnerability database is stale")
 	}
-	digest := sha256.Sum256(contents)
-	return databaseIdentity{Digest: "sha256:" + hex.EncodeToString(digest[:]), UpdatedAt: metadata.UpdatedAt.UTC().Format(time.RFC3339)}, nil
+	databaseInfo, err := os.Lstat(paths.Database)
+	if err != nil || !databaseInfo.Mode().IsRegular() || databaseInfo.Size() <= 0 || databaseInfo.Size() > 4<<30 {
+		return databaseIdentity{}, errors.New("Trivy vulnerability database is unavailable")
+	}
+	databaseDigest, err := os.ReadFile(paths.Digest)
+	if err != nil || len(databaseDigest) != len("sha256:")+sha256.Size*2+1 {
+		return databaseIdentity{}, errors.New("Trivy vulnerability database digest is unavailable")
+	}
+	databaseDigestText := strings.TrimSpace(string(databaseDigest))
+	if !digestPattern.MatchString(databaseDigestText) {
+		return databaseIdentity{}, errors.New("Trivy vulnerability database digest is invalid")
+	}
+	metadataDigest := sha256.Sum256(contents)
+	return databaseIdentity{
+		Digest: databaseDigestText, MetadataDigest: "sha256:" + hex.EncodeToString(metadataDigest[:]),
+		UpdatedAt: metadata.UpdatedAt.UTC().Format(time.RFC3339),
+	}, nil
 }
 
 func (osCommandRunner) Run(ctx context.Context, executable string, arguments, environment []string, maxBytes int64) ([]byte, error) {
@@ -254,6 +337,31 @@ func rejectSymlinkPath(path string) error {
 		return errors.New("scanner path is unavailable or symlinked")
 	}
 	return nil
+}
+
+func ensureScannerWorkRoot(path string) error {
+	parent := filepath.Dir(path)
+	resolvedParent, err := filepath.EvalSymlinks(parent)
+	if err != nil || !sameScannerPath(resolvedParent, parent) {
+		return errors.New("scanner workspace parent is unavailable or symlinked")
+	}
+	if err := os.Mkdir(path, 0o700); err != nil && !errors.Is(err, os.ErrExist) {
+		return errors.New("create scanner workspace root")
+	}
+	info, err := os.Lstat(path)
+	if err != nil || !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
+		return errors.New("scanner workspace root is unavailable or symlinked")
+	}
+	return nil
+}
+
+func sameScannerPath(left, right string) bool {
+	left = filepath.Clean(left)
+	right = filepath.Clean(right)
+	if runtime.GOOS == "windows" {
+		return strings.EqualFold(left, right)
+	}
+	return left == right
 }
 
 var _ Scanner = (*CommandScanner)(nil)

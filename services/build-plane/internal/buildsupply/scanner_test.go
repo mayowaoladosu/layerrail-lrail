@@ -50,10 +50,9 @@ func TestCommandScannerUsesOfflinePinnedToolsAndVerifiedLayout(t *testing.T) {
 	if err := os.Mkdir(cache, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.Mkdir(work, 0o700); err != nil {
-		t.Fatal(err)
-	}
 	metadata := writeScannerFixture(t, cache, "metadata.json", `{"Version":2,"NextUpdate":"2026-07-14T00:00:00Z","UpdatedAt":"2026-07-13T00:00:00Z","DownloadedAt":"2026-07-13T01:00:00Z"}`)
+	_ = writeScannerFixture(t, cache, "trivy.db", "verified vulnerability database")
+	_ = writeScannerFixture(t, cache, "trivy.db.sha256", "sha256:"+strings.Repeat("d", 64)+"\n")
 	secretConfig := writeScannerFixture(t, root, "trivy-secret.yaml", "rules: []\n")
 	runner := &fakeCommandRunner{
 		sbom:  []byte(`{"spdxVersion":"SPDX-2.3","dataLicense":"CC0-1.0","SPDXID":"SPDXRef-DOCUMENT","name":"random","documentNamespace":"https://random.invalid/uuid","creationInfo":{"created":"2026-07-13T11:00:00Z","creators":["Tool: syft-1.46.0"]},"packages":[]}`),
@@ -65,6 +64,9 @@ func TestCommandScannerUsesOfflinePinnedToolsAndVerifiedLayout(t *testing.T) {
 	}, runner)
 	if err != nil {
 		t.Fatalf("newCommandScanner: %v", err)
+	}
+	if info, statErr := os.Stat(work); statErr != nil || !info.IsDir() {
+		t.Fatalf("scanner workspace was not created safely: %v", statErr)
 	}
 	analysis, err := scanner.Analyze(t.Context(), ScanRequest{
 		OCIPath: request.OCIPath, OCIArchiveDigest: request.OCIArchiveDigest, OCIArchiveSize: request.OCIArchiveSize,
@@ -86,6 +88,46 @@ func TestCommandScannerUsesOfflinePinnedToolsAndVerifiedLayout(t *testing.T) {
 	}
 }
 
+func TestCommandScannerSnapshotsVersionedDatabaseAcrossAtomicRotation(t *testing.T) {
+	t.Parallel()
+	root := t.TempDir()
+	syft := writeScannerFixture(t, root, "syft", "binary")
+	trivy := writeScannerFixture(t, root, "trivy", "binary")
+	secretConfig := writeScannerFixture(t, root, "trivy-secret.yaml", "rules: []\n")
+	first := writeScannerDatabaseGeneration(t, root, ".db-Ab12Cd34", "a")
+	second := writeScannerDatabaseGeneration(t, root, ".db-Ef56Gh78", "b")
+	current := filepath.Join(root, "current")
+	if err := os.Symlink(filepath.Base(first), current); err != nil {
+		t.Skipf("symbolic links unavailable: %v", err)
+	}
+	scanner, err := newCommandScanner(CommandScannerConfig{
+		SyftPath: syft, TrivyPath: trivy, TrivyCacheDir: current,
+		TrivyDBMetadata: filepath.Join(current, "db", "metadata.json"), SecretConfigPath: secretConfig,
+		WorkRoot: filepath.Join(root, "work"), Clock: func() time.Time { return time.Date(2026, 7, 13, 12, 0, 0, 0, time.UTC) },
+	}, &fakeCommandRunner{})
+	if err != nil {
+		t.Fatalf("newCommandScanner: %v", err)
+	}
+	paths, err := scanner.trivyDatabasePaths()
+	if err != nil || paths.Cache != first {
+		t.Fatalf("paths=%#v error=%v", paths, err)
+	}
+	if err := os.Remove(current); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Base(second), current); err != nil {
+		t.Fatal(err)
+	}
+	identity, err := scanner.trivyDatabaseIdentity(paths)
+	if err != nil || identity.Digest != "sha256:"+strings.Repeat("a", 64) {
+		t.Fatalf("snapshot identity=%#v error=%v", identity, err)
+	}
+	newPaths, err := scanner.trivyDatabasePaths()
+	if err != nil || newPaths.Cache != second {
+		t.Fatalf("rotated paths=%#v error=%v", newPaths, err)
+	}
+}
+
 func TestCommandScannerRejectsStaleDatabaseBeforeToolAnalysis(t *testing.T) {
 	t.Parallel()
 	root := t.TempDir()
@@ -96,6 +138,8 @@ func TestCommandScannerRejectsStaleDatabaseBeforeToolAnalysis(t *testing.T) {
 	_ = os.Mkdir(cache, 0o700)
 	_ = os.Mkdir(work, 0o700)
 	metadata := writeScannerFixture(t, cache, "metadata.json", `{"Version":2,"NextUpdate":"2026-07-11T00:00:00Z","UpdatedAt":"2026-07-10T00:00:00Z","DownloadedAt":"2026-07-10T01:00:00Z"}`)
+	_ = writeScannerFixture(t, cache, "trivy.db", "stale vulnerability database")
+	_ = writeScannerFixture(t, cache, "trivy.db.sha256", "sha256:"+strings.Repeat("e", 64)+"\n")
 	secretConfig := writeScannerFixture(t, root, "trivy-secret.yaml", "rules: []\n")
 	runner := &fakeCommandRunner{}
 	scanner, err := newCommandScanner(CommandScannerConfig{
@@ -118,4 +162,17 @@ func writeScannerFixture(t *testing.T, root, name, contents string) string {
 		t.Fatal(err)
 	}
 	return path
+}
+
+func writeScannerDatabaseGeneration(t *testing.T, root, name, digestCharacter string) string {
+	t.Helper()
+	generation := filepath.Join(root, name)
+	database := filepath.Join(generation, "db")
+	if err := os.MkdirAll(database, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	_ = writeScannerFixture(t, database, "metadata.json", `{"Version":2,"NextUpdate":"2026-07-14T00:00:00Z","UpdatedAt":"2026-07-13T00:00:00Z","DownloadedAt":"2026-07-13T01:00:00Z"}`)
+	_ = writeScannerFixture(t, database, "trivy.db", "versioned vulnerability database "+name)
+	_ = writeScannerFixture(t, database, "trivy.db.sha256", "sha256:"+strings.Repeat(digestCharacter, 64)+"\n")
+	return generation
 }

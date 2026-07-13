@@ -3,10 +3,8 @@ package buildsigning
 import (
 	"bytes"
 	"crypto/ed25519"
-	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
-	"encoding/pem"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -22,7 +20,7 @@ type fakeSigningBao struct {
 	mu         sync.Mutex
 	server     *httptest.Server
 	private    ed25519.PrivateKey
-	publicPEM  string
+	publicKey  string
 	unsafeKey  bool
 	revokeFail bool
 	logins     int
@@ -33,11 +31,7 @@ type fakeSigningBao struct {
 func newFakeSigningBao(t *testing.T) *fakeSigningBao {
 	t.Helper()
 	private := ed25519.NewKeyFromSeed(bytes.Repeat([]byte{0x41}, ed25519.SeedSize))
-	der, err := x509.MarshalPKIXPublicKey(private.Public())
-	if err != nil {
-		t.Fatal(err)
-	}
-	fake := &fakeSigningBao{private: private, publicPEM: string(pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der}))}
+	fake := &fakeSigningBao{private: private, publicKey: base64.StdEncoding.EncodeToString(private.Public().(ed25519.PublicKey))}
 	fake.server = httptest.NewTLSServer(http.HandlerFunc(fake.handle))
 	t.Cleanup(fake.server.Close)
 	return fake
@@ -64,7 +58,7 @@ func (fake *fakeSigningBao) handle(response http.ResponseWriter, request *http.R
 		writeTestJSON(response, map[string]any{"data": map[string]any{
 			"type": "ed25519", "derived": false, "exportable": fake.unsafeKey, "allow_plaintext_backup": false,
 			"deletion_allowed": false, "supports_signing": true, "latest_version": 2,
-			"keys": map[string]any{"2": map[string]any{"public_key": fake.publicPEM}},
+			"keys": map[string]any{"2": map[string]any{"public_key": fake.publicKey}},
 		}})
 	case "/v1/transit/sign/build-evidence":
 		if request.Header.Get("X-Vault-Token") != "short-lived-sign-token" {

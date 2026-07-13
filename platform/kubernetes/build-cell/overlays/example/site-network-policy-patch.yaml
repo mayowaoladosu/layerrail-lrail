@@ -39,6 +39,13 @@ spec:
       - ports:
         - {port: "9445", protocol: TCP}
     - toEndpoints:
+      - matchLabels:
+        k8s:io.kubernetes.pod.namespace: lrail-build-control
+        k8s:app.kubernetes.io/name: lrail-build-evidence-signer
+      toPorts:
+      - ports:
+        - {port: "9446", protocol: TCP}
+    - toEndpoints:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: lrail-security
             k8s:app.kubernetes.io/name: openbao
@@ -72,6 +79,55 @@ apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
   name: build-registry-broker
+  namespace: lrail-build-control
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s:k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - {port: "53", protocol: UDP}
+            - {port: "53", protocol: TCP}
+    - toFQDNs:
+        - matchName: harbor.example.invalid
+      toPorts:
+        - ports:
+            - {port: "443", protocol: TCP}
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: build-evidence-signer
+  namespace: lrail-build-control
+spec:
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s:k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - {port: "53", protocol: UDP}
+            - {port: "53", protocol: TCP}
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: lrail-security
+            k8s:app.kubernetes.io/name: openbao
+      toPorts:
+        - ports:
+            - {port: "8200", protocol: TCP}
+    - toFQDNs:
+        - matchName: openbao.example.invalid
+      toPorts:
+        - ports:
+            - {port: "443", protocol: TCP}
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: trivy-db-updater
   namespace: lrail-build-control
 spec:
   egress:

@@ -8,16 +8,45 @@ COPY internal ./internal
 COPY services/build-plane ./services/build-plane
 RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags='-s -w' -o /out/lrail-buildcell-server ./services/build-plane/cmd/buildcell-server
 
-FROM anchore/syft@sha256:473a60e3a58e29aca3aedb3e99e787bb4ef273917e44d10fcbea4330a07320bb AS syft
-FROM aquasec/trivy@sha256:cffe3f5161a47a6823fbd23d985795b3ed72a4c806da4c4df16266c02accdd6f AS trivy
+FROM golang:1.26.5-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2 AS syft-build
+WORKDIR /src
+ADD --checksum=sha256:8bbbb3a27cca304c70192923834faa4c025b75a5ddbc9303ec5eed6e486e224a \
+	https://github.com/anchore/syft/archive/b15c5dbfe2bb21c9d73002c1056a829c8c411c75.tar.gz /tmp/syft.tar.gz
+RUN --mount=type=cache,id=lrail-syft-go-mod,target=/go/pkg/mod \
+	tar -xzf /tmp/syft.tar.gz --strip-components=1 \
+ && go mod download
+RUN --mount=type=cache,id=lrail-syft-go-mod,target=/go/pkg/mod \
+	--mount=type=cache,id=lrail-syft-go-build,target=/root/.cache/go-build \
+	CGO_ENABLED=0 GOOS=linux go build -trimpath -buildvcs=false \
+	  -ldflags='-s -w -X main.version=1.46.0 -X main.buildDate=2026-06-26T09:36:01Z -X main.gitCommit=b15c5dbfe2bb21c9d73002c1056a829c8c411c75 -X main.gitDescription=v1.46.0' \
+	  -o /out/syft ./cmd/syft
+
+FROM golang:1.26.5-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2 AS trivy-build
+ENV GOEXPERIMENT=jsonv2
+WORKDIR /src
+ADD --checksum=sha256:5a922c388846d11345ce8283e4373be312458f002abc667c3cd1f77c43163725 \
+	https://github.com/aquasecurity/trivy/archive/8a32853686209a428179bb3a1688802b25691564.tar.gz /tmp/trivy.tar.gz
+RUN --mount=type=cache,id=lrail-trivy-go-mod,target=/go/pkg/mod \
+	tar -xzf /tmp/trivy.tar.gz --strip-components=1 \
+ && go mod edit -require=oras.land/oras-go/v2@v2.6.2 \
+ && go mod tidy \
+ && go mod download
+RUN --mount=type=cache,id=lrail-trivy-go-mod,target=/go/pkg/mod \
+	--mount=type=cache,id=lrail-trivy-go-build,target=/root/.cache/go-build \
+	CGO_ENABLED=0 GOOS=linux go build -trimpath -buildvcs=false \
+	  -ldflags='-s -w -X=github.com/aquasecurity/trivy/pkg/version/app.ver=0.72.0' \
+	  -o /out/trivy ./cmd/trivy
 
 FROM gcr.io/distroless/static-debian12:nonroot@sha256:b7bb25d9f7c31d2bdd1982feb4dafcaf137703c7075dbe2febb41c24212b946f
 COPY --from=build --chown=65532:65532 /out/lrail-buildcell-server /usr/local/bin/lrail-buildcell-server
-COPY --from=syft --chown=65532:65532 /syft /usr/local/bin/syft
-COPY --from=trivy --chown=65532:65532 /usr/local/bin/trivy /usr/local/bin/trivy
+COPY --from=syft-build --chown=65532:65532 /out/syft /usr/local/bin/syft
+COPY --from=trivy-build --chown=65532:65532 /out/trivy /usr/local/bin/trivy
 COPY --chown=65532:65532 services/build-plane/config/trivy-secret.yaml /etc/lrail/trivy-secret.yaml
 LABEL org.opencontainers.image.source="https://github.com/mayowaoladosu/layerrail-lrail" \
 	org.opencontainers.image.licenses="LicenseRef-Proprietary" \
-	org.opencontainers.image.title="Lrail build-cell controller"
+	org.opencontainers.image.title="Lrail build-cell controller" \
+	dev.lrail.upstream.syft.commit="b15c5dbfe2bb21c9d73002c1056a829c8c411c75" \
+	dev.lrail.upstream.trivy.commit="8a32853686209a428179bb3a1688802b25691564" \
+	dev.lrail.upstream.oras.version="v2.6.2"
 USER 65532:65532
 ENTRYPOINT ["/usr/local/bin/lrail-buildcell-server"]

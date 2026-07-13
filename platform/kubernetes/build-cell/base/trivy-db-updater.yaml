@@ -1,0 +1,79 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: lrail-trivy-db-updater
+  namespace: lrail-build-control
+automountServiceAccountToken: false
+imagePullSecrets:
+  - name: lrail-build-images
+---
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: lrail-trivy-db-updater
+  namespace: lrail-build-control
+  labels:
+    app.kubernetes.io/name: lrail-trivy-db-updater
+    app.kubernetes.io/component: vulnerability-database
+spec:
+  schedule: "17 */6 * * *"
+  concurrencyPolicy: Forbid
+  startingDeadlineSeconds: 900
+  successfulJobsHistoryLimit: 2
+  failedJobsHistoryLimit: 3
+  jobTemplate:
+    spec:
+      backoffLimit: 3
+      activeDeadlineSeconds: 900
+      ttlSecondsAfterFinished: 86400
+      template:
+        metadata:
+          labels:
+            app.kubernetes.io/name: lrail-trivy-db-updater
+            app.kubernetes.io/component: vulnerability-database
+        spec:
+          restartPolicy: OnFailure
+          serviceAccountName: lrail-trivy-db-updater
+          automountServiceAccountToken: false
+          imagePullSecrets:
+            - name: lrail-build-images
+          enableServiceLinks: false
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            fsGroup: 65532
+            fsGroupChangePolicy: OnRootMismatch
+            seccompProfile: {type: RuntimeDefault}
+            appArmorProfile: {type: RuntimeDefault}
+          containers:
+            - name: updater
+              image: ghcr.io/mayowaoladosu/layerrail-lrail/trivy-db-updater@sha256:1490f65eb0e6cad919ee39cbc8b24e39480034a0da0cf8ec224ef379f10157c5
+              imagePullPolicy: IfNotPresent
+              command: ["/bin/sh", "/etc/lrail-trivy/update.sh"]
+              env:
+                - name: TRIVY_DB_REPOSITORY
+                  valueFrom: {configMapKeyRef: {name: lrail-build-cell-site, key: trivy-db-repository}}
+              securityContext:
+                runAsNonRoot: true
+                runAsUser: 65532
+                runAsGroup: 65532
+                allowPrivilegeEscalation: false
+                readOnlyRootFilesystem: true
+                capabilities: {drop: ["ALL"]}
+                seccompProfile: {type: RuntimeDefault}
+                appArmorProfile: {type: RuntimeDefault}
+              resources:
+                requests: {cpu: 100m, memory: 256Mi, ephemeral-storage: 64Mi}
+                limits: {cpu: "1", memory: 1Gi, ephemeral-storage: 256Mi}
+              volumeMounts:
+                - {name: trivy-db, mountPath: /var/lib/lrail-trivy}
+                - {name: updater-script, mountPath: /etc/lrail-trivy, readOnly: true}
+                - {name: tmp, mountPath: /tmp}
+          volumes:
+            - name: trivy-db
+              persistentVolumeClaim: {claimName: lrail-build-trivy-db}
+            - name: updater-script
+              configMap: {name: lrail-trivy-db-updater, defaultMode: 0555}
+            - name: tmp
+              emptyDir: {sizeLimit: 64Mi}

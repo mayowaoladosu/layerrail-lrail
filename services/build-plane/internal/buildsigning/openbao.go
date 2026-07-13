@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"crypto/ed25519"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"errors"
 	"io"
 	"net/http"
@@ -139,9 +141,9 @@ func (authority *OpenBaoAuthority) Sign(ctx context.Context, payload []byte) (ma
 	}
 	key := keyResponse.Data
 	versionKey := strconv.Itoa(key.LatestVersion)
-	publicPEM := []byte(key.Keys[versionKey].PublicKey)
+	publicPEM, publicErr := decodeOpenBaoPublicKey(key.Keys[versionKey].PublicKey)
 	if key.Type != "ed25519" || key.Derived || key.Exportable || key.AllowPlaintextBackup || key.DeletionAllowed || !key.SupportsSigning ||
-		key.LatestVersion < 1 || len(publicPEM) == 0 || len(publicPEM) > 16<<10 {
+		key.LatestVersion < 1 || publicErr != nil {
 		return Material{}, errors.New("OpenBao signing key policy is unsafe")
 	}
 	signBody, err := json.Marshal(map[string]any{
@@ -228,6 +230,20 @@ func decodeOpenBaoSignature(value string) ([]byte, int, error) {
 		return nil, 0, errors.New("OpenBao signature value is invalid")
 	}
 	return decoded, version, nil
+}
+
+func decodeOpenBaoPublicKey(value string) ([]byte, error) {
+	decoded, err := base64.StdEncoding.DecodeString(value)
+	if err != nil || len(decoded) != ed25519.PublicKeySize || base64.StdEncoding.EncodeToString(decoded) != value {
+		zeroBytes(decoded)
+		return nil, errors.New("OpenBao Ed25519 public key is invalid")
+	}
+	der, err := x509.MarshalPKIXPublicKey(ed25519.PublicKey(decoded))
+	zeroBytes(decoded)
+	if err != nil {
+		return nil, errors.New("encode OpenBao Ed25519 public key")
+	}
+	return pem.EncodeToMemory(&pem.Block{Type: "PUBLIC KEY", Bytes: der}), nil
 }
 
 func zeroBytes(contents []byte) {

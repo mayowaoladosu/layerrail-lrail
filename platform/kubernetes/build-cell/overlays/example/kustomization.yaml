@@ -7,3 +7,4 @@ resources:
 patches:
   - path: site-network-policy-patch.yaml
   - path: site-private-endpoints-patch.yaml
+  - path: site-storage-patch.yaml

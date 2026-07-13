@@ -11,10 +11,13 @@ The build cell is a dedicated execution boundary. The base manifests are intenti
 - Kyverno and cert-manager CRDs
 - a `lrail-internal-ca` cert-manager ClusterIssuer
 - HTTPS OpenBao and S3-compatible endpoints
-- the final published, digest-pinned controller, worker, egress-proxy, registry-broker, and residue-agent images
+- an OpenBao Transit Ed25519 key and dedicated Kubernetes-auth role for evidence signing
+- an RWX storage class; the example selects `rook-cephfs` for the versioned Trivy database
+- a site-owned, anonymous-read Harbor mirror of the Trivy vulnerability database
+- the final published, digest-pinned controller, worker, egress-proxy, registry-broker, evidence-signer, Trivy DB updater, and residue-agent images
 - an HTTPS Harbor origin with token expiry no greater than 15 minutes
 
-The example overlay contains only non-authentic placeholders. Replace its public key, CA, endpoint, object credential, Harbor administrator credential, and `lrail-build-images` Docker config through the production secret/configuration workflow. The component package token needs read-only access to these five private packages and no repository or write scope. Never commit real credentials or private key material.
+The example overlay contains only non-authentic placeholders. Replace its public key, CA, endpoint, object credential, Harbor administrator credential, storage-class name, and `lrail-build-images` Docker config through the production secret/configuration workflow. The component package token needs read-only access to these seven private packages and no repository or write scope. Never commit real credentials or private key material.
 
 ## Render and validate
 
@@ -29,6 +32,18 @@ Public destinations are limited to exact base registries and package/allowlist h
 
 Harbor administrator and generated robot secrets exist only in `lrail-build-registry-broker`. The broker reconciles one private immutable Harbor project per organization, creates a one-day project robot internally, exchanges it for a Harbor JWT limited to one deterministic repository and at most 15 minutes, and returns only that JWT to the controller over mTLS. The controller verifies every config/layer/manifest digest while publishing, reads the manifest back by digest, revokes the robot lease, and reports success only after revocation. Static outputs become deterministic OCI artifacts and also receive an immutable S3 publication manifest. Retention deletion requires reference removal, replication convergence, protected-set denial, metadata backup, and immutable authorization/tombstone records. Regional replication requests remain durable `requested` records; they do not claim availability before a later regional verifier exists.
 
+## Supply-chain evidence
+
+The signed assignment lock fixes Syft 1.46.0, Trivy 0.72.0, the accepted evidence-signing key digests, and the minimum policy thresholds. To preserve those tool APIs after upstream release binaries acquired fixed HIGH vulnerabilities, the production Dockerfiles checksum-pin the release source commits and rebuild both tools with Go 1.26.5; Trivy also pins security-fixed ORAS 2.6.2. The published controller/updater image digests identify those exact remediated builds. The controller validates and scans the local OCI export without registry credentials. Image and static outputs both receive SPDX 2.3, normalized Trivy findings, SLSA provenance v1, a Cosign simple-signing signature, and a signed policy decision. Secrets, denied vulnerabilities, denied configuration findings, or forbidden licenses stop the flow before Harbor capability issuance.
+
+`lrail-build-evidence-signer` is the only process allowed to use the Transit signing path. Its OpenBao role must issue tokens for no more than five minutes and permit only `read` on `transit/keys/build-evidence`, `update` on `transit/sign/build-evidence`, and self-revocation. The key must be Ed25519, non-derived, non-exportable, non-backupable, non-deletable, and signing-capable. Put the SHA-256 digest of its PKIX public key in the signed supply-chain policy. The signer authenticates for each call with its projected `openbao.lrail.internal` audience token; it never mounts a private key.
+
+The Trivy updater uses the exact FQDN in `trivy-db-repository`; do not point it at a customer-authenticated project. The six-hour job downloads into a unique generation, computes the database digest, and atomically moves the `current` symlink while retaining one previous generation. Controller bootstrap uses the same locked script. The controller mounts the claim read-only and fails scans when metadata is stale. Size the RWX claim for two full databases plus one in-progress refresh; 10 GiB is the current floor, not a permanent capacity promise.
+
+Evidence manifests stay in the subject repository and point to the exact subject digest. Native OCI Referrers discovery is preferred. Registries returning 404 use the OCI 1.1 referrers-index fallback, and the image signature also receives the conventional Cosign `.sig` alias. Worker, controller, and durable-store checks all require five complete, unique, trusted references before success.
+
+The reproducible local conformance commands are `task build-evidence:test:real`, `task build-evidence:test:openbao-real`, `task build-evidence:test:database-real`, and `task build-registry:test:real`. These prove real pinned tool behavior but do not substitute for production Harbor HA, OpenBao Kubernetes-auth, CephFS, backup, or regional verification tests.
+
 ## Required production gate
 
-A rendered manifest is not Kata evidence. Before a cell becomes schedulable, run the malicious host/API/socket/token fixture, DNS-rebinding/private-endpoint proxy corpus, worker-kill retry, cache round trip, forced cancellation, exact CRI/mount/cgroup residue cleanup, and node-quarantine tests on the production node image with `/dev/kvm` and `kata-qemu`. The current gVisor/rootless Docker results are local functional evidence only.
+A rendered manifest is not Kata, Harbor, OpenBao, or CephFS evidence. Before a cell becomes schedulable, run the malicious host/API/socket/token fixture, DNS-rebinding/private-endpoint proxy corpus, worker-kill retry, cache round trip, forced cancellation, exact CRI/mount/cgroup residue cleanup, node-quarantine tests, Transit key-policy and token-revocation checks, two-generation Trivy refresh, secret-seeded publication denial, referrer/Cosign verification, backup/restore, and RWX failover on the production environment. The current gVisor/rootless Docker, Distribution, local OpenBao, and local-volume results are functional evidence only.

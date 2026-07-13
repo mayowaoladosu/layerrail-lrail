@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -11,8 +12,8 @@ KYVERNO_IMAGE = (
 )
 POLICY = "/workspace/platform/kubernetes/build-cell/base/admission-policy.yaml"
 FIXTURES = "/workspace/platform/kubernetes/build-cell/testdata"
-RENDERED_BASE = ROOT / ".work" / "wp038-build-cell-rendered.yaml"
-RENDERED_EXAMPLE = ROOT / ".work" / "wp038-build-cell-example-rendered.yaml"
+RENDERED_BASE = ROOT / ".work" / "wp040-build-cell-rendered.yaml"
+RENDERED_EXAMPLE = ROOT / ".work" / "wp040-build-cell-example-rendered.yaml"
 
 
 def validate_rendered_manifests() -> None:
@@ -39,8 +40,22 @@ def validate_rendered_manifests() -> None:
         "name: LRAIL_REGISTRY_BROKER_ADDRESS",
         "name: LRAIL_HARBOR_CA_FILE",
         "name: lrail-build-registry-client",
+        "name: lrail-build-evidence-signer",
+        "app.kubernetes.io/component: signing-service",
+        "image: ghcr.io/mayowaoladosu/layerrail-lrail/evidence-signer@sha256:",
+        "name: lrail-trivy-db-updater",
+        "image: ghcr.io/mayowaoladosu/layerrail-lrail/trivy-db-updater@sha256:",
+        "update.sh: |",
+        'mv -fT "${current_link}" "${root}/current"',
+        "- ReadWriteMany",
+        "name: LRAIL_SIGNING_ADDRESS",
+        "name: LRAIL_SYFT_PATH",
+        "name: LRAIL_TRIVY_DB_METADATA",
+        "value: /var/lib/lrail-trivy/current/db/metadata.json",
+        "name: lrail-build-evidence-client",
         "port: 8443",
         "port: 9445",
+        "port: 9446",
         "169.254.0.0/16",
         "fe80::/10",
     ]
@@ -48,17 +63,31 @@ def validate_rendered_manifests() -> None:
         if value not in base:
             raise ValueError(f"rendered base lacks {value!r}")
     if base.count('port: "9445"') < 2:
-        raise ValueError("rendered base lacks both registry-broker ingress and controller egress")
+        raise ValueError(
+            "rendered base lacks both registry-broker ingress and controller egress"
+        )
+    if base.count('port: "9446"') < 2:
+        raise ValueError(
+            "rendered base lacks both evidence-signer ingress and controller egress"
+        )
     for forbidden in ["name: lrail-build-artifacts", "name: LRAIL_ARTIFACT_ROOT"]:
         if forbidden in base:
-            raise ValueError(f"rendered base retains obsolete local artifact authority {forbidden!r}")
+            raise ValueError(
+                f"rendered base retains obsolete local artifact authority {forbidden!r}"
+            )
+    for image, image_digest in re.findall(
+        r"image: (ghcr\.io/mayowaoladosu/layerrail-lrail/[^@\s]+)@sha256:([0-9a-f]{64})",
+        base,
+    ):
+        if len(set(image_digest)) == 1:
+            raise ValueError(f"rendered base retains placeholder digest for {image}")
 
-    dynamic_policy = (ROOT / "services/build-plane/internal/buildkube/resources.go").read_text(
-        encoding="utf-8"
-    )
+    dynamic_policy = (
+        ROOT / "services/build-plane/internal/buildkube/resources.go"
+    ).read_text(encoding="utf-8")
     for value in [
-        'ProxyServerName',
-        'ProxyPort',
+        "ProxyServerName",
+        "ProxyPort",
         '"rules": map[string]any{"dns"',
         '"egressDeny"',
     ]:
@@ -66,7 +95,9 @@ def validate_rendered_manifests() -> None:
             raise ValueError(f"dynamic worker policy lacks {value!r}")
     for forbidden in ['"toFQDNs"', '"toCIDR"']:
         if forbidden in dynamic_policy:
-            raise ValueError(f"worker policy still grants direct destinations via {forbidden}")
+            raise ValueError(
+                f"worker policy still grants direct destinations via {forbidden}"
+            )
 
     for value in [
         '"hosts":["packages.internal.example"]',
@@ -76,13 +107,28 @@ def validate_rendered_manifests() -> None:
         "harbor-api-endpoint: https://harbor.example.invalid",
         "matchName: harbor.example.invalid",
         "name: lrail-harbor-admin",
+        "openbao-signing-role: build-evidence-signer",
+        "trivy-db-repository: harbor.example.invalid/lrail-security-public/trivy-db:2",
+        "storageClassName: rook-cephfs",
     ]:
         if value not in example:
             raise ValueError(f"example private proxy mapping lacks {value!r}")
-    if example.count("matchName: harbor.example.invalid") != 2:
-        raise ValueError("example must grant exact Harbor HTTPS egress to controller and registry broker")
+    if example.count("matchName: harbor.example.invalid") != 3:
+        raise ValueError(
+            "example must grant exact Harbor HTTPS egress to controller, registry broker, and Trivy updater"
+        )
     if example.count('port: "9445"') < 2:
-        raise ValueError("example overlay dropped the controller-to-registry-broker route")
+        raise ValueError(
+            "example overlay dropped the controller-to-registry-broker route"
+        )
+    if example.count('port: "9446"') < 2:
+        raise ValueError(
+            "example overlay dropped the controller-to-evidence-signer route"
+        )
+    if example.count("matchName: openbao.example.invalid") < 2:
+        raise ValueError(
+            "example must grant exact OpenBao HTTPS egress to controller and evidence signer"
+        )
 
 
 def apply(fixture: str) -> subprocess.CompletedProcess[str]:

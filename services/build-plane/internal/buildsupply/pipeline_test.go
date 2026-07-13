@@ -146,7 +146,9 @@ func TestScannerNormalizationRedactsSecretValuesAndStabilizesSPDX(t *testing.T) 
 		t.Fatalf("normalized SPDX differs: %v", err)
 	}
 	trivyRaw := []byte(`{"SchemaVersion":2,"Results":[{"Target":"app/credentials","Secrets":[{"RuleID":"aws-secret-access-key","Category":"AWS","Severity":"CRITICAL","StartLine":4,"EndLine":4,"Match":"TOP-SECRET-VALUE"}],"Vulnerabilities":[],"Misconfigurations":[],"Licenses":[]}]}`)
-	report, summary, err := normalizeTrivyReport(trivyRaw, request, databaseIdentity{Digest: "sha256:" + strings.Repeat("b", 64), UpdatedAt: "2026-07-13T00:00:00Z"})
+	report, summary, err := normalizeTrivyReport(trivyRaw, request, databaseIdentity{
+		Digest: "sha256:" + strings.Repeat("b", 64), MetadataDigest: "sha256:" + strings.Repeat("c", 64), UpdatedAt: "2026-07-13T00:00:00Z",
+	})
 	if err != nil || summary.Secrets != 1 || bytes.Contains(report, []byte("TOP-SECRET-VALUE")) {
 		t.Fatalf("report=%s summary=%#v error=%v", report, summary, err)
 	}
@@ -155,7 +157,7 @@ func TestScannerNormalizationRedactsSecretValuesAndStabilizesSPDX(t *testing.T) 
 func safeAnalysis(t *testing.T) Analysis {
 	t.Helper()
 	sbom, _ := canonicaljson.Normalize([]byte(`{"SPDXID":"SPDXRef-DOCUMENT","creationInfo":{"created":"1970-01-01T00:00:00Z","creators":["Tool: syft-1.46.0"]},"dataLicense":"CC0-1.0","documentNamespace":"https://lrail.internal/sbom/a","name":"api","packages":[],"spdxVersion":"SPDX-2.3"}`))
-	scan, _ := canonicaljson.Normalize([]byte(`{"database":{"digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","updated_at":"2026-07-13T00:00:00Z"},"licenses":[],"misconfigurations":[],"secrets":[],"subject":{"digest":{"sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"name":"api"},"summary":{"licenses":{},"misconfigurations":{},"secrets":0,"vulnerabilities":{}},"tool":{"name":"trivy","version":"0.72.0"},"version":1,"vulnerabilities":[]}`))
+	scan, _ := canonicaljson.Normalize([]byte(`{"database":{"digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","metadata_digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","updated_at":"2026-07-13T00:00:00Z"},"licenses":[],"misconfigurations":[],"secrets":[],"subject":{"digest":{"sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"},"name":"api"},"summary":{"licenses":{},"misconfigurations":{},"secrets":0,"vulnerabilities":{}},"tool":{"name":"trivy","version":"0.72.0"},"version":1,"vulnerabilities":[]}`))
 	return Analysis{SBOM: sbom, Scan: scan, Summary: ScanSummary{Vulnerabilities: map[string]int{}, Misconfigurations: map[string]int{}, Licenses: map[string]int{}}}
 }
 

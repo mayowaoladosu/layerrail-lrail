@@ -61,9 +61,33 @@ spec:
           type: RuntimeDefault
         appArmorProfile:
           type: RuntimeDefault
+      initContainers:
+        - name: trivy-db-bootstrap
+          image: ghcr.io/mayowaoladosu/layerrail-lrail/trivy-db-updater@sha256:1490f65eb0e6cad919ee39cbc8b24e39480034a0da0cf8ec224ef379f10157c5
+          imagePullPolicy: IfNotPresent
+          command: ["/bin/sh", "/etc/lrail-trivy/update.sh"]
+          env:
+            - name: TRIVY_DB_REPOSITORY
+              valueFrom: {configMapKeyRef: {name: lrail-build-cell-site, key: trivy-db-repository}}
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: ["ALL"]}
+            seccompProfile: {type: RuntimeDefault}
+            appArmorProfile: {type: RuntimeDefault}
+          resources:
+            requests: {cpu: 100m, memory: 256Mi, ephemeral-storage: 64Mi}
+            limits: {cpu: "1", memory: 1Gi, ephemeral-storage: 256Mi}
+          volumeMounts:
+            - {name: trivy-db, mountPath: /var/lib/lrail-trivy}
+            - {name: trivy-db-updater, mountPath: /etc/lrail-trivy, readOnly: true}
+            - {name: tmp, mountPath: /tmp}
       containers:
         - name: controller
-          image: ghcr.io/mayowaoladosu/layerrail-lrail/buildcell-controller@sha256:2b7b0414a9d31fa12e16690d36e4f545034bfc1d2a6b68b4f13fb508b1520ae8
+          image: ghcr.io/mayowaoladosu/layerrail-lrail/buildcell-controller@sha256:ecc4bbdf6be01d56af3e79b67b60dad33915531c9d8d9892121918802f6f2937
           imagePullPolicy: IfNotPresent
           securityContext:
             runAsNonRoot: true
@@ -129,7 +153,7 @@ spec:
             - name: LRAIL_BUILD_RUNTIME_CLASS
               value: kata-qemu
             - name: LRAIL_BUILD_WORKER_IMAGE
-              value: ghcr.io/mayowaoladosu/layerrail-lrail/buildkit-worker@sha256:006b37a5c1f35f02dea42006169d17320ee9ecaebe6e202d62f3f7746505847e
+              value: ghcr.io/mayowaoladosu/layerrail-lrail/buildkit-worker@sha256:07215eeaaf7732af74474f9c03aad54163989045aad6b795e24692ccbe3394fe
             - {name: LRAIL_BUILD_IMAGE_PULL_SECRET, value: lrail-build-images}
             - name: LRAIL_BUILD_SECCOMP_PROFILE
               value: RuntimeDefault
@@ -161,8 +185,24 @@ spec:
               value: /run/lrail-registry-client/ca.crt
             - name: LRAIL_HARBOR_CA_FILE
               value: /etc/lrail/harbor/ca.pem
+            - name: LRAIL_HARBOR_REGISTRY
+              valueFrom: {configMapKeyRef: {name: lrail-build-cell-site, key: harbor-registry}}
             - name: LRAIL_REGISTRY_STAGING_ROOT
               value: /var/lib/lrail/scratch/registry
+            - {name: LRAIL_SIGNING_ADDRESS, value: "dns:///lrail-build-evidence-signer.lrail-build-control.svc.cluster.local:9446"}
+            - {name: LRAIL_SIGNING_SERVER_NAME, value: lrail-build-evidence-signer.lrail-build-control.svc.cluster.local}
+            - {name: LRAIL_SIGNING_SERVER_URIS, value: spiffe://lrail.internal/build-evidence-signer}
+            - {name: LRAIL_SIGNING_CLIENT_CERT, value: /run/lrail-evidence-client/tls.crt}
+            - {name: LRAIL_SIGNING_CLIENT_KEY, value: /run/lrail-evidence-client/tls.key}
+            - {name: LRAIL_SIGNING_SERVER_CA, value: /run/lrail-evidence-client/ca.crt}
+            - {name: LRAIL_SYFT_PATH, value: /usr/local/bin/syft}
+            - {name: LRAIL_TRIVY_PATH, value: /usr/local/bin/trivy}
+            - {name: LRAIL_TRIVY_CACHE_DIR, value: /var/lib/lrail-trivy/current}
+            - {name: LRAIL_TRIVY_DB_METADATA, value: /var/lib/lrail-trivy/current/db/metadata.json}
+            - {name: LRAIL_TRIVY_SECRET_CONFIG, value: /etc/lrail/trivy-secret.yaml}
+            - {name: LRAIL_EVIDENCE_WORK_ROOT, value: /var/lib/lrail/scratch/evidence}
+            - name: LRAIL_TRIVY_MAX_DB_AGE
+              valueFrom: {configMapKeyRef: {name: lrail-build-cell-site, key: trivy-max-db-age}}
             - name: LRAIL_RESIDUE_NAMESPACE
               value: lrail-build-system
             - name: LRAIL_RESIDUE_CLIENT_CERT
@@ -215,6 +255,8 @@ spec:
             - {name: egress-server-ca, mountPath: /etc/lrail/egress-server-ca, readOnly: true}
             - {name: registry-client-tls, mountPath: /run/lrail-registry-client, readOnly: true}
             - {name: harbor-ca, mountPath: /etc/lrail/harbor, readOnly: true}
+            - {name: evidence-client-tls, mountPath: /run/lrail-evidence-client, readOnly: true}
+            - {name: trivy-db, mountPath: /var/lib/lrail-trivy, readOnly: true}
             - {name: tmp, mountPath: /tmp}
       volumes:
         - name: state
@@ -255,5 +297,11 @@ spec:
           secret: {secretName: lrail-build-registry-client-tls, defaultMode: 0440}
         - name: harbor-ca
           configMap: {name: lrail-harbor-ca, defaultMode: 0444}
+        - name: evidence-client-tls
+          secret: {secretName: lrail-build-evidence-client-tls, defaultMode: 0440}
+        - name: trivy-db
+          persistentVolumeClaim: {claimName: lrail-build-trivy-db}
+        - name: trivy-db-updater
+          configMap: {name: lrail-trivy-db-updater, defaultMode: 0555}
         - name: tmp
           emptyDir: {sizeLimit: 64Mi}

@@ -10,9 +10,12 @@ data:
   s3-region: us-east-1
   openbao-address: https://openbao.example.invalid
   openbao-role: build-cell
+  openbao-signing-role: build-evidence-signer
   harbor-api-endpoint: https://harbor.example.invalid
   harbor-registry: https://harbor.example.invalid
   harbor-project-storage-limit: "107374182400"
+  trivy-db-repository: harbor.example.invalid/lrail-security-public/trivy-db:2
+  trivy-max-db-age: 48h
   cluster-dns-cidr: 10.96.0.10/32
   cluster-dns-address: 10.96.0.10:53
   residue-server-name: lrail-residue-agent.lrail-build-system.svc.cluster.local

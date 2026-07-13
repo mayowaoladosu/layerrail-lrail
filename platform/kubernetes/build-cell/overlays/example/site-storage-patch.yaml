@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: lrail-build-trivy-db
+  namespace: lrail-build-control
+spec:
+  storageClassName: rook-cephfs

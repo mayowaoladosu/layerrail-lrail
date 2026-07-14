@@ -42,6 +42,9 @@ portal:
   replicas: 1
 core:
   replicas: 1
+  extraEnvVars:
+    - name: CONFIG_OVERWRITE_JSON
+      value: '{"token_expiration":10}'
 jobservice:
   replicas: 1
   jobLoggers: [stdout]

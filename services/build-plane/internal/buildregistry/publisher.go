@@ -16,6 +16,43 @@ import (
 
 const DefaultPublicationTimeout = 10 * time.Minute
 
+type publicationStageCode string
+
+const (
+	publicationInspect          publicationStageCode = "artifact_inspect"
+	publicationPackage          publicationStageCode = "artifact_package"
+	publicationEvidenceGenerate publicationStageCode = "artifact_evidence_generate"
+	publicationEvidenceValidate publicationStageCode = "artifact_evidence_validate"
+	publicationCapabilityIssue  publicationStageCode = "artifact_capability_issue"
+	publicationCapabilityCheck  publicationStageCode = "artifact_capability_validate"
+	publicationCapabilityRevoke publicationStageCode = "artifact_capability_revoke"
+	publicationManifestProbe    publicationStageCode = "artifact_manifest_probe"
+	publicationBlobPublish      publicationStageCode = "artifact_blob_publish"
+	publicationManifestPublish  publicationStageCode = "artifact_manifest_publish"
+	publicationEvidencePublish  publicationStageCode = "artifact_evidence_publish"
+	publicationStaticManifest   publicationStageCode = "artifact_static_manifest"
+)
+
+type publicationStageError struct {
+	code publicationStageCode
+	err  error
+}
+
+func (failure *publicationStageError) Error() string          { return failure.err.Error() }
+func (failure *publicationStageError) Unwrap() error          { return failure.err }
+func (failure *publicationStageError) BuildErrorCode() string { return string(failure.code) }
+
+func withPublicationStage(code publicationStageCode, err error) error {
+	if err == nil {
+		return nil
+	}
+	var coded interface{ BuildErrorCode() string }
+	if errors.As(err, &coded) && coded.BuildErrorCode() != "" {
+		return err
+	}
+	return &publicationStageError{code: code, err: err}
+}
+
 type Publisher struct {
 	broker         CapabilityBroker
 	registry       *DistributionClient
@@ -103,19 +140,19 @@ func (publisher *Publisher) Commit(ctx context.Context, artifact buildworker.Exp
 		var err error
 		identity, err = buildworker.InspectOCIArtifact(artifact.Path)
 		if err != nil {
-			return buildworker.CommittedArtifact{}, fmt.Errorf("%w: inspect OCI publication: %v", ErrRegistry, err)
+			return buildworker.CommittedArtifact{}, withPublicationStage(publicationInspect, fmt.Errorf("%w: inspect OCI publication: %v", ErrRegistry, err))
 		}
 	} else {
 		if publisher.staging == "" || publisher.static == nil {
-			return buildworker.CommittedArtifact{}, errors.New("static registry publication is not configured")
+			return buildworker.CommittedArtifact{}, withPublicationStage(publicationPackage, errors.New("static registry publication is not configured"))
 		}
 		prepared, err := prepareStaticOCI(ctx, artifact, publisher.staging)
 		if err != nil {
-			return buildworker.CommittedArtifact{}, err
+			return buildworker.CommittedArtifact{}, withPublicationStage(publicationPackage, err)
 		}
 		defer os.Remove(prepared.path)
 		if err := buildworker.ValidateExportedArtifact(artifact, publisher.maxBytes); err != nil {
-			return buildworker.CommittedArtifact{}, errors.New("static source changed during OCI packaging")
+			return buildworker.CommittedArtifact{}, withPublicationStage(publicationPackage, errors.New("static source changed during OCI packaging"))
 		}
 		publicationPath = prepared.path
 		publicationDigest = prepared.digest
@@ -142,10 +179,10 @@ func (publisher *Publisher) Commit(ctx context.Context, artifact buildworker.Exp
 	}
 	bundle, err := publisher.evidence.Generate(ctx, evidenceRequest)
 	if err != nil {
-		return buildworker.CommittedArtifact{}, err
+		return buildworker.CommittedArtifact{}, withPublicationStage(publicationEvidenceGenerate, err)
 	}
 	if err := buildsupply.ValidateBundle(evidenceRequest, bundle); err != nil {
-		return buildworker.CommittedArtifact{}, fmt.Errorf("%w: generated evidence bundle is invalid", ErrRegistry)
+		return buildworker.CommittedArtifact{}, withPublicationStage(publicationEvidenceValidate, fmt.Errorf("%w: generated evidence bundle is invalid", ErrRegistry))
 	}
 	if err := buildworker.ValidateExportedArtifact(artifact, publisher.maxBytes); err != nil {
 		return buildworker.CommittedArtifact{}, errors.New("build output changed during evidence generation")
@@ -157,14 +194,17 @@ func (publisher *Publisher) Commit(ctx context.Context, artifact buildworker.Exp
 	}
 	capability, err := publisher.broker.Issue(ctx, scope)
 	if err != nil {
-		return buildworker.CommittedArtifact{}, err
+		return buildworker.CommittedArtifact{}, withPublicationStage(publicationCapabilityIssue, err)
 	}
 	if err := validatePushCapability(capability, scope, now); err != nil {
 		cleanupContext, cancel := context.WithTimeout(context.Background(), publisher.cleanup)
 		defer cancel()
 		revokeErr := publisher.broker.Revoke(cleanupContext, capability.LeaseID)
 		capability.Token = ""
-		return buildworker.CommittedArtifact{}, errors.Join(err, revokeErr)
+		return buildworker.CommittedArtifact{}, errors.Join(
+			withPublicationStage(publicationCapabilityCheck, err),
+			withPublicationStage(publicationCapabilityRevoke, revokeErr),
+		)
 	}
 	defer func() {
 		capability.Token = ""
@@ -172,7 +212,7 @@ func (publisher *Publisher) Commit(ctx context.Context, artifact buildworker.Exp
 		defer cancel()
 		if err := publisher.broker.Revoke(cleanupContext, capability.LeaseID); err != nil {
 			committed = buildworker.CommittedArtifact{}
-			resultErr = errors.Join(resultErr, fmt.Errorf("%w: revoke publication capability: %v", ErrRegistry, err))
+			resultErr = errors.Join(resultErr, withPublicationStage(publicationCapabilityRevoke, fmt.Errorf("%w: revoke publication capability: %v", ErrRegistry, err)))
 		}
 	}()
 	if capability.Registry != publisher.registryOrigin || capability.Repository != repository {
@@ -180,16 +220,16 @@ func (publisher *Publisher) Commit(ctx context.Context, artifact buildworker.Exp
 	}
 	exists, err := publisher.registry.ManifestExists(ctx, capability, projectName, identity)
 	if err != nil {
-		return buildworker.CommittedArtifact{}, err
+		return buildworker.CommittedArtifact{}, withPublicationStage(publicationManifestProbe, err)
 	}
 	if err := buildworker.VisitOCIArtifactBlobs(ctx, publicationPath, identity, func(descriptor buildworker.OCIArtifactDescriptor, reader io.Reader) error {
 		return publisher.registry.EnsureBlob(ctx, capability, projectName, descriptor, reader)
 	}); err != nil {
-		return buildworker.CommittedArtifact{}, fmt.Errorf("%w: publish OCI blobs: %v", ErrRegistry, err)
+		return buildworker.CommittedArtifact{}, withPublicationStage(publicationBlobPublish, fmt.Errorf("%w: publish OCI blobs: %v", ErrRegistry, err))
 	}
 	if !exists {
 		if err := publisher.registry.PutManifest(ctx, capability, projectName, identity); err != nil {
-			return buildworker.CommittedArtifact{}, err
+			return buildworker.CommittedArtifact{}, withPublicationStage(publicationManifestPublish, err)
 		}
 	}
 	if err := buildworker.ValidateExportedArtifact(artifact, publisher.maxBytes); err != nil {
@@ -198,7 +238,7 @@ func (publisher *Publisher) Commit(ctx context.Context, artifact buildworker.Exp
 	reference := repositoryReference + "@" + identity.ManifestDigest
 	evidenceReferences, err := publisher.publishEvidence(ctx, capability, projectName, repositoryReference, identity, bundle)
 	if err != nil {
-		return buildworker.CommittedArtifact{}, err
+		return buildworker.CommittedArtifact{}, withPublicationStage(publicationEvidencePublish, err)
 	}
 	publicationManifestRef := ""
 	if artifact.Kind == "static_bundle" {
@@ -208,7 +248,7 @@ func (publisher *Publisher) Commit(ctx context.Context, artifact buildworker.Exp
 			OCIReference: reference, ManifestDigest: identity.ManifestDigest, Files: staticFiles,
 		})
 		if err != nil || publicationManifestRef == "" {
-			return buildworker.CommittedArtifact{}, fmt.Errorf("%w: commit static publication manifest", ErrRegistry)
+			return buildworker.CommittedArtifact{}, withPublicationStage(publicationStaticManifest, fmt.Errorf("%w: commit static publication manifest", ErrRegistry))
 		}
 	}
 	return buildworker.CommittedArtifact{

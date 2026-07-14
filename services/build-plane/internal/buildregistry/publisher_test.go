@@ -36,6 +36,21 @@ type publisherBroker struct {
 	foreignRepo bool
 }
 
+func TestPublicationStageErrorIsBoundedAndPreservesPolicyDenial(t *testing.T) {
+	t.Parallel()
+	root := errors.New("registry unavailable")
+	failure := withPublicationStage(publicationCapabilityIssue, root)
+	var coded interface{ BuildErrorCode() string }
+	if !errors.Is(failure, root) || !errors.As(failure, &coded) || coded.BuildErrorCode() != "artifact_capability_issue" {
+		t.Fatalf("failure = %v, code = %q", failure, coded.BuildErrorCode())
+	}
+
+	denial := &buildsupply.Denial{Code: "policy_secret"}
+	if preserved := withPublicationStage(publicationEvidenceGenerate, denial); preserved != denial {
+		t.Fatalf("policy denial was replaced: %v", preserved)
+	}
+}
+
 func (broker *publisherBroker) Issue(_ context.Context, scope PublicationScope) (PushCapability, error) {
 	broker.issues++
 	repository := broker.repository

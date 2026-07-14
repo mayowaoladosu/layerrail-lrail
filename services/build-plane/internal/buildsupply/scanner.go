@@ -104,11 +104,11 @@ func (scanner *CommandScanner) checkToolVersions(ctx context.Context, expectedSy
 	}
 	checkContext, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
-	syft, err := scanner.runner.Run(checkContext, scanner.config.SyftPath, []string{"version"}, scanner.environment(), 1<<20)
+	syft, err := scanner.runner.Run(checkContext, scanner.config.SyftPath, []string{"version"}, scanner.environment(scanner.config.WorkRoot), 1<<20)
 	if err != nil || !versionOutputContains(syft, expectedSyft) {
 		return errors.New("Syft executable version differs from policy")
 	}
-	trivy, err := scanner.runner.Run(checkContext, scanner.config.TrivyPath, []string{"--version"}, scanner.environment(), 1<<20)
+	trivy, err := scanner.runner.Run(checkContext, scanner.config.TrivyPath, []string{"--version"}, scanner.environment(scanner.config.WorkRoot), 1<<20)
 	if err != nil || !versionOutputContains(trivy, expectedTrivy) {
 		return errors.New("Trivy executable version differs from policy")
 	}
@@ -148,7 +148,7 @@ func (scanner *CommandScanner) Analyze(ctx context.Context, request ScanRequest)
 	syftRaw, err := scanner.runner.Run(scanContext, scanner.config.SyftPath, []string{
 		"scan", "oci-archive:" + request.OCIPath, "--quiet", "--output", "spdx-json",
 		"--source-name", request.OutputName, "--source-version", request.ManifestDigest,
-	}, scanner.environment(), MaxToolOutputBytes)
+	}, scanner.environment(work), MaxToolOutputBytes)
 	if err != nil {
 		return Analysis{}, errors.New("Syft SBOM generation failed")
 	}
@@ -163,7 +163,7 @@ func (scanner *CommandScanner) Analyze(ctx context.Context, request ScanRequest)
 		"--secret-config", scanner.config.SecretConfigPath, "--skip-db-update", "--skip-java-db-update",
 		"--skip-check-update", "--skip-vex-repo-update", "--offline-scan", "--disable-telemetry",
 		"--no-progress", "--quiet", "--max-image-size", "20GB",
-	}, scanner.environment(), MaxToolOutputBytes)
+	}, scanner.environment(work), MaxToolOutputBytes)
 	if err != nil {
 		return Analysis{}, errors.New("Trivy image analysis failed")
 	}
@@ -173,7 +173,7 @@ func (scanner *CommandScanner) Analyze(ctx context.Context, request ScanRequest)
 		"--cache-dir", databasePaths.Cache, "--cache-backend", "memory",
 		"--skip-db-update", "--skip-java-db-update", "--skip-check-update", "--skip-vex-repo-update",
 		"--offline-scan", "--disable-telemetry", "--no-progress", "--quiet", "--max-image-size", "20GB",
-	}, scanner.environment(), MaxToolOutputBytes)
+	}, scanner.environment(work), MaxToolOutputBytes)
 	if err != nil {
 		return Analysis{}, errors.New("Trivy image configuration analysis failed")
 	}
@@ -214,9 +214,10 @@ func mergeTrivyReports(contents ...[]byte) ([]byte, error) {
 	return merged, nil
 }
 
-func (scanner *CommandScanner) environment() []string {
+func (scanner *CommandScanner) environment(temporaryRoot string) []string {
 	return []string{
 		"HOME=" + scanner.config.WorkRoot,
+		"TMPDIR=" + temporaryRoot,
 		"SYFT_CHECK_FOR_APP_UPDATE=false",
 		"SYFT_GOLANG_SEARCH_REMOTE_LICENSES=false",
 		"TRIVY_DISABLE_TELEMETRY=true",

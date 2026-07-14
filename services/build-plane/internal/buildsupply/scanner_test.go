@@ -92,6 +92,26 @@ func TestCommandScannerUsesOfflinePinnedToolsAndVerifiedLayout(t *testing.T) {
 			t.Fatalf("tool environment contains credential-like data: %#v", command.environment)
 		}
 	}
+	for _, command := range runner.commands[2:] {
+		temporaryRoot := environmentValue(command.environment, "TMPDIR")
+		relative, relativeErr := filepath.Rel(work, temporaryRoot)
+		if relativeErr != nil || relative == "." || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) {
+			t.Fatalf("scanner temporary root escapes cleanup-owned workspace: %q", temporaryRoot)
+		}
+		if _, statErr := os.Stat(temporaryRoot); !os.IsNotExist(statErr) {
+			t.Fatalf("scanner temporary root survived cleanup: %v", statErr)
+		}
+	}
+}
+
+func environmentValue(environment []string, name string) string {
+	prefix := name + "="
+	for _, value := range environment {
+		if strings.HasPrefix(value, prefix) {
+			return strings.TrimPrefix(value, prefix)
+		}
+	}
+	return ""
 }
 
 func TestMergeTrivyReportsPreservesArtifactAndImageConfigFindings(t *testing.T) {

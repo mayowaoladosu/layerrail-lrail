@@ -13,6 +13,16 @@ PROBE_FILES = (
     "/bin/busybox",
     "/etc/alpine-release",
 )
+EXPECTED_LABELS = {
+    "dev.lrail.upstream.reference": UPSTREAM,
+    "org.opencontainers.image.licenses": "BSD-3-Clause AND MIT AND Apache-2.0",
+    "org.opencontainers.image.source": (
+        "https://github.com/mayowaoladosu/layerrail-lrail"
+    ),
+    "org.opencontainers.image.title": (
+        "LayerRail flattened Go 1.26.5 Alpine build base"
+    ),
+}
 
 
 def command(*arguments: str) -> str:
@@ -64,6 +74,8 @@ def main() -> int:
     for field in ("Architecture", "Os"):
         if candidate.get(field) != upstream.get(field):
             raise ValueError(f"flattened base {field} differs from upstream")
+    if candidate.get("Config", {}).get("Labels") != EXPECTED_LABELS:
+        raise ValueError("flattened base ownership labels differ")
     if checksums(sys.argv[1]) != checksums(UPSTREAM):
         raise ValueError("flattened base toolchain bytes differ from upstream")
     print("Flattened Go base preserves one layer, upstream config, and toolchain bytes.")

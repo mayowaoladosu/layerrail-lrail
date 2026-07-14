@@ -180,8 +180,10 @@ tasks:
   build-go-base:image:
     desc: Flatten the exact pinned Go toolchain into one immutable native-snapshot layer
     cmds:
-      - docker build --pull=false --provenance=false -f services/build-plane/Dockerfile.go-base -t "{{.BUILD_GO_BASE_IMAGE}}" .
+      - docker build --pull=false --provenance=false -f services/build-plane/Dockerfile.go-base -t "{{.BUILD_GO_BASE_IMAGE}}-rootfs" .
+      - python tools/rewrite-go-base.py "{{.BUILD_GO_BASE_IMAGE}}-rootfs" "{{.BUILD_GO_BASE_IMAGE}}"
       - python tools/verify-go-base.py "{{.BUILD_GO_BASE_IMAGE}}"
+      - docker image rm "{{.BUILD_GO_BASE_IMAGE}}-rootfs"
 
   build-trivy-db-updater:image:
     internal: true

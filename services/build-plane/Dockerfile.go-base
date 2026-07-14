@@ -6,13 +6,3 @@ FROM golang:1.26.5-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149a
 # layer so disposable Kata workers import the bytes once without changing them.
 FROM scratch
 COPY --from=upstream / /
-ENV PATH="/go/bin:/usr/local/go/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin" \
-      GOLANG_VERSION="1.26.5" \
-      GOTOOLCHAIN="local" \
-      GOPATH="/go"
-LABEL org.opencontainers.image.source="https://github.com/mayowaoladosu/layerrail-lrail" \
-      org.opencontainers.image.licenses="BSD-3-Clause AND MIT AND Apache-2.0" \
-      org.opencontainers.image.title="LayerRail flattened Go 1.26.5 Alpine build base" \
-      dev.lrail.upstream.reference="docker.io/library/golang:1.26.5-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2"
-WORKDIR /go
-CMD ["/bin/sh"]

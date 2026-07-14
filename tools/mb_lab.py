@@ -816,19 +816,73 @@ def functional_cell() -> None:
     )
 
 
+def git_provider() -> None:
+    require_context()
+    credentials = github_app_credentials()
+    if not credentials:
+        raise LabFailure("ignored GitHub App runtime credential is unavailable")
+    source_gateway = json.loads(
+        command(
+            "kubectl",
+            "get",
+            "deployment/lrail-source-gateway",
+            "-n",
+            "lrail-source",
+            "-o",
+            "json",
+        ).stdout
+    )
+    if source_gateway.get("status", {}).get("readyReplicas") != 1:
+        raise LabFailure("source gateway is not ready for exact-Git acquisition")
+    opaque_secret("lrail-source", "lrail-github-app", credentials)
+    command(
+        "kubectl",
+        "apply",
+        "-f",
+        str(ROOT / "platform/kubernetes/build-cell/lab/provider-git.yaml"),
+    )
+    command(
+        "kubectl",
+        "scale",
+        "deployment/lrail-provider-broker",
+        "--replicas=1",
+        "-n",
+        "lrail-source",
+    )
+    for name in ("lrail-provider-egress", "lrail-provider-broker"):
+        command(
+            "kubectl",
+            "rollout",
+            "status",
+            f"deployment/{name}",
+            "-n",
+            "lrail-source",
+            "--timeout=600s",
+        )
+    print(
+        "Exact-Git provider broker and policy egress are ready without changing "
+        "the strict BuildCell runtime."
+    )
+
+
 def main() -> int:
     if len(sys.argv) != 2 or sys.argv[1] not in {
         "dependencies",
         "functional-cell",
+        "git-provider",
         "kata",
     }:
-        sys.stderr.write("usage: mb_lab.py dependencies|functional-cell|kata\n")
+        sys.stderr.write(
+            "usage: mb_lab.py dependencies|functional-cell|git-provider|kata\n"
+        )
         return 2
     try:
         if sys.argv[1] == "dependencies":
             dependency_probe()
         elif sys.argv[1] == "functional-cell":
             functional_cell()
+        elif sys.argv[1] == "git-provider":
+            git_provider()
         else:
             kata_probe()
     except (OSError, json.JSONDecodeError, LabFailure) as error:

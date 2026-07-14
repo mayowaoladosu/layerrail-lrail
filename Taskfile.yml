@@ -147,6 +147,12 @@ tasks:
     cmds:
       - mise exec -- bundle exec rails runner script/mb_git_fixture.rb
 
+  mb:lab:git:provider:
+    desc: Reconcile the real GitHub provider without changing the strict BuildCell runtime
+    cmds:
+      - >-
+        python tools/mb_lab.py git-provider
+
   mb:lab:git:matrix:
     desc: Prove real exact-commit replay, force-push supersession, root selection, and submodule/LFS denial
     dir: "{{.CONTROL_PLANE}}"

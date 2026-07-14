@@ -129,6 +129,12 @@ tasks:
       - >-
         python tools/mb_lab.py kata
 
+  mb:lab:runc:
+    desc: Prove exact one-ID runc bootstrap and zero-capability customer execution on Kata
+    cmds:
+      - >-
+        python tools/mb_runc_probe.py
+
   mb:lab:dependencies:
     desc: Verify pinned M-B PKI, policy, OpenBao, Harbor, and object-store dependencies
     cmds:

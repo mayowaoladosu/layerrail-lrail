@@ -9,12 +9,22 @@ import (
 	"net"
 	"time"
 
+	"github.com/mayowaoladosu/layerrail-lrail/services/build-plane/internal/buildcontrol"
 	"github.com/mayowaoladosu/layerrail-lrail/services/build-plane/internal/buildworker"
 	"github.com/moby/buildkit/client"
 )
 
 type WorkerConnector interface {
 	Connect(ctx context.Context, endpoint string, tlsConfig *tls.Config) (buildworker.Executor, io.Closer, error)
+}
+
+const (
+	buildKitInfoTimeout  = 15 * time.Second
+	buildKitInfoInterval = 250 * time.Millisecond
+)
+
+type buildKitInfoClient interface {
+	Info(context.Context) (*client.Info, error)
 }
 
 type BuildKitConnector struct {
@@ -36,21 +46,21 @@ func (connector BuildKitConnector) Connect(ctx context.Context, endpoint string,
 	buildkitClient, err := client.New(ctx, "tcp://"+endpoint, client.WithContextDialer(func(dialContext context.Context, _ string) (net.Conn, error) {
 		connection, err := dialer.DialContext(dialContext, "tcp", endpoint)
 		if err != nil {
-			return nil, err
+			return nil, buildcontrol.WrapWorkerAllocationError(buildcontrol.AllocationConnectDial, err)
 		}
 		secured := tls.Client(connection, configuredTLS)
 		if err := secured.HandshakeContext(dialContext); err != nil {
 			_ = connection.Close()
-			return nil, err
+			return nil, buildcontrol.WrapWorkerAllocationError(buildcontrol.AllocationConnectTLS, err)
 		}
 		return secured, nil
 	}))
 	if err != nil {
 		return nil, nil, fmt.Errorf("create BuildKit client: %w", err)
 	}
-	if _, err := buildkitClient.Info(ctx); err != nil {
+	if err := waitForBuildKitInfo(ctx, buildkitClient); err != nil {
 		_ = buildkitClient.Close()
-		return nil, nil, fmt.Errorf("verify BuildKit worker: %w", err)
+		return nil, nil, buildcontrol.WrapWorkerAllocationError(buildcontrol.AllocationConnectVerify, fmt.Errorf("verify BuildKit worker: %w", err))
 	}
 	executor, err := buildworker.NewBuildKitExecutor(buildkitClient, connector.Sources, connector.Cleaner, connector.Committer, connector.Caches, connector.ScratchRoot, connector.SolveTimeout)
 	if err != nil {
@@ -58,4 +68,27 @@ func (connector BuildKitConnector) Connect(ctx context.Context, endpoint string,
 		return nil, nil, err
 	}
 	return executor, buildkitClient, nil
+}
+
+func waitForBuildKitInfo(ctx context.Context, buildkit buildKitInfoClient) error {
+	if ctx == nil || buildkit == nil {
+		return errors.New("BuildKit readiness dependencies are incomplete")
+	}
+	readyContext, cancel := context.WithTimeout(ctx, buildKitInfoTimeout)
+	defer cancel()
+	ticker := time.NewTicker(buildKitInfoInterval)
+	defer ticker.Stop()
+	var lastError error
+	for {
+		if _, err := buildkit.Info(readyContext); err == nil {
+			return nil
+		} else {
+			lastError = err
+		}
+		select {
+		case <-readyContext.Done():
+			return errors.Join(readyContext.Err(), lastError)
+		case <-ticker.C:
+		}
+	}
 }

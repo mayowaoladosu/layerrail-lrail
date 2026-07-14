@@ -306,7 +306,7 @@ func (controller *Controller) runAttempt(ctx context.Context, cancellation <-cha
 		if ctx.Err() != nil || cancellationRequested(cancellation) {
 			return canceledWithoutWorkerResult(assignment.Verified, startedAt, controller.clock().UTC(), attempt), false, nil
 		}
-		return failedResult(assignment.Verified, startedAt, controller.clock().UTC(), attempt, "worker_allocate"), false, nil
+		return failedResult(assignment.Verified, startedAt, controller.clock().UTC(), attempt, WorkerAllocationErrorCode(err)), false, nil
 	}
 
 	attemptContext, cancelAttempt := context.WithTimeout(ctx, remaining)

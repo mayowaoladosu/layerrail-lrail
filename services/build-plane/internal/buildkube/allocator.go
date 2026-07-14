@@ -82,7 +82,7 @@ func (allocator *Allocator) Allocate(ctx context.Context, request buildcontrol.A
 		return nil, errors.New("Kubernetes worker assignment is invalid")
 	}
 	name := resourceName(request.Assignment.Verified.Payload.BuildID, request.Attempt)
-	endpoint := fmt.Sprintf("%s.%s.svc", name, allocator.config.Namespace)
+	endpoint := fmt.Sprintf("%s.%s.svc.cluster.local", name, allocator.config.Namespace)
 	now := allocator.clock().UTC()
 	egressPolicy, err := buildegress.NewPolicy(
 		request.Assignment.Verified.Payload.BuildID, request.Assignment.Verified.Payload.OrganizationID, name,
@@ -94,20 +94,20 @@ func (allocator *Allocator) Allocate(ctx context.Context, request buildcontrol.A
 	}
 	issued, err := allocator.issuer.Issue(ctx, CertificateRequest{WorkerName: name, DNSName: endpoint, ExpiresAt: request.ExpiresAt, Egress: egressPolicy})
 	if err != nil || issued.ClientConfig == nil {
-		return nil, errors.New("issue worker certificates")
+		return nil, buildcontrol.WrapWorkerAllocationError(buildcontrol.AllocationCertificateIssue, errors.New("issue worker certificates"))
 	}
 	resources, err := BuildResources(allocator.config, request, issued.Material, now)
 	if err != nil {
-		return nil, err
+		return nil, buildcontrol.WrapWorkerAllocationError(buildcontrol.AllocationResourcePrepare, err)
 	}
 	if err := allocator.cleanupStaleAttempts(ctx, request.Assignment.Verified.Payload.BuildID, name); err != nil {
-		return nil, err
+		return nil, buildcontrol.WrapWorkerAllocationError(buildcontrol.AllocationStaleCleanup, err)
 	}
 	if err := allocator.createResources(ctx, resources); err != nil {
 		cleanupContext, cancel := context.WithTimeout(context.Background(), time.Minute)
 		defer cancel()
 		_, _ = allocator.deleteResources(cleanupContext, resources, nil, true)
-		return nil, err
+		return nil, buildcontrol.WrapWorkerAllocationError(buildcontrol.AllocationResourceCreate, err)
 	}
 	readyContext, cancelReady := context.WithTimeout(ctx, allocator.readyTimeout)
 	pod, err := allocator.waitReady(readyContext, resources)
@@ -116,13 +116,16 @@ func (allocator *Allocator) Allocate(ctx context.Context, request buildcontrol.A
 		cleanupContext, cancel := context.WithTimeout(context.Background(), time.Minute)
 		defer cancel()
 		_, _ = allocator.deleteResources(cleanupContext, resources, pod, true)
-		return nil, err
+		return nil, buildcontrol.WrapWorkerAllocationError(buildcontrol.AllocationReadiness, err)
 	}
 	executor, closer, err := allocator.connector.Connect(ctx, fmt.Sprintf("%s:%d", endpoint, BuildKitPort), issued.ClientConfig)
 	if err != nil {
 		cleanupContext, cancel := context.WithTimeout(context.Background(), time.Minute)
 		defer cancel()
 		_, _ = allocator.deleteResources(cleanupContext, resources, pod, true)
+		if buildcontrol.WorkerAllocationErrorCode(err) == "worker_allocate" {
+			err = buildcontrol.WrapWorkerAllocationError(buildcontrol.AllocationConnect, err)
+		}
 		return nil, err
 	}
 	return &kubernetesWorker{

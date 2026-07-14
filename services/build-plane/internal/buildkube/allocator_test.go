@@ -141,7 +141,7 @@ func TestAllocatorCreatesConnectsAndCleansDisposableWorker(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Allocate: %v", err)
 	}
-	if worker.Identity() != "fake-pod-uid" || connector.tls == nil || connector.tls.MinVersion != tls.VersionTLS13 || !strings.Contains(connector.endpoint, name+".lrail-build.svc:1234") {
+	if worker.Identity() != "fake-pod-uid" || connector.tls == nil || connector.tls.MinVersion != tls.VersionTLS13 || !strings.Contains(connector.endpoint, name+".lrail-build.svc.cluster.local:1234") {
 		t.Fatalf("worker=%q endpoint=%q tls=%#v", worker.Identity(), connector.endpoint, connector.tls)
 	}
 	if _, err := client.BatchV1().Jobs("lrail-build").Get(context.Background(), name, metav1.GetOptions{}); err != nil {

@@ -175,6 +175,7 @@ func run() error {
 		Broker: registryBroker, Registry: distribution, Clock: clock,
 		RegistryOrigin: os.Getenv("LRAIL_HARBOR_REGISTRY"), Evidence: evidence,
 		StagingRoot: os.Getenv("LRAIL_REGISTRY_STAGING_ROOT"), StaticStore: staticStore,
+		CapabilityTTL: buildregistry.MaxCapabilityTTL,
 	})
 	if err != nil {
 		return err
@@ -398,13 +399,22 @@ func kubernetesAllocatorConfig() (buildkube.Config, error) {
 			return buildkube.Config{}, err
 		}
 	}
+	functionalRootlessBootstrapValue := os.Getenv("LRAIL_FUNCTIONAL_GVISOR_ROOTLESS_BOOTSTRAP")
+	if functionalRootlessBootstrapValue == "" {
+		functionalRootlessBootstrapValue = "false"
+	}
+	functionalRootlessBootstrap, err := strconv.ParseBool(functionalRootlessBootstrapValue)
+	if err != nil {
+		return buildkube.Config{}, errors.New("functional gVisor rootless bootstrap setting is invalid")
+	}
 	return buildkube.Config{
 		Namespace: os.Getenv("LRAIL_BUILD_NAMESPACE"), ControllerNamespace: os.Getenv("LRAIL_CONTROLLER_NAMESPACE"),
 		ControllerLabels: map[string]string{"app.kubernetes.io/name": "lrail-build-control"},
 		RuntimeClass:     os.Getenv("LRAIL_BUILD_RUNTIME_CLASS"), WorkerImage: os.Getenv("LRAIL_BUILD_WORKER_IMAGE"),
 		ImagePullSecret: os.Getenv("LRAIL_BUILD_IMAGE_PULL_SECRET"),
 		SeccompProfile:  os.Getenv("LRAIL_BUILD_SECCOMP_PROFILE"), AppArmorProfile: os.Getenv("LRAIL_BUILD_APPARMOR_PROFILE"),
-		NodeSelector: nodeSelector, Tolerations: []corev1.Toleration{{Key: "lrail.dev/build", Operator: corev1.TolerationOpEqual, Value: "true", Effect: corev1.TaintEffectNoSchedule}},
+		FunctionalGVisorRootlessBootstrap: functionalRootlessBootstrap,
+		NodeSelector:                      nodeSelector, Tolerations: []corev1.Toleration{{Key: "lrail.dev/build", Operator: corev1.TolerationOpEqual, Value: "true", Effect: corev1.TaintEffectNoSchedule}},
 		PriorityClass: "lrail-build", ClusterDNSCIDR: os.Getenv("LRAIL_CLUSTER_DNS_CIDR"),
 		AllowedPrivateEndpoints: privateEndpoints, CPURequest: "1", CPULimit: "4", MemoryRequest: "1Gi", MemoryLimit: "8Gi", EphemeralRequest: "4Gi", EphemeralLimit: "24Gi",
 	}, nil

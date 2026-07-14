@@ -39,6 +39,11 @@ COPY --from=buildkit-build /out/buildkitd /usr/bin/buildkitd
 COPY --from=rootlesskit-build /out/rootlesskit /usr/bin/rootlesskit
 COPY --from=runc-build /out/buildkit-runc /usr/bin/buildkit-runc
 COPY --from=build --chown=1000:1000 /out/lrail-buildkit-wrapper /usr/local/bin/lrail-buildkit-wrapper
+RUN apk add --no-cache libcap-utils \
+	&& setcap cap_setuid+ep /usr/bin/newuidmap \
+	&& setcap cap_setgid+ep /usr/bin/newgidmap \
+	&& apk del --no-scripts libcap-utils \
+	&& rm -rf /var/cache/apk/*
 LABEL org.opencontainers.image.source="https://github.com/mayowaoladosu/layerrail-lrail" \
 	org.opencontainers.image.licenses="LicenseRef-Proprietary" \
 	org.opencontainers.image.title="Lrail rootless BuildKit worker"

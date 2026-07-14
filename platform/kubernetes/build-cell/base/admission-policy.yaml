@@ -3,6 +3,7 @@ kind: ClusterPolicy
 metadata:
   name: lrail-build-worker-isolation
   annotations:
+    pod-policies.kyverno.io/autogen-controllers: none
     policies.kyverno.io/title: Lrail build worker isolation
     policies.kyverno.io/category: Pod Security
 spec:
@@ -51,9 +52,9 @@ spec:
             automountServiceAccountToken: false
             imagePullSecrets:
               - name: lrail-build-images
-            hostNetwork: false
-            hostPID: false
-            hostIPC: false
+            "=(hostNetwork)": false
+            "=(hostPID)": false
+            "=(hostIPC)": false
             shareProcessNamespace: false
             enableServiceLinks: false
             containers:

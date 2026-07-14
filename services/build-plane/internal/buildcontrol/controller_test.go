@@ -181,6 +181,7 @@ func (worker *fakeWorker) Release(ctx context.Context) (buildworker.CleanupRepor
 type fakeAllocator struct {
 	mu           sync.Mutex
 	workers      []*fakeWorker
+	allocateErr  error
 	calls        int
 	cleanupCalls int
 	cleanup      buildworker.CleanupReport
@@ -206,6 +207,9 @@ func (allocator *fakeAllocator) Allocate(_ context.Context, request AllocationRe
 		return nil, errors.New("invalid fake allocation")
 	}
 	allocator.calls++
+	if allocator.allocateErr != nil {
+		return nil, allocator.allocateErr
+	}
 	if len(allocator.workers) == 0 {
 		return nil, errors.New("no fake worker")
 	}
@@ -538,6 +542,18 @@ func TestControllerRejectsInvalidCapabilityBeforeAllocation(t *testing.T) {
 	result, err := controller.Run(context.Background(), RunRequest{Envelope: envelope, Events: func(buildworker.Event) {}})
 	if err != nil || result.Phase != buildworker.PhaseFailed || result.ErrorCode != "capability_invalid" || allocator.calls != 0 || broker.revoked != 1 {
 		t.Fatalf("result = %#v, error = %v, broker=%#v allocator=%#v", result, err, broker, allocator)
+	}
+}
+
+func TestControllerPreservesBoundedWorkerAllocationStage(t *testing.T) {
+	t.Parallel()
+	envelope, verifier, artifacts := controlFixture(t, false)
+	broker := &fakeBroker{}
+	allocator := &fakeAllocator{allocateErr: WrapWorkerAllocationError(AllocationReadiness, errors.New("sensitive internal detail"))}
+	controller := testController(t, verifier, artifacts, broker, allocator, nil)
+	result, err := controller.Run(context.Background(), RunRequest{Envelope: envelope, Events: func(buildworker.Event) {}})
+	if err != nil || result.Phase != buildworker.PhaseFailed || result.ErrorCode != AllocationReadiness || allocator.calls != 1 || broker.revoked != 1 {
+		t.Fatalf("result=%#v error=%v broker=%#v allocator=%#v", result, err, broker, allocator)
 	}
 }
 

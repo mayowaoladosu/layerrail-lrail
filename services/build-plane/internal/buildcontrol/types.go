@@ -16,6 +16,54 @@ var (
 	ErrInProgress = errors.New("build assignment is already in progress")
 )
 
+const (
+	AllocationCertificateIssue = "worker_certificate_issue"
+	AllocationResourcePrepare  = "worker_resource_prepare"
+	AllocationStaleCleanup     = "worker_stale_cleanup"
+	AllocationResourceCreate   = "worker_resource_create"
+	AllocationReadiness        = "worker_readiness"
+	AllocationConnect          = "worker_connect"
+	AllocationConnectDial      = "worker_connect_dial"
+	AllocationConnectTLS       = "worker_connect_tls"
+	AllocationConnectVerify    = "worker_connect_verify"
+)
+
+type WorkerAllocationError struct {
+	Code string
+	Err  error
+}
+
+func (failure *WorkerAllocationError) Error() string {
+	return "worker allocation failed at " + failure.Code
+}
+func (failure *WorkerAllocationError) Unwrap() error { return failure.Err }
+
+func WrapWorkerAllocationError(code string, err error) error {
+	if err == nil || !validWorkerAllocationCode(code) {
+		return errors.New("worker allocation failure classification is invalid")
+	}
+	return &WorkerAllocationError{Code: code, Err: err}
+}
+
+func WorkerAllocationErrorCode(err error) string {
+	var failure *WorkerAllocationError
+	if errors.As(err, &failure) && validWorkerAllocationCode(failure.Code) {
+		return failure.Code
+	}
+	return "worker_allocate"
+}
+
+func validWorkerAllocationCode(code string) bool {
+	switch code {
+	case AllocationCertificateIssue, AllocationResourcePrepare, AllocationStaleCleanup,
+		AllocationResourceCreate, AllocationReadiness, AllocationConnect, AllocationConnectDial,
+		AllocationConnectTLS, AllocationConnectVerify:
+		return true
+	default:
+		return false
+	}
+}
+
 type Result struct {
 	BuildID        string                    `json:"build_id"`
 	PayloadDigest  string                    `json:"payload_digest"`

@@ -16,7 +16,7 @@ RUN bundle install --jobs 4 --retry 3
 
 FROM base AS test
 
-RUN apk add --no-cache build-base
+RUN apk add --no-cache build-base git
 COPY Gemfile Gemfile.lock ./
 RUN bundle install --jobs 4 --retry 3
 COPY .rubocop.yml Rakefile ./

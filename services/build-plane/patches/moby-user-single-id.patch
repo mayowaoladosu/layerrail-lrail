@@ -34,7 +34,7 @@ new file mode 100644
 index 0000000..0cc0953
 --- /dev/null
 +++ b/idtools_lrail_test.go
-@@ -0,0 +1,28 @@
+@@ -0,0 +1,31 @@
 +package user
 +
 +import "testing"

@@ -68,10 +68,24 @@ index 4a8461f..8688c16 100644
 +	}
 +}
 diff --git a/libcontainer/nsenter/nsexec.c b/libcontainer/nsenter/nsexec.c
-index 728e68b..7cd0c1b 100644
+index 728e68b..2922683 100644
 --- a/libcontainer/nsenter/nsexec.c
 +++ b/libcontainer/nsenter/nsexec.c
-@@ -52,6 +52,26 @@ enum sync_t {
+@@ -17,11 +17,13 @@
+ #include <unistd.h>
+ 
+ #include <sys/ioctl.h>
++#include <sys/syscall.h>
+ #include <sys/prctl.h>
+ #include <sys/socket.h>
+ #include <sys/types.h>
+ #include <sys/wait.h>
+ 
++#include <linux/capability.h>
+ #include <linux/limits.h>
+ #include <linux/netlink.h>
+ #include <linux/types.h>
+@@ -52,6 +54,42 @@ enum sync_t {
  /* Stores the current stage of nsexec. */
  int current_stage = STAGE_SETUP;
  
@@ -95,34 +109,56 @@ index 728e68b..7cd0c1b 100644
 +		bail("strict single-ID credentials differ from the exact logical identity");
 +}
 +
++static void restore_lrail_setup_capabilities(void)
++{
++	struct __user_cap_header_struct header = { _LINUX_CAPABILITY_VERSION_3, 0 };
++	struct __user_cap_data_struct data[_LINUX_CAPABILITY_U32S_3] = { 0 };
++	const unsigned int index = CAP_SYS_ADMIN / 32;
++	const __u32 mask = ((__u32) 1U) << (CAP_SYS_ADMIN % 32);
++	if (syscall(SYS_capget, &header, &data) < 0)
++		bail("failed to inspect strict single-ID setup capabilities");
++	if ((data[index].permitted & mask) == 0)
++		bail("strict single-ID namespace lacks permitted setup authority");
++	for (size_t i = 0; i < _LINUX_CAPABILITY_U32S_3; i++)
++		data[i].effective = data[i].permitted;
++	if (syscall(SYS_capset, &header, &data) < 0)
++		bail("failed to restore strict single-ID setup capabilities");
++}
++
  /* Assume the stack grows down, so arguments should be above it. */
  struct clone_t {
  	/*
-@@ -541,7 +561,9 @@ static nsset_t __join_namespaces(nsset_t allow, struct namespace_t *ns_list, siz
+@@ -541,8 +579,12 @@ static nsset_t __join_namespaces(nsset_t allow, struct namespace_t *ns_list, siz
  		 * <https://github.com/opencontainers/runc/issues/4466> for one example.
  		 */
  		if (type == CLONE_NEWUSER) {
 -			if (setresuid(0, 0, 0) < 0)
-+			if (lrail_single_id())
++			if (lrail_single_id()) {
 +				verify_lrail_single_id_identity();
-+			else if (setresuid(0, 0, 0) < 0)
++				restore_lrail_setup_capabilities();
++			} else if (setresuid(0, 0, 0) < 0) {
  				bail("failed to become root in user namespace");
++			}
  		}
  
-@@ -1065,8 +1087,10 @@ void nsexec(void)
+ 		close(ns->fd);
+@@ -1065,9 +1107,13 @@ void nsexec(void)
  						bail("failed to re-set process as non-dumpable");
  				}
  
 -				/* Become root in the namespace proper. */
 -				if (setresuid(0, 0, 0) < 0)
 +				/* Retain setup capabilities with the already-mapped strict identity. */
-+				if (lrail_single_id())
++				if (lrail_single_id()) {
 +					verify_lrail_single_id_identity();
-+				else if (setresuid(0, 0, 0) < 0)
++					restore_lrail_setup_capabilities();
++				} else if (setresuid(0, 0, 0) < 0) {
  					bail("failed to become root in user namespace");
++				}
  			}
  
-@@ -1180,13 +1204,17 @@ void nsexec(void)
+ 			/*
+@@ -1180,13 +1226,18 @@ void nsexec(void)
  			if (setsid() < 0)
  				bail("setsid failed");
  
@@ -130,6 +166,7 @@ index 728e68b..7cd0c1b 100644
 -				bail("setuid failed");
 +			if (lrail_single_id()) {
 +				verify_lrail_single_id_identity();
++				restore_lrail_setup_capabilities();
 +			} else {
 +				if (setuid(0) < 0)
 +					bail("setuid failed");

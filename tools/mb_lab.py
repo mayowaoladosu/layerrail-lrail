@@ -42,7 +42,7 @@ spec:
           test ! -e /var/run/secrets/kubernetes.io/serviceaccount/token;
           test ! -S /var/run/docker.sock;
           test ! -S /run/containerd/containerd.sock;
-          grep -q kata /proc/version || test -d /run/kata-containers;
+          awk '$2 == "/" && $3 == "virtiofs" { found=1 } END { exit !found }' /proc/mounts;
           echo kata-qemu-ok;
           sleep 2
       securityContext:

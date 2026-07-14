@@ -15,7 +15,7 @@ vars:
   BUILD_CELL_CONTROLLER_IMAGE: lrail-buildcell-controller:wp040-final
   BUILD_BROKER_IMAGE: lrail-build-broker:mb
   BUILD_CELL_WORKER_IMAGE: lrail-buildkit-worker:wp040-final
-  BUILD_GO_BASE_IMAGE: lrail-go-base:1.26.5-alpine-flat-v1
+  BUILD_GO_BASE_IMAGE: lrail-go-base:1.26.5-alpine-flat-v2
   BUILD_CELL_RESIDUE_IMAGE: lrail-residue-agent:wp040-final
   BUILD_CELL_EGRESS_IMAGE: lrail-build-egress-proxy:wp040-final
   BUILD_REGISTRY_BROKER_IMAGE: lrail-registry-broker:wp040-final

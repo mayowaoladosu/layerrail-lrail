@@ -37,7 +37,7 @@ spec:
       terminationGracePeriodSeconds: 15
       containers:
         - name: agent
-          image: ghcr.io/mayowaoladosu/layerrail-lrail/residue-agent@sha256:d3196125699708f876e4f0a0a3abb7e944dc80a9a6beff2765180c0ed6b8b66c
+          image: ghcr.io/mayowaoladosu/layerrail-lrail/residue-agent@sha256:f377398e865c646f806b57a4d7776e44cdc782097c000c86b0e9e83fad551181
           imagePullPolicy: IfNotPresent
           securityContext:
             runAsUser: 0

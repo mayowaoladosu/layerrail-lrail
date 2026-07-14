@@ -1,12 +1,12 @@
 {
   "api_version": "lrail.build-policy/v1",
   "id": "pol_019b01da-7e31-7000-8000-000000000001",
-  "revision": "1.0.0",
+  "revision": "1.1.0",
   "base": {
-    "allowed_registries": ["docker.io"],
-    "curated_digests": [],
-    "allow_customer_bases": true,
-    "allowed_signature_identities": ["upstream-unverified:docker.io/library/golang"],
+    "allowed_registries": ["ghcr.io"],
+    "curated_digests": ["sha256:340fbc9e8e18e34f5ebc4ca8088189584f32e74f096ec2175930c5d207c191a9"],
+    "allow_customer_bases": false,
+    "allowed_signature_identities": ["layerrail-unverified:ghcr.io/mayowaoladosu/layerrail-lrail/go-base"],
     "require_sbom": false,
     "require_provenance": false
   },

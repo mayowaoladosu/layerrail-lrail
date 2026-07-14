@@ -1,17 +1,17 @@
 {
-  "version": "1.0.0",
+  "version": "1.1.0",
   "entries": [
     {
       "language": "go",
       "material": {
-        "requested_ref": "docker.io/library/golang:1.26.5-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2",
-        "resolved_ref": "docker.io/library/golang:1.26.5-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2",
-        "digest": "sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2",
-        "registry": "docker.io",
-        "classification": "customer",
-        "platforms": ["linux/amd64", "linux/arm64"],
-        "signature_identity": "upstream-unverified:docker.io/library/golang",
-        "resolution_digest": "sha256:10e6846b69e6978fd51a0825ac080fc7ac8e2408af53ac2e5e0968c04f7bc7ef"
+        "requested_ref": "ghcr.io/mayowaoladosu/layerrail-lrail/go-base@sha256:340fbc9e8e18e34f5ebc4ca8088189584f32e74f096ec2175930c5d207c191a9",
+        "resolved_ref": "ghcr.io/mayowaoladosu/layerrail-lrail/go-base@sha256:340fbc9e8e18e34f5ebc4ca8088189584f32e74f096ec2175930c5d207c191a9",
+        "digest": "sha256:340fbc9e8e18e34f5ebc4ca8088189584f32e74f096ec2175930c5d207c191a9",
+        "registry": "ghcr.io",
+        "classification": "curated",
+        "platforms": ["linux/amd64"],
+        "signature_identity": "layerrail-unverified:ghcr.io/mayowaoladosu/layerrail-lrail/go-base",
+        "resolution_digest": "sha256:878ac21cc8952e37c3b26240541e3bed468c6704a09e5b59aa90695da26b0d02"
       }
     }
   ]

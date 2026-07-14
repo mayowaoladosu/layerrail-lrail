@@ -292,6 +292,23 @@ func TestPolicyMapsDockerHubToItsCanonicalRegistryAPI(t *testing.T) {
 	}
 }
 
+func TestPolicyMapsGHCRToItsSinglePublicAuthority(t *testing.T) {
+	t.Parallel()
+	lock := llbcompiler.DefinitionLock{BaseMaterials: []llbcompiler.BaseMaterial{{Registry: "ghcr.io"}}}
+	policy, err := NewPolicy(
+		egressBuildID, egressOrgID, "build-fixture-a1", egressPayload, 1,
+		egressNow.Add(-time.Minute), egressNow.Add(10*time.Minute), lock, nil,
+	)
+	if err != nil {
+		t.Fatalf("NewPolicy: %v", err)
+	}
+	if len(policy.Destinations) != 1 || policy.Destinations[0].Domain != "ghcr.io" ||
+		!slices.Equal(policy.Destinations[0].Ports, []uint16{443}) ||
+		!slices.Equal(policy.Destinations[0].Profiles, []string{"base"}) {
+		t.Fatalf("destinations = %#v", policy.Destinations)
+	}
+}
+
 func TestReloadingProxyTLSConfigObservesServerRotation(t *testing.T) {
 	t.Parallel()
 	_, _, rootPEM, rootKeyPEM := testRootCA(t)

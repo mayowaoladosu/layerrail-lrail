@@ -21,8 +21,15 @@ func TestCommittedMBBuildPolicyAndBaseCatalogConform(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewDefinitionCompiler: %v", err)
 	}
-	if compiler.Catalog.Entries[0].Material.ResolutionDigest != "sha256:10e6846b69e6978fd51a0825ac080fc7ac8e2408af53ac2e5e0968c04f7bc7ef" {
+	material := compiler.Catalog.Entries[0].Material
+	if material.ResolutionDigest != "sha256:878ac21cc8952e37c3b26240541e3bed468c6704a09e5b59aa90695da26b0d02" {
 		t.Fatalf("resolution digest = %s", compiler.Catalog.Entries[0].Material.ResolutionDigest)
+	}
+	if material.Registry != "ghcr.io" || material.Classification != "curated" || len(material.Platforms) != 1 || material.Platforms[0] != "linux/amd64" {
+		t.Fatalf("curated material = %#v", material)
+	}
+	if compiler.Policy.Base.AllowCustomerBases || len(compiler.Policy.Base.CuratedDigests) != 1 || compiler.Policy.Base.CuratedDigests[0] != material.Digest {
+		t.Fatalf("curated policy = %#v", compiler.Policy.Base)
 	}
 }
 

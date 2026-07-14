@@ -17,6 +17,7 @@ The build cell is a dedicated execution boundary. The base manifests are intenti
 - an RWX storage class; the example selects `rook-cephfs` for the versioned Trivy database
 - an RWO storage class; the example selects `rook-ceph-block` for singleton broker state
 - a site-owned, anonymous-read Harbor mirror of the Trivy vulnerability database
+- the anonymous-read, digest-pinned LayerRail curated toolchain bases declared by the broker catalog
 - the final published, digest-pinned build broker, controller, worker, egress-proxy, registry-broker, evidence-signer, Trivy DB updater, and residue-agent images
 - an HTTPS Harbor origin with token expiry no greater than 15 minutes
 
@@ -33,7 +34,7 @@ A production overlay must supply two different object identities:
 - `lrail-build-broker-source-s3` may only `GetObject` under the finalized source snapshot prefix;
 - `lrail-build-broker-cell-s3` may only `GetObject` and `PutObject` under exactly one selected cell content prefix.
 
-The IAM JSON files under `base/policies` are scope templates. Replace `cell-example` with the selected cell's exact prefix before installing the cell-write policy. Never combine these identities. The broker site ConfigMap owns the immutable build policy, base catalog, exact cell identity, TLS S3 origins, OpenBao assignment identity, and BuildCell mTLS endpoint. The broker image is pinned by registry digest and its GHCR package is private; do not replace the digest with a mutable tag.
+The IAM JSON files under `base/policies` are scope templates. Replace `cell-example` with the selected cell's exact prefix before installing the cell-write policy. Never combine these identities. The broker site ConfigMap owns the immutable build policy, base catalog, exact cell identity, TLS S3 origins, OpenBao assignment identity, and BuildCell mTLS endpoint. The broker image is pinned by registry digest and its GHCR package is private; do not replace the digest with a mutable tag. Curated build bases are separately public for tokenless workers, pinned by catalog and policy digest, limited to their actual platform, and preserve an exact pinned upstream root filesystem in one OCI layer.
 
 Mount `lrail-control-worker-build-client-tls` into the control-worker workload and configure:
 

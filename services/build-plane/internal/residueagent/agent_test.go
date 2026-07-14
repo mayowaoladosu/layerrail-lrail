@@ -23,12 +23,16 @@ type fakeRuntimeCleaner struct {
 	cleanupCalls int
 	removed      []string
 	cleanupErr   error
+	cleanupErrs  []error
 	residue      []buildworker.Residue
 	inspectErr   error
 }
 
 func (runtime *fakeRuntimeCleaner) CleanupPod(_ context.Context, _ string) ([]string, error) {
 	runtime.cleanupCalls++
+	if len(runtime.cleanupErrs) >= runtime.cleanupCalls {
+		return append([]string(nil), runtime.removed...), runtime.cleanupErrs[runtime.cleanupCalls-1]
+	}
 	return append([]string(nil), runtime.removed...), runtime.cleanupErr
 }
 
@@ -121,6 +125,16 @@ func TestAgentQuarantinesEveryUnprovenCleanup(t *testing.T) {
 				t.Fatalf("report = %#v", report)
 			}
 		})
+	}
+}
+
+func TestAgentRetriesTransientCleanupAndRequiresFinalCleanInspection(t *testing.T) {
+	t.Parallel()
+	runtime := &fakeRuntimeCleaner{cleanupErrs: []error{errors.New("fake transient CRI race"), nil}}
+	agent, _, _ := residueAgentFixture(t, runtime, &fakeMountCleaner{})
+	report := agent.Cleanup(context.Background(), validResidueRequest())
+	if report.Status != buildworker.CleanupClean || len(report.Residue) != 0 || report.QuarantineReason != "" || runtime.cleanupCalls != 2 {
+		t.Fatalf("report = %#v, runtime = %#v", report, runtime)
 	}
 }
 

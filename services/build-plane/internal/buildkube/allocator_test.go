@@ -264,7 +264,7 @@ func TestAllocatorQuarantinesNodeWhenResidueRemains(t *testing.T) {
 		t.Fatalf("Allocate: %v", err)
 	}
 	report, err := worker.ForceTerminate(context.Background())
-	if err == nil || report.Status != buildworker.CleanupQuarantined || quarantine.nodeName != "build-node-1" || quarantine.buildID != kubeBuildID {
+	if err == nil || report.Status != buildworker.CleanupQuarantined || !strings.Contains(report.QuarantineReason, "fake residue") || quarantine.nodeName != "build-node-1" || quarantine.buildID != kubeBuildID {
 		t.Fatalf("report=%#v error=%v quarantine=%#v", report, err, quarantine)
 	}
 }

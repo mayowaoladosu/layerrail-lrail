@@ -10,12 +10,15 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/mayowaoladosu/layerrail-lrail/internal/platformid"
 	"github.com/mayowaoladosu/layerrail-lrail/services/build-plane/internal/buildworker"
 )
 
 const MaxCgroupEntries = 100_000
+const CleanupAttempts = 4
+const CleanupRetryInterval = 250 * time.Millisecond
 
 var podUIDPattern = regexp.MustCompile(`^[a-f0-9][a-f0-9-]{15,63}$`)
 var podNamePattern = regexp.MustCompile(`^[a-z0-9](?:[-a-z0-9]{0,61}[a-z0-9])?$`)
@@ -67,7 +70,7 @@ func New(config Config, runtime RuntimeCleaner, mounts MountCleaner) (*Agent, er
 }
 
 func (agent *Agent) Cleanup(ctx context.Context, request Request) buildworker.CleanupReport {
-	report := buildworker.CleanupReport{BuildID: request.BuildID, Status: buildworker.CleanupClean, Residue: []buildworker.Residue{}, RemovedPaths: []string{}}
+	report := cleanReport(request.BuildID)
 	if err := validateRequest(request, agent.config.NodeName); err != nil {
 		return quarantineReport(report, "invalid residue cleanup scope", buildworker.Residue{Kind: "scope", Detail: "request rejected"})
 	}
@@ -75,6 +78,30 @@ func (agent *Agent) Cleanup(ctx context.Context, request Request) buildworker.Cl
 	if err != nil {
 		return quarantineReport(report, "invalid pod residue path", buildworker.Residue{Kind: "scope", Detail: "pod path rejected"})
 	}
+	removed := map[string]struct{}{}
+	for attempt := 1; attempt <= CleanupAttempts; attempt++ {
+		report = agent.cleanupAttempt(ctx, request, podRoot)
+		for _, path := range report.RemovedPaths {
+			removed[path] = struct{}{}
+		}
+		if report.Status == buildworker.CleanupClean || attempt == CleanupAttempts || ctx.Err() != nil {
+			report.RemovedPaths = sortedKeys(removed)
+			return report
+		}
+		timer := time.NewTimer(CleanupRetryInterval)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			report.RemovedPaths = sortedKeys(removed)
+			return report
+		case <-timer.C:
+		}
+	}
+	return report
+}
+
+func (agent *Agent) cleanupAttempt(ctx context.Context, request Request, podRoot string) buildworker.CleanupReport {
+	report := cleanReport(request.BuildID)
 	removedRuntime, runtimeErr := agent.runtime.CleanupPod(ctx, request.PodUID)
 	report.RemovedPaths = append(report.RemovedPaths, removedRuntime...)
 	removedMounts, mountErr := agent.mounts.UnmountUnder(ctx, podRoot)
@@ -105,6 +132,19 @@ func (agent *Agent) Cleanup(ctx context.Context, request Request) buildworker.Cl
 	}
 	sort.Strings(report.RemovedPaths)
 	return report
+}
+
+func cleanReport(buildID string) buildworker.CleanupReport {
+	return buildworker.CleanupReport{BuildID: buildID, Status: buildworker.CleanupClean, Residue: []buildworker.Residue{}, RemovedPaths: []string{}}
+}
+
+func sortedKeys(values map[string]struct{}) []string {
+	result := make([]string, 0, len(values))
+	for value := range values {
+		result = append(result, value)
+	}
+	sort.Strings(result)
+	return result
 }
 
 func cleanupFailureReason(runtimeErr, mountErr, podErr, cgroupErr, runtimeInspectErr, mountInspectErr, cgroupInspectErr error, residue bool) string {

@@ -398,13 +398,18 @@ func (allocator *Allocator) deleteResources(ctx context.Context, resources Resou
 			report.Residue = append(report.Residue, residueReport.Residue...)
 			report.RemovedPaths = append(report.RemovedPaths, residueReport.RemovedPaths...)
 			if residueReport.Status != buildworker.CleanupClean {
+				report.QuarantineReason = residueReport.QuarantineReason
 				cleanupErrors = append(cleanupErrors, errors.New("node residue remains"))
 			}
 		}
 	}
 	if len(cleanupErrors) > 0 || len(report.Residue) > 0 {
 		report.Status = buildworker.CleanupQuarantined
-		report.QuarantineReason = "Kubernetes worker cleanup could not be proven"
+		if report.QuarantineReason == "" {
+			report.QuarantineReason = "Kubernetes worker cleanup could not be proven"
+		} else {
+			report.QuarantineReason = "Kubernetes worker cleanup could not be proven: " + report.QuarantineReason
+		}
 		if pod != nil && pod.Spec.NodeName != "" {
 			if err := allocator.quarantiner.Quarantine(context.WithoutCancel(ctx), pod.Spec.NodeName, report.BuildID, report.QuarantineReason); err != nil {
 				cleanupErrors = append(cleanupErrors, fmt.Errorf("quarantine unsafe build node: %w", err))

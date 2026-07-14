@@ -10,7 +10,7 @@ index d1c33d3..5b48614 100644
  	if idMap == nil {
  		return contID, nil
  	}
-+	if contID == 0 && isLrailSingleIDMap(idMap) {
++	if contID >= 0 && isLrailSingleIDMap(idMap) {
 +		return 0, nil
 +	}
  	for _, m := range idMap {
@@ -45,11 +45,14 @@ index 0000000..0cc0953
 +		UIDMaps: []IDMap{{ID: 10001, ParentID: 0, Count: 1}},
 +		GIDMaps: []IDMap{{ID: 10001, ParentID: 0, Count: 1}},
 +	}
-+	for _, ids := range [][2]int{{0, 0}, {10001, 10001}} {
++	for _, ids := range [][2]int{{0, 0}, {0, 42}, {10001, 10001}, {65534, 65534}} {
 +		uid, gid, err := mapping.ToHost(ids[0], ids[1])
 +		if err != nil || uid != 0 || gid != 0 {
 +			t.Fatalf("ToHost(%d, %d) = %d, %d, %v", ids[0], ids[1], uid, gid, err)
 +		}
++	}
++	if _, err := toHost(-1, mapping.UIDMaps); err == nil {
++		t.Fatal("negative identity unexpectedly flattened")
 +	}
 +	uid, gid, err := mapping.ToContainer(0, 0)
 +	if err != nil || uid != 10001 || gid != 10001 {

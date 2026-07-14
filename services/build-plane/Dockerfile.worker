@@ -52,7 +52,10 @@ RUN go mod init lrail.local/buildkit-runtime \
 	&& go test github.com/containerd/containerd/v2/pkg/oci \
 	&& go test github.com/containerd/containerd/v2/pkg/archive \
 	&& test "$(go list -m -f '{{.Dir}}' github.com/containerd/continuity)" = "${continuity_dir}" \
-	&& go test github.com/containerd/continuity/fs \
+	&& test -f "${continuity_dir}/fs/copy_lrail_linux_test.go" \
+	&& (go test -v -count=1 -run '^TestLrail' github.com/containerd/continuity/fs | tee /tmp/continuity-tests.log) \
+	&& grep -q '^--- PASS: TestLrailSingleIDCopySkipsOnlyFlattenedOwnership' /tmp/continuity-tests.log \
+	&& grep -q '^--- PASS: TestLrailSingleIDCopyLeavesOrdinaryOwnershipPathUnchanged' /tmp/continuity-tests.log \
 	&& go test github.com/moby/sys/user \
 	&& test "$(cd "${moby_archive_dir}" && go env GOMOD)" = "${moby_archive_dir}/go.mod" \
 	&& test -f "${moby_archive_dir}/archive_lrail_test.go" \

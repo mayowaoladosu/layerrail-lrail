@@ -28,6 +28,10 @@ class FakeExecuteDeploymentBuild < Temporalio::Activity::Definition
   activity_name "lrail.deployment.execute_build.v1"
 
   def execute(input)
+    if input["simulate_failure"]
+      raise Temporalio::Error::ApplicationError.new("simulated build service loss", non_retryable: true)
+    end
+
     context = Temporalio::Activity::Context.current
     200.times do |index|
       if FakeCancelDeploymentBuild.canceled?(input.fetch("build_id"))
@@ -38,6 +42,18 @@ class FakeExecuteDeploymentBuild < Temporalio::Activity::Definition
       sleep 0.025
     end
     { "build_id" => input.fetch("build_id"), "generation" => 1, "state" => "complete" }
+  end
+end
+
+class FakeFinalizeDeploymentBuildFailure < Temporalio::Activity::Definition
+  activity_name "lrail.deployment.finalize_build_failure.v1"
+
+  def execute(input)
+    {
+      "build_id" => input.fetch("build_id"),
+      "generation" => input.fetch("generation"),
+      "state" => "failed"
+    }
   end
 end
 
@@ -113,6 +129,22 @@ class DeploymentTemporalWorkflowTest < Minitest::Test
     terminate_if_running(handle)
   end
 
+  def test_activity_failure_converges_to_terminal_failed_result
+    input = workflow_input.merge("simulate_failure" => true)
+    handle = nil
+    worker.run do
+      handle = @starter.start_deployment(input)
+      result = handle.result
+      assert_equal "failed", result.fetch("state")
+      assert_equal input.fetch("deployment_id"), result.fetch("deployment_id")
+      Temporalio::Worker::WorkflowReplayer.new(
+        workflows: [ LrailControlWorkers::Workflows::DeploymentBuild ]
+      ).replay_workflow(handle.fetch_history)
+    end
+  ensure
+    terminate_if_running(handle)
+  end
+
   private
 
   def worker
@@ -120,7 +152,12 @@ class DeploymentTemporalWorkflowTest < Minitest::Test
       client: @client,
       task_queue: @task_queue,
       workflows: [ LrailControlWorkers::Workflows::DeploymentBuild ],
-      activities: [ FakePrepareDeploymentBuild, FakeExecuteDeploymentBuild, FakeCancelDeploymentBuild ]
+      activities: [
+        FakePrepareDeploymentBuild,
+        FakeExecuteDeploymentBuild,
+        FakeCancelDeploymentBuild,
+        FakeFinalizeDeploymentBuildFailure
+      ]
     )
   end
 

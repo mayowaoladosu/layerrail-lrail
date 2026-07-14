@@ -15,7 +15,7 @@ module LrailControlWorkers
         @build_input = input.merge(prepared)
         cancel_build if @cancel_reason
         @phase = @cancel_reason ? "canceling" : "building"
-        result = build(@build_input)
+        result = build_with_failure_convergence(@build_input)
         @phase = result.fetch("state")
         Temporalio::Workflow.wait_condition { Temporalio::Workflow.all_handlers_finished? }
         result.merge(
@@ -56,7 +56,19 @@ module LrailControlWorkers
           schedule_to_close_timeout: 7_200,
           start_to_close_timeout: 7_200,
           heartbeat_timeout: 60,
-          retry_policy: retry_policy(max_attempts: 5)
+          retry_policy: retry_policy(max_attempts: 10)
+        )
+      end
+
+      def build_with_failure_convergence(input)
+        build(input)
+      rescue Temporalio::Error::ActivityError
+        @phase = "failing"
+        Temporalio::Workflow.execute_activity(
+          Activities::FinalizeDeploymentBuildFailure,
+          input,
+          start_to_close_timeout: 30,
+          retry_policy: retry_policy(max_attempts: 10)
         )
       end
 

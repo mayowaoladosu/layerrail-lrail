@@ -9,7 +9,8 @@ module LrailControlWorkers
           Activities::IdempotentReceipt,
           Activities::PrepareDeploymentBuild,
           Activities::ExecuteDeploymentBuild,
-          Activities::CancelDeploymentBuild
+          Activities::CancelDeploymentBuild,
+          Activities::FinalizeDeploymentBuildFailure
         ]
       )
     end

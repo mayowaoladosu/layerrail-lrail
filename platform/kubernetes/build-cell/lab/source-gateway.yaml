@@ -1,8 +1,18 @@
 apiVersion: v1
+kind: Namespace
+metadata:
+  name: lrail-source
+  labels:
+    pod-security.kubernetes.io/enforce: restricted
+    pod-security.kubernetes.io/audit: restricted
+    pod-security.kubernetes.io/warn: restricted
+    dev.lrail/lab: mb-functional-gvisor
+---
+apiVersion: v1
 kind: Service
 metadata:
   name: lrail-source-gateway
-  namespace: lrail-control
+  namespace: lrail-source
   labels:
     app.kubernetes.io/name: lrail-source-gateway
     dev.lrail/lab: mb-functional-gvisor
@@ -19,7 +29,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: lrail-source-gateway
-  namespace: lrail-control
+  namespace: lrail-source
   labels:
     app.kubernetes.io/name: lrail-source-gateway
     dev.lrail/lab: mb-functional-gvisor
@@ -48,7 +58,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: gateway
-          image: ghcr.io/mayowaoladosu/layerrail-lrail/source-gateway@sha256:9c09376464f7a14d08c5bd60cb29cb2452cc70cef5cb8b676935b31ecf5a701e
+          image: ghcr.io/mayowaoladosu/layerrail-lrail/source-gateway@sha256:ffebadc8a21d55e787ad52b4866cda9c9b99e094e9274541345122bfffdfa01d
           imagePullPolicy: IfNotPresent
           env:
             - { name: LRAIL_SOURCE_LISTEN_ADDRESS, value: ":8080" }
@@ -76,6 +86,11 @@ spec:
                 secretKeyRef: { name: lrail-source-gateway-signing, key: key-id }
             - { name: LRAIL_SOURCE_MAX_FINALIZERS, value: "2" }
             - { name: LRAIL_SOURCE_MAX_FETCHERS, value: "2" }
+            - { name: LRAIL_PROVIDER_BROKER_URL, value: "http://lrail-provider-broker.lrail-source.svc.cluster.local:8081" }
+            - { name: LRAIL_PROVIDER_BROKER_INSECURE_LOCAL, value: "true" }
+            - { name: LRAIL_SOURCE_EGRESS_PROXY_URL, value: "http://lrail-provider-egress.lrail-source.svc.cluster.local:8082" }
+            - { name: LRAIL_GITHUB_API_URL, value: "https://api.github.com" }
+            - { name: LRAIL_GITHUB_ARCHIVE_HOSTS, value: "codeload.github.com" }
             - { name: SSL_CERT_FILE, value: /etc/lrail/s3/ca.pem }
           ports:
             - { name: http, containerPort: 8080, protocol: TCP }
@@ -115,7 +130,7 @@ apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
 metadata:
   name: source-gateway
-  namespace: lrail-control
+  namespace: lrail-source
 spec:
   podSelector:
     matchLabels:
@@ -142,12 +157,24 @@ spec:
               app.kubernetes.io/name: minio
       ports:
         - { port: 9000, protocol: TCP }
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: lrail-provider-broker
+      ports:
+        - { port: 8081, protocol: TCP }
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: lrail-provider-egress
+      ports:
+        - { port: 8082, protocol: TCP }
 ---
 apiVersion: cilium.io/v2
 kind: CiliumNetworkPolicy
 metadata:
   name: source-gateway
-  namespace: lrail-control
+  namespace: lrail-source
 spec:
   endpointSelector:
     matchLabels:
@@ -173,3 +200,17 @@ spec:
       toPorts:
         - ports:
             - { port: "9000", protocol: TCP }
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: lrail-source
+            k8s:app.kubernetes.io/name: lrail-provider-broker
+      toPorts:
+        - ports:
+            - { port: "8081", protocol: TCP }
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: lrail-source
+            k8s:app.kubernetes.io/name: lrail-provider-egress
+      toPorts:
+        - ports:
+            - { port: "8082", protocol: TCP }

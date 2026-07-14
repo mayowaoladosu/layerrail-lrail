@@ -392,6 +392,49 @@ console.log(JSON.stringify({seed: jwk.d, publicKey: jwk.x}));
     return grant_key, private_key, key_id.encode("ascii")
 
 
+def github_app_credentials() -> dict[str, bytes] | None:
+    path = ROOT / ".work" / "mb-lab" / "github-app.json"
+    try:
+        stat = path.lstat()
+    except FileNotFoundError:
+        return None
+    if (
+        not stat.is_file()
+        or path.is_symlink()
+        or stat.st_size < 1
+        or stat.st_size > 32 << 10
+    ):
+        raise LabFailure("GitHub App runtime credential file is unsafe")
+    try:
+        values = json.loads(path.read_text(encoding="utf-8"))
+        app_id = str(int(values["app_id"]))
+        slug = values["slug"]
+        private_key = values["private_key"]
+    except (KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
+        raise LabFailure("GitHub App runtime credential file is invalid") from error
+    valid_slug = (
+        isinstance(slug, str)
+        and 1 <= len(slug) <= 100
+        and all(
+            character.islower() or character.isdigit() or character == "-"
+            for character in slug
+        )
+    )
+    pem_label = "RSA " + "PRIVATE KEY"
+    valid_key = (
+        isinstance(private_key, str)
+        and 1 <= len(private_key) <= 16 << 10
+        and private_key.startswith(f"-----BEGIN {pem_label}-----\n")
+        and private_key.endswith(f"-----END {pem_label}-----\n")
+    )
+    if int(app_id) < 1 or not valid_slug or not valid_key:
+        raise LabFailure("GitHub App runtime credential identity is invalid")
+    return {
+        "app-id": app_id.encode("ascii"),
+        "private-key.pem": private_key.encode("ascii"),
+    }
+
+
 def image_pull_secret(namespace: str, username: str, token: str) -> None:
     authorization = base64.b64encode(f"{username}:{token}".encode()).decode("ascii")
     docker_config = json.dumps(
@@ -472,6 +515,21 @@ def functional_cell() -> None:
         "apply",
         "-f",
         str(ROOT / "platform/kubernetes/build-cell/base/namespaces.yaml"),
+    )
+    apply_resource(
+        {
+            "apiVersion": "v1",
+            "kind": "Namespace",
+            "metadata": {
+                "name": "lrail-source",
+                "labels": {
+                    "pod-security.kubernetes.io/enforce": "restricted",
+                    "pod-security.kubernetes.io/audit": "restricted",
+                    "pod-security.kubernetes.io/warn": "restricted",
+                    "dev.lrail/lab": "mb-functional-gvisor",
+                },
+            },
+        }
     )
     command(
         "kubectl",
@@ -564,6 +622,7 @@ def functional_cell() -> None:
     for namespace in ("lrail-build-control", "lrail-control"):
         config_map(namespace, "lrail-openbao-ca", {"ca.pem": root_ca})
         config_map(namespace, "lrail-s3-ca", {"ca.pem": root_ca})
+    config_map("lrail-source", "lrail-s3-ca", {"ca.pem": root_ca})
     config_map("lrail-build-control", "lrail-harbor-ca", {"ca.pem": root_ca})
     config_map(
         "lrail-build-system",
@@ -624,7 +683,7 @@ def functional_cell() -> None:
         },
     )
     opaque_secret(
-        "lrail-control",
+        "lrail-source",
         "lrail-source-gateway-s3",
         {
             "access-key": minio["source-access-key"],
@@ -632,7 +691,7 @@ def functional_cell() -> None:
         },
     )
     opaque_secret(
-        "lrail-control",
+        "lrail-source",
         "lrail-source-gateway-signing",
         {
             "grant-key": source_grant_key,
@@ -640,6 +699,9 @@ def functional_cell() -> None:
             "key-id": source_key_id,
         },
     )
+    app_credentials = github_app_credentials()
+    if app_credentials:
+        opaque_secret("lrail-source", "lrail-github-app", app_credentials)
     opaque_secret(
         "lrail-build-control",
         "lrail-harbor-admin",
@@ -655,6 +717,7 @@ def functional_cell() -> None:
         "lrail-build-control",
         "lrail-build",
         "lrail-build-system",
+        "lrail-source",
     ):
         image_pull_secret(namespace, username, token)
 
@@ -664,6 +727,15 @@ def functional_cell() -> None:
         "-k",
         str(ROOT / "platform/kubernetes/build-cell/lab"),
     )
+    if app_credentials:
+        command(
+            "kubectl",
+            "scale",
+            "deployment/lrail-provider-broker",
+            "--replicas=1",
+            "-n",
+            "lrail-source",
+        )
     for namespace in ("lrail-control", "lrail-build-control", "lrail-build-system"):
         command(
             "kubectl",
@@ -683,15 +755,18 @@ def functional_cell() -> None:
         "-n",
         "lrail-control",
     )
-    rollouts = (
-        ("deployment", "lrail-source-gateway", "lrail-control"),
+    rollouts = [
+        ("deployment", "lrail-source-gateway", "lrail-source"),
+        ("deployment", "lrail-provider-egress", "lrail-source"),
         ("deployment", "lrail-build-egress", "lrail-build-control"),
         ("deployment", "lrail-build-registry-broker", "lrail-build-control"),
         ("deployment", "lrail-build-evidence-signer", "lrail-build-control"),
         ("daemonset", "lrail-residue-agent", "lrail-build-system"),
         ("deployment", "lrail-build-control", "lrail-build-control"),
         ("deployment", "lrail-build-broker", "lrail-control"),
-    )
+    ]
+    if app_credentials:
+        rollouts.append(("deployment", "lrail-provider-broker", "lrail-source"))
     for kind, name, namespace in rollouts:
         command(
             "kubectl",
@@ -702,6 +777,27 @@ def functional_cell() -> None:
             namespace,
             "--timeout=1200s",
         )
+    for kind in ("deployment", "service", "networkpolicy"):
+        command(
+            "kubectl",
+            "delete",
+            kind,
+            "lrail-source-gateway" if kind != "networkpolicy" else "source-gateway",
+            "-n",
+            "lrail-control",
+            "--ignore-not-found=true",
+            check=False,
+        )
+    command(
+        "kubectl",
+        "delete",
+        "ciliumnetworkpolicy",
+        "source-gateway",
+        "-n",
+        "lrail-control",
+        "--ignore-not-found=true",
+        check=False,
+    )
     print(
         "Functional gVisor BuildCell and durable broker are ready. "
         "This does not satisfy the separate Kata M-B gate."

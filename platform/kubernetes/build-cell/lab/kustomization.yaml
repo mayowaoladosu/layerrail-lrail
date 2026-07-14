@@ -4,6 +4,7 @@ resources:
   - ../base
   - control-bridge.yaml
   - source-gateway.yaml
+  - provider-git.yaml
 patches:
   - path: gvisor-patch.yaml
   - path: storage-patch.yaml

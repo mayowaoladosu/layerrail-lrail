@@ -1,0 +1,322 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: lrail-provider-broker
+  namespace: lrail-source
+  labels:
+    app.kubernetes.io/name: lrail-provider-broker
+    dev.lrail/lab: mb-functional-gvisor
+spec:
+  selector:
+    app.kubernetes.io/name: lrail-provider-broker
+  ports:
+    - { name: http, port: 8081, targetPort: http, protocol: TCP }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: lrail-provider-egress
+  namespace: lrail-source
+  labels:
+    app.kubernetes.io/name: lrail-provider-egress
+    dev.lrail/lab: mb-functional-gvisor
+spec:
+  selector:
+    app.kubernetes.io/name: lrail-provider-egress
+  ports:
+    - { name: http, port: 8082, targetPort: http, protocol: TCP }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lrail-provider-broker
+  namespace: lrail-source
+  labels:
+    app.kubernetes.io/name: lrail-provider-broker
+    dev.lrail/lab: mb-functional-gvisor
+spec:
+  replicas: 0
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: lrail-provider-broker
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: lrail-provider-broker
+        dev.lrail/lab: mb-functional-gvisor
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      imagePullSecrets:
+        - name: lrail-build-images
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: broker
+          image: ghcr.io/mayowaoladosu/layerrail-lrail/source-gateway@sha256:ffebadc8a21d55e787ad52b4866cda9c9b99e094e9274541345122bfffdfa01d
+          imagePullPolicy: IfNotPresent
+          command: ["/provider-broker"]
+          env:
+            - { name: LRAIL_PROVIDER_BROKER_LISTEN_ADDRESS, value: ":8081" }
+            - name: LRAIL_SOURCE_GRANT_KEY
+              valueFrom:
+                secretKeyRef: { name: lrail-source-gateway-signing, key: grant-key }
+            - name: LRAIL_GITHUB_APP_ID
+              valueFrom:
+                secretKeyRef: { name: lrail-github-app, key: app-id }
+            - { name: LRAIL_GITHUB_APP_PRIVATE_KEY_FILE, value: /run/lrail-github/private-key.pem }
+            - { name: LRAIL_GITHUB_API_URL, value: "https://api.github.com" }
+            - { name: LRAIL_SOURCE_EGRESS_PROXY_URL, value: "http://lrail-provider-egress.lrail-source.svc.cluster.local:8082" }
+            - { name: LRAIL_PROVIDER_BROKER_MAX_ISSUES, value: "4" }
+          ports:
+            - { name: http, containerPort: 8081, protocol: TCP }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: 25m, memory: 32Mi, ephemeral-storage: 8Mi }
+            limits: { cpu: 250m, memory: 128Mi, ephemeral-storage: 32Mi }
+          readinessProbe:
+            httpGet: { path: /ready, port: http }
+            periodSeconds: 3
+            timeoutSeconds: 2
+            failureThreshold: 20
+          livenessProbe:
+            httpGet: { path: /live, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 6
+          volumeMounts:
+            - { name: github-app, mountPath: /run/lrail-github, readOnly: true }
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: github-app
+          secret:
+            secretName: lrail-github-app
+            defaultMode: 0440
+            items:
+              - { key: private-key.pem, path: private-key.pem }
+        - name: tmp
+          emptyDir: { medium: Memory, sizeLimit: 8Mi }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lrail-provider-egress
+  namespace: lrail-source
+  labels:
+    app.kubernetes.io/name: lrail-provider-egress
+    dev.lrail/lab: mb-functional-gvisor
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: lrail-provider-egress
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: lrail-provider-egress
+        dev.lrail/lab: mb-functional-gvisor
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      imagePullSecrets:
+        - name: lrail-build-images
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: proxy
+          image: ghcr.io/mayowaoladosu/layerrail-lrail/source-gateway@sha256:ffebadc8a21d55e787ad52b4866cda9c9b99e094e9274541345122bfffdfa01d
+          imagePullPolicy: IfNotPresent
+          command: ["/provider-egress"]
+          env:
+            - { name: LRAIL_PROVIDER_EGRESS_LISTEN_ADDRESS, value: ":8082" }
+            - { name: LRAIL_PROVIDER_EGRESS_ALLOWED_HOSTS, value: "api.github.com,codeload.github.com" }
+            - { name: LRAIL_PROVIDER_EGRESS_MAX_CONCURRENT, value: "8" }
+          ports:
+            - { name: http, containerPort: 8082, protocol: TCP }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: ["ALL"] }
+          resources:
+            requests: { cpu: 25m, memory: 32Mi, ephemeral-storage: 8Mi }
+            limits: { cpu: 250m, memory: 128Mi, ephemeral-storage: 32Mi }
+          readinessProbe:
+            httpGet: { path: /ready, port: http }
+            periodSeconds: 3
+            timeoutSeconds: 2
+            failureThreshold: 20
+          livenessProbe:
+            httpGet: { path: /live, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 6
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+      volumes:
+        - name: tmp
+          emptyDir: { medium: Memory, sizeLimit: 8Mi }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny
+  namespace: lrail-source
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: provider-broker
+  namespace: lrail-source
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: lrail-provider-broker
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: lrail-source-gateway
+      ports:
+        - { port: 8081, protocol: TCP }
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - { port: 53, protocol: UDP }
+        - { port: 53, protocol: TCP }
+    - to:
+        - podSelector:
+            matchLabels:
+              app.kubernetes.io/name: lrail-provider-egress
+      ports:
+        - { port: 8082, protocol: TCP }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: provider-egress
+  namespace: lrail-source
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: lrail-provider-egress
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - podSelector:
+            matchExpressions:
+              - key: app.kubernetes.io/name
+                operator: In
+                values: [lrail-source-gateway, lrail-provider-broker]
+      ports:
+        - { port: 8082, protocol: TCP }
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - { port: 53, protocol: UDP }
+        - { port: 53, protocol: TCP }
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: provider-broker
+  namespace: lrail-source
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: lrail-provider-broker
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: lrail-source
+            k8s:app.kubernetes.io/name: lrail-source-gateway
+      toPorts:
+        - ports:
+            - { port: "8081", protocol: TCP }
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s:k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - { port: "53", protocol: UDP }
+            - { port: "53", protocol: TCP }
+          rules:
+            dns:
+              - matchName: lrail-provider-egress.lrail-source.svc.cluster.local
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: lrail-source
+            k8s:app.kubernetes.io/name: lrail-provider-egress
+      toPorts:
+        - ports:
+            - { port: "8082", protocol: TCP }
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: provider-egress
+  namespace: lrail-source
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: lrail-provider-egress
+  ingress:
+    - fromEndpoints:
+        - matchExpressions:
+            - key: k8s:app.kubernetes.io/name
+              operator: In
+              values: [lrail-source-gateway, lrail-provider-broker]
+          matchLabels:
+            k8s:io.kubernetes.pod.namespace: lrail-source
+      toPorts:
+        - ports:
+            - { port: "8082", protocol: TCP }
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s:k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - { port: "53", protocol: UDP }
+            - { port: "53", protocol: TCP }
+          rules:
+            dns:
+              - matchName: api.github.com
+              - matchName: codeload.github.com
+    - toFQDNs:
+        - matchName: api.github.com
+        - matchName: codeload.github.com
+      toPorts:
+        - ports:
+            - { port: "443", protocol: TCP }

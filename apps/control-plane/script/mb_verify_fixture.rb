@@ -39,6 +39,21 @@ result = OrganizationContext.select_for(account:, identifier: fixture.fetch("org
   failures << "attestation references" unless attestations.all? do |attestation|
     attestation.object_ref.end_with?("@#{attestation.digest}") && attestation.payload_digest.match?(Attestation::DIGEST)
   end
+  expected_git_commit = ENV["LRAIL_MB_EXPECTED_GIT_COMMIT"]&.downcase
+  expected_git_repository = ENV["LRAIL_MB_EXPECTED_GIT_REPOSITORY"]&.downcase
+  expected_git_root = ENV["LRAIL_MB_EXPECTED_GIT_ROOT"]
+  if expected_git_commit.present? || expected_git_repository.present? || expected_git_root.present?
+    source_fetch = deployment.source_fetch
+    failures << "Git expectation set" unless expected_git_commit&.match?(SourceFetch::COMMIT_PATTERN) &&
+      expected_git_repository&.match?(SourceFetch::REPOSITORY_PATTERN) && expected_git_root.present?
+    failures << "Git fetch state" unless source_fetch&.state == "complete"
+    failures << "Git commit" unless source_fetch&.requested_commit_sha == expected_git_commit &&
+      source_fetch&.resolved_commit_sha == expected_git_commit
+    failures << "Git repository" unless source_fetch&.repository&.downcase == expected_git_repository
+    failures << "Git root" unless source_fetch&.root_directory == expected_git_root
+    failures << "Git snapshot" unless source_fetch&.source_snapshot_id == deployment.source_snapshot_id &&
+      source_fetch&.source_snapshot_id == build.source_snapshot_id
+  end
   failures << "release boundary" unless revision.releases.none?
   raise "M-B artifact verification failed: #{failures.join(", ")}" if failures.any?
 
@@ -51,6 +66,18 @@ result = OrganizationContext.select_for(account:, identifier: fixture.fetch("org
     [ table, count ]
   end
   raise "M-B runtime boundary was crossed" unless forbidden_tables.values.all?(&:zero?)
+
+  git_source = if deployment.source_fetch
+    {
+      fetch_id: deployment.source_fetch.public_id,
+      repository: deployment.source_fetch.repository,
+      requested_commit: deployment.source_fetch.requested_commit_sha,
+      resolved_commit: deployment.source_fetch.resolved_commit_sha,
+      tree_sha: deployment.source_fetch.tree_sha,
+      root_directory: deployment.source_fetch.root_directory,
+      snapshot_digest: deployment.source_snapshot.digest
+    }
+  end
 
   {
     deployment_id: deployment.public_id,
@@ -77,6 +104,7 @@ result = OrganizationContext.select_for(account:, identifier: fixture.fetch("org
     attestation_count: attestations.count,
     attestation_kinds: kinds,
     release_count: revision.releases.count,
+    git_source:,
     forbidden_tables:
   }
 end

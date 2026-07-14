@@ -170,6 +170,77 @@ func TestBrokerResumesAcceptedRunAfterProcessRestart(t *testing.T) {
 	}
 }
 
+func TestBrokerShutdownLeavesActiveRunForReplacementBroker(t *testing.T) {
+	t.Parallel()
+	now := time.Now().UTC()
+	path := t.TempDir() + "/broker.db"
+	store, err := NewBoltBrokerStore(path, 100, 1000)
+	if err != nil {
+		t.Fatalf("NewBoltBrokerStore: %v", err)
+	}
+	storeClosed := false
+	defer func() {
+		if !storeClosed {
+			_ = store.Close()
+		}
+	}()
+	started := make(chan struct{})
+	firstRunner := &fakeBrokerRunner{}
+	firstRunner.run = func(ctx context.Context, _ Request, _ Emit, _ int) (Result, error) {
+		close(started)
+		<-ctx.Done()
+		return Result{}, ctx.Err()
+	}
+	firstBroker, err := NewBroker(BrokerOptions{Store: store, Runner: firstRunner, Clock: time.Now, MaxAttempts: 2, RetryBase: 10 * time.Millisecond})
+	if err != nil {
+		t.Fatalf("NewBroker: %v", err)
+	}
+	request := validRequest(now)
+	if _, err := firstBroker.Submit(context.Background(), request); err != nil {
+		t.Fatalf("Submit: %v", err)
+	}
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("runner did not start")
+	}
+	closeContext, cancelClose := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancelClose()
+	if err := firstBroker.Close(closeContext); err != nil {
+		t.Fatalf("first Broker Close: %v", err)
+	}
+	record, found, err := store.Lookup(context.Background(), request.BuildID, request.Generation)
+	if err != nil || !found || record.Terminal() {
+		t.Fatalf("shutdown record=%#v found=%t error=%v", record, found, err)
+	}
+	if err := store.Close(); err != nil {
+		t.Fatalf("first Store Close: %v", err)
+	}
+	storeClosed = true
+
+	reopened, err := NewBoltBrokerStore(path, 100, 1000)
+	if err != nil {
+		t.Fatalf("reopen BoltBrokerStore: %v", err)
+	}
+	secondRunner := &fakeBrokerRunner{}
+	secondRunner.run = func(_ context.Context, request Request, _ Emit, _ int) (Result, error) {
+		return failedBrokerResult(request, now, "build_recovered_fixture"), nil
+	}
+	secondBroker, err := NewBroker(BrokerOptions{Store: reopened, Runner: secondRunner, Clock: time.Now, MaxAttempts: 2, RetryBase: 10 * time.Millisecond})
+	if err != nil {
+		_ = reopened.Close()
+		t.Fatalf("replacement NewBroker: %v", err)
+	}
+	defer closeTestBroker(t, secondBroker, reopened)
+	if err := secondBroker.Resume(context.Background(), 100); err != nil {
+		t.Fatalf("replacement Resume: %v", err)
+	}
+	_, terminal := waitBrokerTerminal(t, secondBroker, request, 0)
+	if calls, _ := secondRunner.counts(); terminal.State != "failed" || terminal.Result == nil || terminal.Result.FailureCode != "build_recovered_fixture" || calls != 1 {
+		t.Fatalf("terminal=%#v replacement calls=%d", terminal, calls)
+	}
+}
+
 func testBroker(t *testing.T, runner Runner, _ time.Time, attempts int) (*Broker, *BoltBrokerStore) {
 	t.Helper()
 	store, err := NewBoltBrokerStore(t.TempDir()+"/broker.db", 100, 1000)

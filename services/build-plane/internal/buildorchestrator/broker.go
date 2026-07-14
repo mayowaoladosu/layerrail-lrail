@@ -280,6 +280,11 @@ func (broker *Broker) execute(ctx context.Context, initial RunRecord, key string
 			return
 		}
 		if ctx.Err() != nil || attempt == broker.maxAttempts {
+			// Process shutdown is not a build failure. Preserve the nonterminal
+			// record so the replacement broker can recover the durable run.
+			if broker.root.Err() != nil {
+				return
+			}
 			if record.State == "canceling" && record.Dispatched {
 				return
 			}

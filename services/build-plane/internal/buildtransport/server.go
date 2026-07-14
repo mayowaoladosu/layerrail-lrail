@@ -88,10 +88,9 @@ func (server *Server) ExecuteAssignment(request *lrailv1.ExecuteBuildAssignmentR
 		lastSequence = event.Sequence
 		if err := stream.Send(eventMessage(event)); err != nil {
 			sendErr = err
-			active.requestCancel()
 		}
 	}
-	result, runErr := server.controller.Run(stream.Context(), buildcontrol.RunRequest{
+	result, runErr := server.controller.Run(context.WithoutCancel(stream.Context()), buildcontrol.RunRequest{
 		Envelope: envelope, Cancellation: active.cancel, Events: sink,
 	})
 	if runErr != nil {

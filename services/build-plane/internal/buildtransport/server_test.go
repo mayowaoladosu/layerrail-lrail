@@ -93,6 +93,16 @@ type captureStream struct {
 	err    error
 }
 
+type disconnectingStream struct {
+	*captureStream
+	disconnect context.CancelFunc
+}
+
+func (stream *disconnectingStream) Send(*lrailv1.BuildCellEvent) error {
+	stream.disconnect()
+	return stream.err
+}
+
 func (stream *captureStream) Send(event *lrailv1.BuildCellEvent) error {
 	stream.mu.Lock()
 	defer stream.mu.Unlock()
@@ -161,6 +171,48 @@ func TestServerStreamsProgressAndTerminalResult(t *testing.T) {
 		len(stream.events[1].Result.GetOutputs()[0].GetSupplyChain().GetEvidence()) != 5 || stream.events[1].Result.GetOutputs()[0].GetSupplyChain().GetPolicyState() != "accepted" ||
 		stream.events[1].Result.GetLogsDigest() != transportIR || stream.events[1].Result.GetCacheHits() != 2 || stream.events[1].Result.GetCacheMisses() != 3 {
 		t.Fatalf("terminal event = %#v", stream.events[1])
+	}
+}
+
+func TestServerKeepsDurableRunAliveWhenBrokerStreamDisconnects(t *testing.T) {
+	t.Parallel()
+	contents, _, verifier := transportEnvelope(t)
+	clientContext, disconnect := context.WithCancel(context.Background())
+	disconnected := errors.New("fake broker stream disconnected")
+	observed := make(chan [2]bool, 1)
+	release := make(chan struct{})
+	runner := runnerFunc(func(ctx context.Context, request buildcontrol.RunRequest) (buildcontrol.Result, error) {
+		request.Events(buildworker.Event{Sequence: 1, Attempt: 1, Phase: buildworker.PhaseSolving, Kind: "vertex", Name: "fake"})
+		cancellationRequested := false
+		select {
+		case <-request.Cancellation:
+			cancellationRequested = true
+		default:
+		}
+		observed <- [2]bool{ctx.Err() != nil, cancellationRequested}
+		<-release
+		return terminalTransportResult(), nil
+	})
+	server, err := NewServer(runner, verifier, buildcontrol.NewMemoryRunStore())
+	if err != nil {
+		t.Fatalf("NewServer: %v", err)
+	}
+	stream := &disconnectingStream{
+		captureStream: &captureStream{ctx: clientContext, err: disconnected},
+		disconnect:    disconnect,
+	}
+	done := make(chan error, 1)
+	go func() {
+		done <- server.ExecuteAssignment(&lrailv1.ExecuteBuildAssignmentRequest{CanonicalEnvelope: contents}, stream)
+	}()
+	state := <-observed
+	close(release)
+	executeErr := <-done
+	if state[0] || state[1] {
+		t.Fatalf("stream disconnect canceled durable run: context=%t cancellation=%t", state[0], state[1])
+	}
+	if !errors.Is(executeErr, disconnected) {
+		t.Fatalf("ExecuteAssignment error = %v", executeErr)
 	}
 }
 

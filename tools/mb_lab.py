@@ -5,6 +5,7 @@ import hashlib
 import json
 import os
 import secrets
+import stat
 import subprocess
 import sys
 import time
@@ -407,14 +408,14 @@ console.log(JSON.stringify({seed: jwk.d, publicKey: jwk.x}));
 def github_app_credentials() -> dict[str, bytes] | None:
     path = ROOT / ".work" / "mb-lab" / "github-app.json"
     try:
-        stat = path.lstat()
+        metadata = path.lstat()
     except FileNotFoundError:
         return None
     if (
-        not stat.is_file()
+        not stat.S_ISREG(metadata.st_mode)
         or path.is_symlink()
-        or stat.st_size < 1
-        or stat.st_size > 32 << 10
+        or metadata.st_size < 1
+        or metadata.st_size > 32 << 10
     ):
         raise LabFailure("GitHub App runtime credential file is unsafe")
     try:

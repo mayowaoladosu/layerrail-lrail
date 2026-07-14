@@ -292,7 +292,7 @@ func TestPolicyMapsDockerHubToItsCanonicalRegistryAPI(t *testing.T) {
 	}
 }
 
-func TestPolicyMapsGHCRToItsSinglePublicAuthority(t *testing.T) {
+func TestPolicyMapsGHCRToRegistryAndBlobAuthorities(t *testing.T) {
 	t.Parallel()
 	lock := llbcompiler.DefinitionLock{BaseMaterials: []llbcompiler.BaseMaterial{{Registry: "ghcr.io"}}}
 	policy, err := NewPolicy(
@@ -302,9 +302,12 @@ func TestPolicyMapsGHCRToItsSinglePublicAuthority(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewPolicy: %v", err)
 	}
-	if len(policy.Destinations) != 1 || policy.Destinations[0].Domain != "ghcr.io" ||
+	if len(policy.Destinations) != 2 || policy.Destinations[0].Domain != "ghcr.io" ||
+		policy.Destinations[1].Domain != "pkg-containers.githubusercontent.com" ||
 		!slices.Equal(policy.Destinations[0].Ports, []uint16{443}) ||
-		!slices.Equal(policy.Destinations[0].Profiles, []string{"base"}) {
+		!slices.Equal(policy.Destinations[1].Ports, []uint16{443}) ||
+		!slices.Equal(policy.Destinations[0].Profiles, []string{"base"}) ||
+		!slices.Equal(policy.Destinations[1].Profiles, []string{"base"}) {
 		t.Fatalf("destinations = %#v", policy.Destinations)
 	}
 }

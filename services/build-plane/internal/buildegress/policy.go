@@ -116,6 +116,9 @@ func NewPolicy(buildID, organizationID, workerName, payloadDigest string, genera
 			addDestination("auth.docker.io", 443, "base")
 			addDestination("production.cloudfront.docker.com", 443, "base")
 		}
+		if material.Registry == "ghcr.io" {
+			addDestination("pkg-containers.githubusercontent.com", 443, "base")
+		}
 	}
 	privateByGateway := make(map[string]PrivateDestination)
 	for _, capability := range lock.Network {

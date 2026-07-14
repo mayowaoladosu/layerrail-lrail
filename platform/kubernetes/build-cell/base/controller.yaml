@@ -155,7 +155,7 @@ spec:
             - name: LRAIL_BUILD_RUNTIME_CLASS
               value: kata-qemu
             - name: LRAIL_BUILD_WORKER_IMAGE
-              value: ghcr.io/mayowaoladosu/layerrail-lrail/buildkit-worker@sha256:23a7f3e9ce1d89e5cc160644d9c3a62195ef5db33916bbb3ceb54efc69d3f723
+              value: ghcr.io/mayowaoladosu/layerrail-lrail/buildkit-worker@sha256:df2cc49b1eac79dc905fa9cd968af6daa05bc40821bb538d0446073018e0b935
             - {name: LRAIL_BUILD_IMAGE_PULL_SECRET, value: lrail-build-images}
             - name: LRAIL_BUILD_SECCOMP_PROFILE
               value: RuntimeDefault

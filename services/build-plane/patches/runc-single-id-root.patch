@@ -307,6 +307,17 @@ index 728e68b..2922683 100644
  				if (setgroups(0, NULL) < 0)
  					bail("setgroups failed");
  			}
+diff --git a/libcontainer/container.go b/libcontainer/container.go
+index 570060d..d2ab512 100644
+--- a/libcontainer/container.go
++++ b/libcontainer/container.go
+@@ -48,3 +48,6 @@ type BaseState struct {
+ 	// InitProcessPid is the init process id in the parent namespace.
+ 	InitProcessPid int `json:"init_process_pid"`
++
++	// InitProcessProcfsPid is the init process id visible in the inherited procfs mount.
++	InitProcessProcfsPid int `json:"init_process_procfs_pid,omitempty"`
+ 
 diff --git a/libcontainer/init_linux.go b/libcontainer/init_linux.go
 index 8e84be7..4356680 100644
 --- a/libcontainer/init_linux.go
@@ -320,6 +331,25 @@ diff --git a/libcontainer/process_linux.go b/libcontainer/process_linux.go
 index fe736ee..a9aef1d 100644
 --- a/libcontainer/process_linux.go
 +++ b/libcontainer/process_linux.go
+@@ -113,4 +113,4 @@ func (p *containerProcess) pid() int {
+ func (p *containerProcess) startTime() (uint64, error) {
+-	stat, err := system.Stat(p.pid())
++	stat, err := system.Stat(p.container.initProcessStatPid())
+ 	return stat.StartTime, err
+ }
+@@ -159,4 +159,5 @@ type setnsProcess struct {
+ 	rootlessCgroups bool
+ 	intelRdtPath    string
+ 	initProcessPid  int
++	initProcfsPid   int
+ }
+@@ -287,5 +288,5 @@ func (p *setnsProcess) start() (retErr error) {
+ 			// https://github.com/opencontainers/runc/issues/2356#issuecomment-621277643
+ 			// Try to join the cgroup of InitProcessPid.
+ 			if cgroups.IsCgroup2UnifiedMode() && p.initProcessPid != 0 {
+-				initProcCgroupFile := fmt.Sprintf("/proc/%d/cgroup", p.initProcessPid)
++				initProcCgroupFile := fmt.Sprintf("/proc/%d/cgroup", p.initProcfsPid)
+ 				initCg, initCgErr := cgroups.ParseCgroupFile(initProcCgroupFile)
 @@ -451,7 +451,7 @@ type initProcess struct {
  // getChildPid receives the final child's pid over the provided pipe.
 -func (p *initProcess) getChildPid() (int, error) {
@@ -340,11 +370,23 @@ index fe736ee..a9aef1d 100644
 +	}
 +	return pid.Pid, procfsPid, nil
  }
-@@ -665,3 +669,3 @@ func (p *initProcess) start() (retErr error) {
+@@ -520,6 +524,6 @@ func (p *initProcess) goCreateMountSources(ctx context.Context) (mountSourceReque
+ 		}
+ 
+ 		// Attach to the container's mount namespace.
+-		nsFd, err := os.Open(fmt.Sprintf("/proc/%d/ns/mnt", p.pid()))
++		nsFd, err := os.Open(fmt.Sprintf("/proc/%d/ns/mnt", p.container.initProcessStatPid()))
+ 		if err != nil {
+ 			errCh <- fmt.Errorf("mount source thread: open container mntns: %w", err)
+@@ -665,6 +669,7 @@ func (p *initProcess) start() (retErr error) {
  
 -	childPid, err := p.getChildPid()
 +	childPid, procfsPid, err := p.getChildPid()
  	if err != nil {
+ 		return fmt.Errorf("can't get final child's PID from pipe: %w", err)
+ 	}
++	p.container.initProcessProcfsPid = procfsPid
+ 
 @@ -675,6 +679,6 @@ func (p *initProcess) start() (retErr error) {
  	// can potentially move them (e.g., via dup2()).  If we don't do this now,
  	// we won't know at checkpoint time which file descriptor to look up.
@@ -354,10 +396,49 @@ index fe736ee..a9aef1d 100644
 -		return fmt.Errorf("error getting pipe fds for pid %d: %w", childPid, err)
 +		return fmt.Errorf("error getting pipe fds for pid %d: %w", procfsPid, err)
  	}
+diff --git a/libcontainer/factory_linux.go b/libcontainer/factory_linux.go
+index 267ca4f..70a08c8 100644
+--- a/libcontainer/factory_linux.go
++++ b/libcontainer/factory_linux.go
+@@ -121,5 +121,9 @@ func Load(root, id string) (*Container, error) {
+ 	if err != nil {
+ 		return nil, err
+ 	}
++	procfsPid := state.InitProcessProcfsPid
++	if procfsPid <= 0 {
++		procfsPid = state.InitProcessPid
++	}
+ 	r := &nonChildProcess{
+ 		processPid:       state.InitProcessPid,
+@@ -131,4 +135,5 @@ func Load(root, id string) (*Container, error) {
+ 	c := &Container{
+ 		initProcess:          r,
++		initProcessProcfsPid: procfsPid,
+ 		initProcessStartTime: state.InitProcessStartTime,
+ 		id:                   id,
 diff --git a/libcontainer/container_linux.go b/libcontainer/container_linux.go
 index 6f42280..574d61b 100644
 --- a/libcontainer/container_linux.go
 +++ b/libcontainer/container_linux.go
+@@ -35,10 +35,11 @@ type Container struct {
+ 	stateDir             string
+ 	config               *configs.Config
+ 	cgroupManager        cgroups.Manager
+ 	intelRdtManager      *intelrdt.Manager
+ 	initProcess          parentProcess
++	initProcessProcfsPid int
+ 	initProcessStartTime uint64
+ 	m                    sync.Mutex
+ 	criuVersion          int
+ 	state                containerState
+ 	created              time.Time
+@@ -228,5 +229,5 @@ func (c *Container) Exec() error {
+ 
+ func (c *Container) exec() error {
+ 	path := filepath.Join(c.stateDir, execFifoFilename)
+-	pid := c.initProcess.pid()
++	pid := c.initProcessStatPid()
+ 	blockingFifoOpenCh := awaitFifoOpen(path)
 @@ -524,6 +524,12 @@ func (c *Container) newParentProcess(p *Process) (parentProcess, error) {
  		cmd.SysProcAttr = &unix.SysProcAttr{}
  	}
@@ -371,3 +452,73 @@ index 6f42280..574d61b 100644
  	cmd.ExtraFiles = append(cmd.ExtraFiles, p.ExtraFiles...)
  	if p.ConsoleSocket != nil {
  		cmd.ExtraFiles = append(cmd.ExtraFiles, p.ConsoleSocket)
+@@ -653,6 +659,7 @@ func (c *Container) newSetnsProcess(p *Process, cmd *exec.Cmd, comm *processComm
+ 		cgroupPaths:     state.CgroupPaths,
+ 		rootlessCgroups: c.config.RootlessCgroups,
+ 		intelRdtPath:    state.IntelRdtPath,
+ 		initProcessPid:  state.InitProcessPid,
++		initProcfsPid:   state.InitProcessProcfsPid,
+ 	}
+ 	if len(p.SubCgroupPaths) > 0 {
+@@ -899,6 +906,16 @@ func (c *Container) refreshState() error {
+ 	return c.state.transition(&runningState{c: c})
+ }
+ 
++func (c *Container) initProcessStatPid() int {
++	if c.initProcessProcfsPid > 0 {
++		return c.initProcessProcfsPid
++	}
++	if c.initProcess != nil {
++		return c.initProcess.pid()
++	}
++	return -1
++}
++
+ // hasInit tells whether the container init process exists.
+ func (c *Container) hasInit() bool {
+ 	if c.initProcess == nil {
+@@ -906,5 +923,5 @@ func (c *Container) hasInit() bool {
+ 		return false
+ 	}
+-	pid := c.initProcess.pid()
++	pid := c.initProcessStatPid()
+ 	stat, err := system.Stat(pid)
+ 	if err != nil {
+@@ -927,9 +944,11 @@ func (c *Container) currentState() *State {
+ 		startTime           uint64
+ 		externalDescriptors []string
+ 		pid                 = -1
++		procfsPid           = -1
+ 	)
+ 	if c.initProcess != nil {
+ 		pid = c.initProcess.pid()
++		procfsPid = c.initProcessStatPid()
+ 		startTime, _ = c.initProcess.startTime()
+ 		externalDescriptors = c.initProcess.externalDescriptors()
+ 	}
+@@ -945,6 +965,7 @@ func (c *Container) currentState() *State {
+ 		BaseState: BaseState{
+ 			ID:                   c.ID(),
+ 			Config:               *c.config,
+ 			InitProcessPid:       pid,
++			InitProcessProcfsPid: procfsPid,
+ 			InitProcessStartTime: startTime,
+ 			Created:              c.created,
+@@ -956,7 +976,7 @@ func (c *Container) currentState() *State {
+ 		ExternalDescriptors: externalDescriptors,
+ 	}
+-	if pid > 0 {
++	if procfsPid > 0 {
+ 		for _, ns := range c.config.Namespaces {
+-			state.NamespacePaths[ns.Type] = ns.GetPath(pid)
++			state.NamespacePaths[ns.Type] = ns.GetPath(procfsPid)
+ 		}
+ 		for _, nsType := range configs.NamespaceTypes() {
+@@ -970,6 +991,6 @@ func (c *Container) currentState() *State {
+ 			}
+ 			if _, ok := state.NamespacePaths[nsType]; !ok {
+ 				ns := configs.Namespace{Type: nsType}
+-				state.NamespacePaths[ns.Type] = ns.GetPath(pid)
++				state.NamespacePaths[ns.Type] = ns.GetPath(procfsPid)
+ 			}
+ 		}

@@ -13,7 +13,9 @@ NAME = "lrail-runc-single-id-conformance"
 INNER = """#!/bin/sh
 set -eu
 cd /work/bundle
-exec /usr/bin/buildkit-runc --root /work/runc-state run lrail-probe
+/usr/bin/buildkit-runc --root /work/runc-state run --keep lrail-probe
+/usr/bin/buildkit-runc --root /work/runc-state delete lrail-probe
+echo probe-delete-ok
 """
 CONFIG = {
     "ociVersion": "1.0.2",
@@ -282,6 +284,7 @@ def main() -> int:
         if (
             status.get("succeeded") != 1
             or "probe uid=10001 gid=10001" not in logs
+            or "probe-delete-ok" not in logs
             or len(map_lines) != 2
             or not re.search(r"(?m)^CapEff:\s+0000000000000000$", logs)
             or not re.search(r"(?m)^NoNewPrivs:\s+1$", logs)
@@ -294,6 +297,7 @@ def main() -> int:
                     "worker": worker,
                     "rootlesskit_pid_namespace": True,
                     "oci_pid_namespace": False,
+                    "post_exec_delete": True,
                     "uid_gid": "10001:10001",
                     "uid_gid_maps": 2,
                     "cap_eff": "0",

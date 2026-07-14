@@ -88,8 +88,8 @@ RUN go mod init lrail.local/runc-runtime \
 	&& runc_dir="$(go env GOPATH)/pkg/mod/github.com/opencontainers/runc@v1.3.6" \
 	&& chmod -R u+w "${runc_dir}" \
 	&& (cd "${runc_dir}" && git apply /tmp/runc-single-id-root.patch) \
-	&& gofmt -w "${runc_dir}/libcontainer/configs/config_linux.go" "${runc_dir}/libcontainer/configs/config_linux_test.go" "${runc_dir}/libcontainer/container_linux.go" "${runc_dir}/libcontainer/init_linux.go" "${runc_dir}/libcontainer/process_linux.go" \
-	&& go test github.com/opencontainers/runc/libcontainer/configs \
+	&& gofmt -w "${runc_dir}/libcontainer/configs/config_linux.go" "${runc_dir}/libcontainer/configs/config_linux_test.go" "${runc_dir}/libcontainer/container.go" "${runc_dir}/libcontainer/container_linux.go" "${runc_dir}/libcontainer/factory_linux.go" "${runc_dir}/libcontainer/init_linux.go" "${runc_dir}/libcontainer/process_linux.go" \
+	&& go test github.com/opencontainers/runc/libcontainer/configs github.com/opencontainers/runc/libcontainer \
 	&& CGO_ENABLED=1 GOOS=linux go build -trimpath -tags='apparmor seccomp netgo cgo static_build osusergo' -ldflags='-s -w -linkmode external -extldflags -static' -o /out/buildkit-runc github.com/opencontainers/runc
 
 FROM moby/buildkit:v0.31.1-rootless@sha256:946cf909534b789c9b84af75e6d4f8cb23c3b9cb387daec5ba0f4878a3e4647c

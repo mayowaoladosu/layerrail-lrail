@@ -18,7 +18,7 @@ result = OrganizationContext.select_for(account:, identifier: fixture.fetch("org
   else
     project.deployments.where(state: "artifact_ready").order(created_at: :desc).first!
   end
-  build = deployment.builds.find_by!(generation: deployment.generation)
+  build = deployment.builds.order(generation: :desc).first!
   revision = build.revisions.sole
   events = deployment.operation.operation_events.where(generation: build.generation).order(:sequence)
   sequences = events.pluck(:sequence)

@@ -22,7 +22,7 @@ A successful lab run must prove all of the following from externally observable 
 
 ## Kata prerequisite
 
-Kata 3.32.0 is installed from the checksum-verified official chart. The lab refuses to continue until a tokenless probe prints `kata-qemu-ok`. A RuntimeClass object or `/dev/kvm` alone is not evidence.
+Kata 3.32.0 is installed from the checksum-verified official chart. The lab refuses to continue until a tokenless probe prints `kata-qemu-ok`. The build node's active Kata configuration must also enable virtio-fs extended attributes with `--xattr`; the strict worker fails closed before BuildKit startup when its disposable state volume cannot set, list, read, and remove a user xattr. A RuntimeClass object or `/dev/kvm` alone is not evidence.
 
 On Docker Desktop/WSL2, nested KVM may create qemu successfully but fail to boot the guest agent, observed as `timed out connecting to vsock ...:1024`. That host failure is fail-closed: do not relabel gVisor or runc as Kata, and do not claim M-B complete. Move the same generated overlay to a nested-virtualization-capable Linux node or repair the host runtime, then rerun the probe.
 

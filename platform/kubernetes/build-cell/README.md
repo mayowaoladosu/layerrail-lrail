@@ -7,6 +7,7 @@ The build cell is a dedicated execution boundary. The base manifests are intenti
 - dedicated build nodes labeled `lrail.dev/pool=build` and `lrail.dev/kata=true`
 - build-node taint `lrail.dev/build=true:NoSchedule`
 - hardware virtualization and a working `kata-qemu` RuntimeClass
+- Kata shared-file-system extended attributes enabled (for virtio-fs, include `--xattr` in `virtio_fs_extra_args`)
 - Cilium with `CiliumNetworkPolicy` support
 - Kyverno and cert-manager CRDs
 - a `lrail-internal-ca` cert-manager ClusterIssuer

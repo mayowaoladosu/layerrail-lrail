@@ -50,6 +50,15 @@ func run() error {
 	if len(os.Args) > 1 && os.Args[1] == "--quota-monitor" {
 		return buildworker.RunScratchQuotaMonitor(ctx, root, readyFile, quota)
 	}
+	singleIDMapping, err := optionalStrictBool("LRAIL_ROOTLESSKIT_SINGLE_ID", false)
+	if err != nil {
+		return err
+	}
+	if singleIDMapping {
+		if err := requireXattrSupport(root); err != nil {
+			return err
+		}
+	}
 	// Production keeps the build in a child PID namespace so it cannot observe
 	// the peer quota monitor. The functional gVisor overlay explicitly disables
 	// unsupported nesting; signed build commands remain non-root there.

@@ -61,10 +61,11 @@ spec:
       toPorts:
         - ports:
             - { port: "443", protocol: TCP }
-    # Minikube publishes the kubernetes.default Service endpoint on the node's
-    # 8443 API-server port; this exact functional-lab exception is not a worker
-    # egress grant and is absent from the production base policy.
-    - toEntities: [host]
+    # Minikube publishes the kubernetes.default Service endpoint on a node's
+    # 8443 API-server port. Cilium identifies it as host in a single-node lab
+    # and kube-apiserver on a remote control-plane node. This exact lab-only
+    # exception is not a worker egress grant and is absent from production.
+    - toEntities: [host, kube-apiserver]
       toPorts:
         - ports:
             - { port: "8443", protocol: TCP }

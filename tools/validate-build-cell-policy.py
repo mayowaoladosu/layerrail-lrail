@@ -200,6 +200,18 @@ def validate_rendered_manifests() -> None:
         if forbidden in broker_network:
             raise ValueError(f"build broker network gained {forbidden!r}")
 
+    lab_network = (
+        ROOT / "platform/kubernetes/build-cell/lab/network-policy-patch.yaml"
+    ).read_text(encoding="utf-8")
+    lab_build_control = lab_network.split("name: build-control", 1)[1].split(
+        "---", 1
+    )[0]
+    for value in ["toEntities: [host, kube-apiserver]", 'port: "8443"']:
+        if value not in lab_build_control:
+            raise ValueError(
+                f"functional lab build controller lacks cross-node API access {value!r}"
+            )
+
     policies = ROOT / "platform/kubernetes/build-cell/base/policies"
     source_policy = json.loads(
         (policies / "build-broker-source-read.json").read_text(encoding="utf-8")

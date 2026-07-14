@@ -15,27 +15,33 @@ WORKDIR /src
 COPY services/build-plane/patches/containerd-single-id-devpts.patch /tmp/containerd-single-id-devpts.patch
 COPY services/build-plane/patches/buildkit-single-id-remap.patch /tmp/buildkit-single-id-remap.patch
 COPY services/build-plane/patches/moby-user-single-id.patch /tmp/moby-user-single-id.patch
+COPY services/build-plane/patches/moby-go-archive-single-id.patch /tmp/moby-go-archive-single-id.patch
 RUN go mod init lrail.local/buildkit-runtime \
 	&& go get github.com/moby/buildkit/cmd/buildkitd@v0.31.1 \
 	&& go get github.com/containerd/containerd/v2@v2.2.5 golang.org/x/crypto@v0.54.0 golang.org/x/net@v0.57.0 \
 	&& go get -t github.com/containerd/containerd/v2/pkg/oci@v2.2.5 \
 	&& go get -t github.com/containerd/containerd/v2/pkg/archive@v2.2.5 \
 	&& go get -t github.com/moby/sys/user@v0.4.0 \
+	&& go get -t github.com/moby/go-archive@v0.2.0 \
 	&& buildkit_dir="$(go env GOPATH)/pkg/mod/github.com/moby/buildkit@v0.31.1" \
 	&& containerd_dir="$(go env GOPATH)/pkg/mod/github.com/containerd/containerd/v2@v2.2.5" \
 	&& moby_user_dir="$(go env GOPATH)/pkg/mod/github.com/moby/sys/user@v0.4.0" \
-	&& chmod -R u+w "${buildkit_dir}" "${containerd_dir}" "${moby_user_dir}" \
+	&& moby_archive_dir="$(go env GOPATH)/pkg/mod/github.com/moby/go-archive@v0.2.0" \
+	&& chmod -R u+w "${buildkit_dir}" "${containerd_dir}" "${moby_user_dir}" "${moby_archive_dir}" \
 	&& (cd "${buildkit_dir}" && git apply /tmp/buildkit-single-id-remap.patch) \
 	&& (cd "${containerd_dir}" && git apply /tmp/containerd-single-id-devpts.patch) \
 	&& (cd "${moby_user_dir}" && git apply /tmp/moby-user-single-id.patch) \
+	&& (cd "${moby_archive_dir}" && git apply /tmp/moby-go-archive-single-id.patch) \
 	&& gofmt -w "${buildkit_dir}/cmd/buildkitd/main_test.go" "${buildkit_dir}/cmd/buildkitd/util_linux.go" \
 	&& gofmt -w "${containerd_dir}/pkg/oci/mounts.go" "${containerd_dir}/pkg/oci/mounts_lrail_test.go" \
 	&& gofmt -w "${containerd_dir}/pkg/archive/tar.go" "${containerd_dir}/pkg/archive/tar_lrail_test.go" \
 	&& gofmt -w "${moby_user_dir}/idtools.go" "${moby_user_dir}/idtools_lrail_test.go" \
+	&& gofmt -w "${moby_archive_dir}/archive.go" "${moby_archive_dir}/archive_lrail_test.go" \
 	&& go test github.com/moby/buildkit/cmd/buildkitd \
 	&& go test github.com/containerd/containerd/v2/pkg/oci \
 	&& go test github.com/containerd/containerd/v2/pkg/archive \
 	&& go test github.com/moby/sys/user \
+	&& (cd "${moby_archive_dir}" && go test . -run '^TestLrail') \
 	&& CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags='-s -w' -o /out/buildkitd github.com/moby/buildkit/cmd/buildkitd
 
 FROM golang:1.26.5-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2 AS rootlesskit-build

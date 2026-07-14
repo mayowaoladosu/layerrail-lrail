@@ -1,0 +1,98 @@
+diff --git a/archive.go b/archive.go
+index 4d7b6ca..b1c93c7 100644
+--- a/archive.go
++++ b/archive.go
+@@ -501,9 +501,7 @@ func createTarFile(path, extractDir string, hdr *tar.Header, reader io.Reader, L
+ 
+ 	// Lchown is not supported on Windows.
+ 	if Lchown && runtime.GOOS != "windows" {
+-		if chownOpts == nil {
+-			chownOpts = &ChownOpts{UID: hdr.Uid, GID: hdr.Gid}
+-		}
++		chownOpts = resolveLrailChownOpts(chownOpts, hdr)
+ 		if err := os.Lchown(path, chownOpts.UID, chownOpts.GID); err != nil {
+ 			var msg string
+ 			if inUserns && errors.Is(err, syscall.EINVAL) {
+@@ -563,6 +561,16 @@ func createTarFile(path, extractDir string, hdr *tar.Header, reader io.Reader, L
+ 	return nil
+ }
+ 
++func resolveLrailChownOpts(chownOpts *ChownOpts, hdr *tar.Header) *ChownOpts {
++	if os.Getenv("LRAIL_ROOTLESSKIT_SINGLE_ID") == "true" {
++		return &ChownOpts{UID: 0, GID: 0}
++	}
++	if chownOpts != nil {
++		return chownOpts
++	}
++	return &ChownOpts{UID: hdr.Uid, GID: hdr.Gid}
++}
++
+ // Tar creates an archive from the directory at `path`, and returns it as a
+ // stream of bytes.
+ func Tar(path string, comp compression.Compression) (io.ReadCloser, error) {
+diff --git a/archive_lrail_test.go b/archive_lrail_test.go
+new file mode 100644
+index 0000000..e4f48a1
+--- /dev/null
++++ b/archive_lrail_test.go
+@@ -0,0 +1,60 @@
++package archive
++
++import (
++	"bytes"
++	"archive/tar"
++	"os"
++	"syscall"
++	"testing"
++)
++
++func TestLrailResolveChownOptsFlattensImageOwnership(t *testing.T) {
++	t.Setenv("LRAIL_ROOTLESSKIT_SINGLE_ID", "true")
++	header := &tar.Header{Uid: 0, Gid: 42}
++	for _, input := range []*ChownOpts{nil, {UID: 10001, GID: 65534}} {
++		actual := resolveLrailChownOpts(input, header)
++		if actual.UID != 0 || actual.GID != 0 {
++			t.Fatalf("chown identity = %d:%d", actual.UID, actual.GID)
++		}
++	}
++}
++
++func TestLrailResolveChownOptsLeavesDefaultModeUnchanged(t *testing.T) {
++	t.Setenv("LRAIL_ROOTLESSKIT_SINGLE_ID", "")
++	header := &tar.Header{Uid: 12, Gid: 42}
++	actual := resolveLrailChownOpts(nil, header)
++	if actual.UID != 12 || actual.GID != 42 {
++		t.Fatalf("header identity = %d:%d", actual.UID, actual.GID)
++	}
++	explicit := &ChownOpts{UID: 4, GID: 8}
++	if actual = resolveLrailChownOpts(explicit, header); actual != explicit {
++		t.Fatal("explicit ownership was replaced")
++	}
++}
++
++func TestLrailSingleIDUntarFlattensImageOwnership(t *testing.T) {
++	t.Setenv("LRAIL_ROOTLESSKIT_SINGLE_ID", "true")
++	var contents bytes.Buffer
++	writer := tar.NewWriter(&contents)
++	if err := writer.WriteHeader(&tar.Header{Name: "owned", Mode: 0o600, Size: 1, Uid: 0, Gid: 42}); err != nil {
++		t.Fatal(err)
++	}
++	if _, err := writer.Write([]byte("x")); err != nil {
++		t.Fatal(err)
++	}
++	if err := writer.Close(); err != nil {
++		t.Fatal(err)
++	}
++	destination := t.TempDir()
++	if err := Untar(bytes.NewReader(contents.Bytes()), destination, &TarOptions{}); err != nil {
++		t.Fatal(err)
++	}
++	info, err := os.Lstat(destination + "/owned")
++	if err != nil {
++		t.Fatal(err)
++	}
++	stat := info.Sys().(*syscall.Stat_t)
++	if stat.Uid != 0 || stat.Gid != 0 {
++		t.Fatalf("extracted identity = %d:%d", stat.Uid, stat.Gid)
++	}
++}

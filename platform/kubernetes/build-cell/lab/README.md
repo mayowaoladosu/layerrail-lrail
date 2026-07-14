@@ -2,7 +2,7 @@
 
 This lab drives the real local and exact-Git source-to-artifact journeys required by M-B. It is deliberately separate from the production overlay because lab credentials, a single-node storage class, and local dependency topology are not production material.
 
-The supported cluster context is `lrail-alpha`. Before applying any mutation, the setup script checks that exact context and the expected minikube node. It installs only pinned dependency versions and records every immutable image/chart digest in `versions.json`.
+The supported cluster context is `lrail-kata`. Before applying any mutation, the setup script checks that exact context and the expected control node. The cluster joins the dedicated nested-KVM `lrail-kata-worker`; immutable dependency and platform image identities remain recorded in `versions.json`.
 
 ## Gate
 
@@ -18,7 +18,9 @@ A successful lab run must prove all of the following from externally observable 
 - Rails reaches `artifact_ready` with a Revision and all attestations;
 - cleanup is `clean`, no worker resources remain, and no Release, TargetBundle, route, or runtime workload exists.
 
-`task mb:lab:up` installs dependencies and produces a generated, gitignored runtime overlay under `.work/mb-lab`. `task mb:lab:local` and `task mb:lab:git` execute the journeys. `task mb:lab:verify` reruns the negative/recovery assertions without mutating successful artifact truth. `task mb:lab:down` removes only resources labeled `dev.lrail/lab=mb`; it does not delete the shared `lrail-alpha` cluster.
+`task mb:lab:dependencies` verifies the pinned platform dependencies, and `task mb:lab:kata` runs the tokenless Kata guest gate. Local-upload and exact-Git CLI journeys use ignored fixtures under `.work/mb-lab`; `task mb:lab:git:configure` binds a fixture to one repository-scoped GitHub App installation, `task mb:lab:git:matrix` runs the source-policy matrix, and `task mb:lab:verify` verifies final Rails artifact truth. Teardown is deliberately explicit because the nested-KVM cluster is shared lab infrastructure; never delete it as a side effect of one fixture.
+
+The Git configuration task consumes `LRAIL_MB_FIXTURE_FILE`, `LRAIL_MB_GITHUB_INSTALLATION_ID`, `LRAIL_MB_GITHUB_ACCOUNT_LOGIN`, `LRAIL_MB_GITHUB_ACCOUNT_ID`, `LRAIL_MB_GITHUB_REPOSITORY`, and optional `LRAIL_MB_GITHUB_BRANCH`/`LRAIL_MB_GITHUB_ROOT`. The matrix task consumes the same fixture plus `LRAIL_MB_GIT_FIRST_COMMIT`, `LRAIL_MB_GIT_FORCED_COMMIT`, `LRAIL_MB_GIT_SUBMODULE_COMMIT`, and `LRAIL_MB_GIT_LFS_COMMIT`. It performs real provider acquisition for the valid commits, proves duplicate delivery creates no second fetch, records force-push supersession, rejects submodule and LFS commits before deployment creation, and prints only resource IDs and content digests. `task mb:lab:verify` consumes `LRAIL_MB_FIXTURE_FILE` and optional `LRAIL_MB_DEPLOYMENT_ID`.
 
 ## Kata prerequisite
 
@@ -35,3 +37,5 @@ The functional overlay is intentionally narrow: it changes the worker RuntimeCla
 ## Secrets
 
 The setup script generates short-lived lab-only CA, mTLS, S3, Harbor, OpenBao, and API credentials directly into `.work/mb-lab`. It never writes credential values into tracked files or terminal output. The repository secret scanner includes untracked, non-ignored text; generated runtime material is ignored by `.gitignore` and must be destroyed with the teardown task.
+
+Real exact-Git acquisition additionally reads `.work/mb-lab/github-app.json` with only `app_id`, canonical lowercase `slug`, and an RSA `private_key`. `tools/mb_lab.py` rejects symlinks, oversized files, malformed identities, and non-RSA PEM before creating the isolated runtime Secret. The provider broker alone mounts that key; Rails, BuildCell, customer workers, source objects, fixture output, and command logs must never receive it.

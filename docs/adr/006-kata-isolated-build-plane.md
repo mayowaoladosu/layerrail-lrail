@@ -14,6 +14,8 @@ Each production build cell has a Go controller with no control-database route. I
 
 Replay and lifecycle state use cell-local transactional Bolt databases on a persistent volume. Reservation atomically retains per-build generation and cell/nonce watermarks. Exact replay returns the durable terminal result, a live foreign owner returns in-progress, an expired lease can be resumed by a new controller owner, and stale or conflicting identity fails closed. Generation-bound cancellation is persisted before signaling an active process, survives controller restart, permits immediate ownership takeover, and prevents a canceled record from later accepting false success. The build cell never connects to Rails or a control-plane database.
 
+The broker signs build assignments at the verifier's one-hour maximum; the worker Job and ephemeral mTLS can never outlive that envelope. This execution bound is independent of the substantially shorter acquisition identities below.
+
 The controller realizes capabilities just in time:
 
 - It authenticates to OpenBao with a projected, audience-bound Kubernetes token, obtains a bounded token, reads only signed logical secret paths, and revokes the token before returning secret bytes to the worker lifecycle. A failed immediate revocation returns a tracked cleanup lease; the controller retries it and quarantines the run if authority cannot be proven gone. The OpenBao token TTL bounds only that already-revoked acquisition identity; it never truncates the assignment-bounded worker Job, worker mTLS, or egress-policy lifetime. Secret bytes are supplied through a BuildKit secret session, wiped from owned buffers (including redaction patterns and partial log buffers), and redacted in raw/base64/URL/hex/escaped/multiline log forms.

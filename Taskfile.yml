@@ -123,7 +123,7 @@ tasks:
         --entrypoint /bin/sh "{{.ALPINE_IMAGE}}" -n /update-trivy-db.sh
 
   mb:lab:kata:
-    desc: Prove a real tokenless Kata qemu guest on the pinned lrail-alpha lab before M-B execution
+    desc: Prove a real tokenless Kata qemu guest on the pinned lrail-kata lab before M-B execution
     cmds:
       - >-
         python tools/mb_lab.py kata
@@ -139,6 +139,24 @@ tasks:
     cmds:
       - >-
         python tools/mb_lab.py functional-cell
+
+  mb:lab:git:configure:
+    desc: Bind an ignored M-B fixture to one real repository-scoped GitHub App installation
+    dir: "{{.CONTROL_PLANE}}"
+    cmds:
+      - mise exec -- bundle exec rails runner script/mb_git_fixture.rb
+
+  mb:lab:git:matrix:
+    desc: Prove real exact-commit replay, force-push supersession, root selection, and submodule/LFS denial
+    dir: "{{.CONTROL_PLANE}}"
+    cmds:
+      - mise exec -- bundle exec rails runner script/mb_git_matrix.rb
+
+  mb:lab:verify:
+    desc: Verify one ignored M-B fixture reached immutable artifact truth without crossing the runtime boundary
+    dir: "{{.CONTROL_PLANE}}"
+    cmds:
+      - mise exec -- bundle exec rails runner script/mb_verify_fixture.rb
 
   build-cell:images:
     desc: Build final-source broker, controller, worker, egress, registry broker, signer, DB updater, and residue images

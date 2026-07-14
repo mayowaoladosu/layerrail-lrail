@@ -290,6 +290,11 @@ func TestOrchestratorRunsSnapshotThroughRealVerifierAndLLBResolution(t *testing.
 		dispatcher.executeCall != 1 || len(dispatcher.resolved.Outputs) != 1 || detector.calls != 1 {
 		t.Fatalf("result=%#v dispatcher=%#v detector=%#v", result, dispatcher, detector)
 	}
+	issuedAt, issuedErr := time.Parse(time.RFC3339, dispatcher.resolved.Verified.Payload.IssuedAt)
+	expiresAt, expiresErr := time.Parse(time.RFC3339, dispatcher.resolved.Verified.Payload.ExpiresAt)
+	if issuedErr != nil || expiresErr != nil || expiresAt.Sub(issuedAt) != buildcell.DefaultMaxAssignmentTTL {
+		t.Fatalf("assignment lifetime = %s, issued error=%v, expires error=%v", expiresAt.Sub(issuedAt), issuedErr, expiresErr)
+	}
 	if len(events) < 8 || events[len(events)-1].Terminal == nil || events[len(events)-1].Terminal.State != "complete" {
 		t.Fatalf("events = %#v", events)
 	}

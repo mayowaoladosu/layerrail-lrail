@@ -30,7 +30,7 @@ import (
 )
 
 const (
-	DefaultAssignmentTTL = 45 * time.Minute
+	DefaultAssignmentTTL = buildcell.DefaultMaxAssignmentTTL
 	MaxStoredObjectBytes = 32 << 20
 )
 

@@ -1,6 +1,7 @@
 {
   "version": 1,
-  "cluster_context": "lrail-alpha",
+  "cluster_context": "lrail-kata",
+  "kata_node": "lrail-kata-worker",
   "dependencies": {
     "kata": {
       "chart_version": "3.32.0",

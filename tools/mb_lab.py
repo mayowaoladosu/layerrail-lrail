@@ -12,7 +12,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 VERSIONS = ROOT / "platform/kubernetes/build-cell/lab/versions.json"
-EXPECTED_CONTEXT = "lrail-alpha"
+EXPECTED_CONTEXT = "lrail-kata"
+EXPECTED_KATA_NODE = "lrail-kata-worker"
 KATA_PROBE = """apiVersion: v1
 kind: Pod
 metadata:
@@ -57,7 +58,10 @@ spec:
         limits:
           cpu: 100m
           memory: 64Mi
-"""
+""".replace(
+    "  runtimeClassName: kata-qemu\n",
+    "  runtimeClassName: kata-qemu\n  nodeSelector:\n    kubernetes.io/hostname: lrail-kata-worker\n",
+)
 
 
 class LabFailure(RuntimeError):
@@ -84,7 +88,10 @@ def command(
 
 def require_context() -> None:
     configured = json.loads(VERSIONS.read_text(encoding="utf-8"))
-    if configured.get("cluster_context") != EXPECTED_CONTEXT:
+    if (
+        configured.get("cluster_context") != EXPECTED_CONTEXT
+        or configured.get("kata_node") != EXPECTED_KATA_NODE
+    ):
         raise LabFailure("lab version record targets an unexpected cluster context")
     current = command("kubectl", "config", "current-context").stdout.strip()
     if current != EXPECTED_CONTEXT:
@@ -95,7 +102,12 @@ def require_context() -> None:
         "kubectl", "get", "node", EXPECTED_CONTEXT, "-o", "name"
     ).stdout.strip()
     if node != f"node/{EXPECTED_CONTEXT}":
-        raise LabFailure("expected minikube lab node is unavailable")
+        raise LabFailure("expected lab control node is unavailable")
+    worker = command(
+        "kubectl", "get", "node", EXPECTED_KATA_NODE, "-o", "name"
+    ).stdout.strip()
+    if worker != f"node/{EXPECTED_KATA_NODE}":
+        raise LabFailure("expected nested-KVM Kata worker is unavailable")
 
 
 def delete_probe() -> None:
@@ -117,7 +129,7 @@ def kata_probe() -> None:
     if runtime_data.get("handler") != "kata-qemu":
         raise LabFailure("kata-qemu RuntimeClass handler is absent or changed")
     node_labels = json.loads(
-        command("kubectl", "get", "node", EXPECTED_CONTEXT, "-o", "json").stdout
+        command("kubectl", "get", "node", EXPECTED_KATA_NODE, "-o", "json").stdout
     )["metadata"]["labels"]
     if node_labels.get("katacontainers.io/kata-runtime") != "true":
         raise LabFailure("lab node is not marked ready by the Kata installer")

@@ -37,7 +37,7 @@
   },
   "lrail_images": {
     "build_broker": "ghcr.io/mayowaoladosu/layerrail-lrail/build-broker@sha256:68ec80f717e9aed43337167a7deeb770a8e7af4c814ba7087798658e815eff9a",
-    "buildcell_controller": "ghcr.io/mayowaoladosu/layerrail-lrail/buildcell-controller@sha256:1e5fd08eeb8d1584eac2af3ad3be88d5777b4ab9118a6121a18ab25bac53cf94",
+    "buildcell_controller": "ghcr.io/mayowaoladosu/layerrail-lrail/buildcell-controller@sha256:b595fb152c69b7cb593c910dd0de70c3cdd16cad53981ecd75e5475c1eda7fef",
     "buildkit_worker": "ghcr.io/mayowaoladosu/layerrail-lrail/buildkit-worker@sha256:5c3d25052ad713986cac3c9add4a9556a9fe8b14b3168ae8a21ef423a4be170a",
     "residue_agent": "ghcr.io/mayowaoladosu/layerrail-lrail/residue-agent@sha256:aa8ae0759ddcd195e2edd9b4f92c53f96bcb399414c5527beb66bd7cddb5b6c7",
     "source_gateway": "ghcr.io/mayowaoladosu/layerrail-lrail/source-gateway@sha256:ffebadc8a21d55e787ad52b4866cda9c9b99e094e9274541345122bfffdfa01d"

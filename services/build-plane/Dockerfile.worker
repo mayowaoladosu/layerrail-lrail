@@ -32,7 +32,7 @@ RUN go mod init lrail.local/buildkit-runtime \
 	&& chmod -R u+w "${buildkit_dir}" "${containerd_dir}" "${moby_user_dir}" "${moby_archive_dir}" \
 	&& go mod edit -replace=github.com/moby/go-archive="${moby_archive_dir}" \
 	&& (cd "${buildkit_dir}" && git apply /tmp/buildkit-single-id-remap.patch) \
-	&& (cd "${containerd_dir}" && git apply /tmp/containerd-single-id-devpts.patch) \
+	&& (cd "${containerd_dir}" && git apply --unidiff-zero /tmp/containerd-single-id-devpts.patch) \
 	&& (cd "${moby_user_dir}" && git apply /tmp/moby-user-single-id.patch) \
 	&& (cd "${moby_archive_dir}" && git apply /tmp/moby-go-archive-single-id.patch) \
 	&& gofmt -w "${buildkit_dir}/cmd/buildkitd/main_test.go" "${buildkit_dir}/cmd/buildkitd/util_linux.go" \

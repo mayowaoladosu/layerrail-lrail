@@ -68,19 +68,13 @@ diff --git a/pkg/archive/tar.go b/pkg/archive/tar.go
 index d36a5ca..f61391c 100644
 --- a/pkg/archive/tar.go
 +++ b/pkg/archive/tar.go
-@@ -393,7 +393,11 @@ func createTarFile(ctx context.Context, path, extractDir string, hdr *tar.Header
- 	}
- 
- 	if !noSameOwner {
+@@ -397 +397,5 @@ func createTarFile(ctx context.Context, path, extractDir string, hdr *tar.Header
 -		if err := os.Lchown(path, hdr.Uid, hdr.Gid); err != nil {
 +		uid, gid, err := lrailSingleIDChown(hdr.Uid, hdr.Gid)
 +		if err != nil {
 +			return err
 +		}
 +		if err := os.Lchown(path, uid, gid); err != nil {
- 			err = fmt.Errorf("failed to Lchown %q for UID %d, GID %d: %w", path, hdr.Uid, hdr.Gid, err)
- 			if errors.Is(err, syscall.EINVAL) && userns.RunningInUserNS() {
- 				err = fmt.Errorf("%w (Hint: try increasing the number of subordinate IDs in /etc/subuid and /etc/subgid)", err)
 @@ -562,6 +562,9 @@ func (cw *ChangeWriter) HandleChange(k fs.ChangeKind, p string, f os.FileInfo, er
  			AccessTime: whiteOutT,
  			ChangeTime: whiteOutT,

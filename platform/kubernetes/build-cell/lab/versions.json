@@ -40,7 +40,7 @@
     "buildcell_controller": "ghcr.io/mayowaoladosu/layerrail-lrail/buildcell-controller@sha256:b595fb152c69b7cb593c910dd0de70c3cdd16cad53981ecd75e5475c1eda7fef",
     "buildkit_worker": "ghcr.io/mayowaoladosu/layerrail-lrail/buildkit-worker@sha256:df2cc49b1eac79dc905fa9cd968af6daa05bc40821bb538d0446073018e0b935",
     "residue_agent": "ghcr.io/mayowaoladosu/layerrail-lrail/residue-agent@sha256:aa8ae0759ddcd195e2edd9b4f92c53f96bcb399414c5527beb66bd7cddb5b6c7",
-    "source_gateway": "ghcr.io/mayowaoladosu/layerrail-lrail/source-gateway@sha256:ffebadc8a21d55e787ad52b4866cda9c9b99e094e9274541345122bfffdfa01d"
+    "source_gateway": "ghcr.io/mayowaoladosu/layerrail-lrail/source-gateway@sha256:c007b18f909dc24438dc740bcf24dca4918b7211f0932e11dcb71922c0d55e87"
   },
   "dependency_images": {
     "cert_manager_cainjector": "quay.io/jetstack/cert-manager-cainjector@sha256:ad1dcc5b2fccc420f9b3fbee7ce8a869450c540fd4f2f41de2d95b1ca0c4d701",

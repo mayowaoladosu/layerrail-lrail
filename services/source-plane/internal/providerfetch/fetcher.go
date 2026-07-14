@@ -85,7 +85,7 @@ func (fetcher *Fetcher) Fetch(ctx context.Context, grant sourceauth.FetchGrant) 
 		return sourceauth.SignedFetchResult{}, err
 	}
 	defer archiveResponse.Body.Close()
-	normalized, err := normalizeArchive(ctx, archiveResponse.Body, fetcher.ScratchDir, fetcher.Policy, tree)
+	normalized, err := normalizeArchive(ctx, archiveResponse.Body, fetcher.ScratchDir, fetcher.Policy, tree, resolution.SHA)
 	if err != nil {
 		return sourceauth.SignedFetchResult{}, err
 	}
@@ -118,7 +118,7 @@ func (fetcher *Fetcher) Fetch(ctx context.Context, grant sourceauth.FetchGrant) 
 	}
 
 	now := fetcher.now()
-	warnings := append([]string(nil), stored.Source.Manifest.Warnings...)
+	warnings := append([]string{}, stored.Source.Manifest.Warnings...)
 	sort.Strings(warnings)
 	signed, err := sourceauth.SignFetchResult(fetcher.PrivateKey, fetcher.SigningKeyID, sourceauth.FetchResult{
 		Version:            1,

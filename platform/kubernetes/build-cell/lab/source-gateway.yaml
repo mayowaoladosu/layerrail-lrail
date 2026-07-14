@@ -58,7 +58,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: gateway
-          image: ghcr.io/mayowaoladosu/layerrail-lrail/source-gateway@sha256:ffebadc8a21d55e787ad52b4866cda9c9b99e094e9274541345122bfffdfa01d
+          image: ghcr.io/mayowaoladosu/layerrail-lrail/source-gateway@sha256:c007b18f909dc24438dc740bcf24dca4918b7211f0932e11dcb71922c0d55e87
           imagePullPolicy: IfNotPresent
           env:
             - { name: LRAIL_SOURCE_LISTEN_ADDRESS, value: ":8080" }

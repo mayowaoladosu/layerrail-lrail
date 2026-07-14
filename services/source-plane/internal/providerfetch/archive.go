@@ -47,8 +47,9 @@ func normalizeArchive(
 	scratchDir string,
 	policy sourcearchive.Policy,
 	tree map[string]treeObject,
+	commitSHA string,
 ) (_ normalizedArchive, returnedError error) {
-	if reader == nil || scratchDir == "" || len(tree) == 0 {
+	if reader == nil || scratchDir == "" || len(tree) == 0 || !providerCommitPattern.MatchString(commitSHA) {
 		return normalizedArchive{}, ErrInvalidRequest
 	}
 	compressedCount := &countingReader{Reader: io.LimitReader(&contextReader{ctx: ctx, reader: reader}, policy.MaxArchiveBytes+1)}
@@ -70,6 +71,7 @@ func normalizeArchive(
 	}()
 	seen := make(map[string]struct{}, len(tree))
 	archiveRoot := ""
+	globalHeaderSeen := false
 	var expanded int64
 	tarReader := tar.NewReader(decompressor)
 	for {
@@ -79,6 +81,16 @@ func normalizeArchive(
 		}
 		if err != nil {
 			return normalizedArchive{}, fmt.Errorf("%w: read provider tar", ErrRepositoryPolicy)
+		}
+		if header.Typeflag == tar.TypeXGlobalHeader {
+			valid := !globalHeaderSeen && archiveRoot == "" && header.Name == "pax_global_header" &&
+				header.Mode == 0 && header.Size == 0 && header.Linkname == "" && len(header.PAXRecords) == 1 &&
+				header.PAXRecords["comment"] == commitSHA
+			if !valid {
+				return normalizedArchive{}, fmt.Errorf("%w: invalid provider global metadata", ErrRepositoryPolicy)
+			}
+			globalHeaderSeen = true
+			continue
 		}
 		normalized, err := sourcearchive.NormalizePath(header.Name, header.Typeflag == tar.TypeDir, policy.MaxPathBytes+256)
 		if err != nil {

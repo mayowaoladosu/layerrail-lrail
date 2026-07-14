@@ -51,7 +51,6 @@ func TestGitHubProviderConformanceExactCommitReplayAndForcePush(t *testing.T) {
 		},
 		secondSHA: {
 			"README.md": {body: []byte("second\n"), mode: "100644"},
-			"bin/start": {body: []byte("#!/bin/sh\necho second\n"), mode: "100755"},
 		},
 	})
 	defer provider.server.Close()
@@ -146,6 +145,9 @@ func TestGitHubProviderConformanceExactCommitReplayAndForcePush(t *testing.T) {
 	if forcePush.Result.SnapshotSHA256 == first.Result.SnapshotSHA256 {
 		t.Fatal("force-pushed tree reused the previous source identity")
 	}
+	if forcePush.Result.Warnings == nil || len(forcePush.Result.Warnings) != 0 {
+		t.Fatalf("clean source warnings = %#v", forcePush.Result.Warnings)
+	}
 	for key, value := range store.bytes() {
 		if bytes.Contains(value, []byte(provider.installationToken)) {
 			t.Fatalf("provider credential persisted in object %s", key)
@@ -190,6 +192,20 @@ func TestGitHubProviderConformanceRejectsSubmodulesAndLFS(t *testing.T) {
 	}
 	if _, err := fetcher.Fetch(context.Background(), conformanceGrant(now, lfsSHA, "011")); !errors.Is(err, ErrLFSUnsupported) {
 		t.Fatalf("LFS error = %v", err)
+	}
+}
+
+func TestNormalizeArchiveRejectsMismatchedGitHubGlobalPAXCommit(t *testing.T) {
+	t.Parallel()
+	commit := strings.Repeat("a", 40)
+	files := map[string]fixtureFile{"README.md": {body: []byte("safe\n"), mode: "100644"}}
+	archive := makeProviderArchiveWithComment(t, commit, strings.Repeat("b", 40), files)
+	tree := map[string]treeObject{
+		"README.md": {Mode: "100644", SHA: gitBlobSHA(files["README.md"].body), Size: int64(len(files["README.md"].body))},
+	}
+	_, err := normalizeArchive(context.Background(), bytes.NewReader(archive), t.TempDir(), sourcearchive.DefaultPolicy(), tree, commit)
+	if !errors.Is(err, ErrRepositoryPolicy) {
+		t.Fatalf("global PAX commit error = %v", err)
 	}
 }
 
@@ -388,12 +404,21 @@ func verifyAppJWT(token string, key *rsa.PublicKey, issuer string, now time.Time
 }
 
 func makeProviderArchive(t *testing.T, commit string, files map[string]fixtureFile) []byte {
+	return makeProviderArchiveWithComment(t, commit, commit, files)
+}
+
+func makeProviderArchiveWithComment(t *testing.T, commit, comment string, files map[string]fixtureFile) []byte {
 	t.Helper()
 	var output bytes.Buffer
 	compressed := gzip.NewWriter(&output)
 	compressed.Header.ModTime = time.Unix(0, 0)
 	compressed.Header.OS = 255
 	writer := tar.NewWriter(compressed)
+	if err := writer.WriteHeader(&tar.Header{
+		Name: "pax_global_header", Typeflag: tar.TypeXGlobalHeader, PAXRecords: map[string]string{"comment": comment},
+	}); err != nil {
+		t.Fatal(err)
+	}
 	root := "example-repository-" + commit[:7]
 	if err := writer.WriteHeader(&tar.Header{Name: root + "/", Typeflag: tar.TypeDir, Mode: 0o755}); err != nil {
 		t.Fatal(err)

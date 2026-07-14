@@ -3,10 +3,19 @@ kind: Kustomization
 resources:
   - ../base
   - control-bridge.yaml
+  - source-gateway.yaml
 patches:
   - path: gvisor-patch.yaml
   - path: storage-patch.yaml
   - path: network-policy-patch.yaml
+  - target:
+      version: v1
+      kind: Namespace
+      name: lrail-build
+    patch: |-
+      - op: replace
+        path: /metadata/labels/pod-security.kubernetes.io~1enforce
+        value: baseline
   - target:
       group: node.k8s.io
       version: v1
@@ -39,12 +48,41 @@ patches:
     patch: |-
       - op: replace
         path: /spec/rules/1/name
-        value: require-gvisor-and-no-ambient-authority
+        value: require-gvisor-rootless-bootstrap
       - op: replace
         path: /spec/rules/1/validate/message
-        value: Functional lab build workers require gVisor, digest-pinned images, no API token, and restricted container security.
+        value: Functional lab workers require gVisor, non-root execution, exactly SETGID/SETUID for rootless UID mapping, and no other ambient authority.
       - op: replace
         path: /spec/rules/1/validate/pattern/spec/runtimeClassName
         value: gvisor
+      - op: replace
+        path: /spec/rules/1/validate/pattern/spec/containers/0/securityContext/allowPrivilegeEscalation
+        value: true
       - op: remove
         path: /spec/rules/1/validate/pattern/spec/containers/0/securityContext/appArmorProfile
+      - op: add
+        path: /spec/rules/-
+        value:
+          name: require-exact-functional-rootless-capabilities
+          match:
+            any:
+              - resources:
+                  kinds: [Pod]
+                  namespaces: [lrail-build]
+          validate:
+            message: Functional gVisor workers may carry only SETGID and SETUID for rootless user-namespace bootstrap.
+            deny:
+              conditions:
+                any:
+                  - key: '{{ length(request.object.spec.containers[0].securityContext.capabilities.add || `[]`) }}'
+                    operator: NotEquals
+                    value: 2
+                  - key: '{{ length(request.object.spec.containers[0].securityContext.capabilities.drop || `[]`) }}'
+                    operator: NotEquals
+                    value: 1
+                  - key: "{{ contains(request.object.spec.containers[0].securityContext.capabilities.add || `[]`, 'SETGID') }}"
+                    operator: Equals
+                    value: false
+                  - key: "{{ contains(request.object.spec.containers[0].securityContext.capabilities.add || `[]`, 'SETUID') }}"
+                    operator: Equals
+                    value: false

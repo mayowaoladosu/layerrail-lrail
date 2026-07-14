@@ -33,6 +33,8 @@ spec:
               value: gvisor
             - name: LRAIL_BUILD_APPARMOR_PROFILE
               value: Disabled
+            - name: LRAIL_FUNCTIONAL_GVISOR_ROOTLESS_BOOTSTRAP
+              value: "true"
 ---
 apiVersion: apps/v1
 kind: Deployment

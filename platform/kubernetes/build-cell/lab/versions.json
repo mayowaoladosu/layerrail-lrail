@@ -35,9 +35,10 @@
     }
   },
   "lrail_images": {
-    "build_broker": "ghcr.io/mayowaoladosu/layerrail-lrail/build-broker@sha256:5deb720604c52d6ea7b16d13e65d2851664f1ffd273d8c652fe1e6ccab7ada9d",
-    "buildcell_controller": "ghcr.io/mayowaoladosu/layerrail-lrail/buildcell-controller@sha256:555dd2b46c9f7f37ff29b7b24e493dcb5f4b8cec9e63298a9cf718e325460b0f",
-    "buildkit_worker": "ghcr.io/mayowaoladosu/layerrail-lrail/buildkit-worker@sha256:07215eeaaf7732af74474f9c03aad54163989045aad6b795e24692ccbe3394fe"
+    "build_broker": "ghcr.io/mayowaoladosu/layerrail-lrail/build-broker@sha256:57d530c731cfefabcf65bb28f9dca9e48f4096330406d959ab43effc1ae45826",
+    "buildcell_controller": "ghcr.io/mayowaoladosu/layerrail-lrail/buildcell-controller@sha256:85f0b01a82a6771b27758b84055affb987638e744d979c001a800e92c7b15745",
+    "buildkit_worker": "ghcr.io/mayowaoladosu/layerrail-lrail/buildkit-worker@sha256:8b27d6592950a589b455d0c2ca82fd8555aac3b5d40c631812dc721eebcc987e",
+    "source_gateway": "ghcr.io/mayowaoladosu/layerrail-lrail/source-gateway@sha256:9c09376464f7a14d08c5bd60cb29cb2452cc70cef5cb8b676935b31ecf5a701e"
   },
   "dependency_images": {
     "cert_manager_cainjector": "quay.io/jetstack/cert-manager-cainjector@sha256:ad1dcc5b2fccc420f9b3fbee7ce8a869450c540fd4f2f41de2d95b1ca0c4d701",

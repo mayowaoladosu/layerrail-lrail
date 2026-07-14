@@ -87,7 +87,7 @@ spec:
             - {name: tmp, mountPath: /tmp}
       containers:
         - name: controller
-          image: ghcr.io/mayowaoladosu/layerrail-lrail/buildcell-controller@sha256:555dd2b46c9f7f37ff29b7b24e493dcb5f4b8cec9e63298a9cf718e325460b0f
+          image: ghcr.io/mayowaoladosu/layerrail-lrail/buildcell-controller@sha256:85f0b01a82a6771b27758b84055affb987638e744d979c001a800e92c7b15745
           imagePullPolicy: IfNotPresent
           securityContext:
             runAsNonRoot: true
@@ -155,7 +155,7 @@ spec:
             - name: LRAIL_BUILD_RUNTIME_CLASS
               value: kata-qemu
             - name: LRAIL_BUILD_WORKER_IMAGE
-              value: ghcr.io/mayowaoladosu/layerrail-lrail/buildkit-worker@sha256:07215eeaaf7732af74474f9c03aad54163989045aad6b795e24692ccbe3394fe
+              value: ghcr.io/mayowaoladosu/layerrail-lrail/buildkit-worker@sha256:8b27d6592950a589b455d0c2ca82fd8555aac3b5d40c631812dc721eebcc987e
             - {name: LRAIL_BUILD_IMAGE_PULL_SECRET, value: lrail-build-images}
             - name: LRAIL_BUILD_SECCOMP_PROFILE
               value: RuntimeDefault
@@ -309,4 +309,4 @@ spec:
         - name: trivy-db-updater
           configMap: {name: lrail-trivy-db-updater, defaultMode: 0555}
         - name: tmp
-          emptyDir: {sizeLimit: 64Mi}
+          emptyDir: {sizeLimit: 256Mi}

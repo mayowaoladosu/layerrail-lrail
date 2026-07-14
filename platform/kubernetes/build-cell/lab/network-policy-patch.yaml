@@ -61,6 +61,13 @@ spec:
       toPorts:
         - ports:
             - { port: "443", protocol: TCP }
+    # Minikube publishes the kubernetes.default Service endpoint on the node's
+    # 8443 API-server port; this exact functional-lab exception is not a worker
+    # egress grant and is absent from the production base policy.
+    - toEntities: [host]
+      toPorts:
+        - ports:
+            - { port: "8443", protocol: TCP }
     - toEndpoints:
         - matchLabels:
             k8s:io.kubernetes.pod.namespace: kube-system

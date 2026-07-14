@@ -109,21 +109,34 @@ func RunScratchQuotaMonitor(ctx context.Context, root, readyFile string, quota S
 }
 
 func writeGuardReadyFile(path string) error {
-	file, err := os.OpenFile(path, os.O_WRONLY|os.O_CREATE|os.O_EXCL, 0o600)
+	file, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+"-*.tmp")
 	if err != nil {
 		return errors.New("create scratch quota readiness proof")
 	}
-	if _, err := file.WriteString(guardReadyContents); err != nil {
+	temporary := file.Name()
+	published := false
+	defer func() {
 		_ = file.Close()
+		if !published {
+			_ = os.Remove(temporary)
+		}
+	}()
+	if _, err := file.WriteString(guardReadyContents); err != nil {
 		return errors.New("write scratch quota readiness proof")
 	}
 	if err := file.Sync(); err != nil {
-		_ = file.Close()
 		return errors.New("sync scratch quota readiness proof")
 	}
 	if err := file.Close(); err != nil {
 		return errors.New("close scratch quota readiness proof")
 	}
+	if _, err := os.Lstat(path); err == nil || !errors.Is(err, os.ErrNotExist) {
+		return errors.New("publish scratch quota readiness proof")
+	}
+	if err := os.Rename(temporary, path); err != nil {
+		return errors.New("publish scratch quota readiness proof")
+	}
+	published = true
 	return nil
 }
 

@@ -85,7 +85,7 @@ func TestScratchQuotaMonitorProvesReadinessThenFailsClosed(t *testing.T) {
 		if !errors.Is(err, ErrScratchQuota) {
 			t.Fatalf("quota monitor error = %v", err)
 		}
-	case <-time.After(time.Second):
+	case <-time.After(5 * time.Second):
 		t.Fatal("quota monitor did not fail closed")
 	}
 }

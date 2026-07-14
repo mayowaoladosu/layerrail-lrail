@@ -3,6 +3,8 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import os
+import secrets
 import subprocess
 import sys
 import time
@@ -343,6 +345,53 @@ def opaque_secret(namespace: str, name: str, data: dict[str, bytes]) -> None:
     )
 
 
+def write_lab_file(name: str, contents: str, mode: int) -> None:
+    root = ROOT / ".work" / "mb-lab"
+    root.mkdir(parents=True, exist_ok=True)
+    path = root / name
+    temporary = root / f".{name}.{secrets.token_hex(8)}.tmp"
+    try:
+        temporary.write_text(contents, encoding="utf-8")
+        os.chmod(temporary, mode)
+        temporary.replace(path)
+        os.chmod(path, mode)
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def source_signing_material() -> tuple[bytes, bytes, bytes]:
+    generated = command(
+        "node",
+        "--input-type=module",
+        "--eval",
+        """
+import crypto from "node:crypto";
+const {privateKey} = crypto.generateKeyPairSync("ed25519");
+const jwk = privateKey.export({format: "jwk"});
+console.log(JSON.stringify({seed: jwk.d, publicKey: jwk.x}));
+""",
+    )
+    values = json.loads(generated.stdout)
+    try:
+        seed = base64.urlsafe_b64decode(values["seed"] + "==")
+        public_key = base64.urlsafe_b64decode(values["publicKey"] + "==")
+    except (KeyError, ValueError, TypeError) as error:
+        raise LabFailure("generated source signing key is invalid") from error
+    if len(seed) != 32 or len(public_key) != 32:
+        raise LabFailure("generated source signing key has an unexpected size")
+    private_key = base64.urlsafe_b64encode(seed + public_key).rstrip(b"=")
+    encoded_public = base64.urlsafe_b64encode(public_key).decode("ascii").rstrip("=")
+    key_id = f"source-finalizer-mb-{hashlib.sha256(public_key).hexdigest()[:16]}"
+    grant_key = base64.urlsafe_b64encode(secrets.token_bytes(32)).rstrip(b"=")
+    write_lab_file("source-grant-key", grant_key.decode("ascii"), 0o600)
+    write_lab_file(
+        "source-signing-public-keys.json",
+        json.dumps({key_id: encoded_public}, separators=(",", ":")),
+        0o600,
+    )
+    return grant_key, private_key, key_id.encode("ascii")
+
+
 def image_pull_secret(namespace: str, username: str, token: str) -> None:
     authorization = base64.b64encode(f"{username}:{token}".encode()).decode("ascii")
     docker_config = json.dumps(
@@ -413,6 +462,11 @@ def openbao_public_key(name: str, root_token: str) -> tuple[str, str]:
 
 def functional_cell() -> None:
     dependency_probe()
+    runtime = json.loads(
+        command("kubectl", "get", "runtimeclass", "gvisor", "-o", "json").stdout
+    )
+    if runtime.get("handler") != "runsc":
+        raise LabFailure("functional gVisor RuntimeClass is unavailable or unexpected")
     command(
         "kubectl",
         "apply",
@@ -446,11 +500,14 @@ def functional_cell() -> None:
             "cell-secret-key",
             "reader-access-key",
             "reader-secret-key",
+            "source-access-key",
+            "source-secret-key",
         )
     }
     harbor_password = secret_value(
         "lrail-registry", "lrail-harbor-bootstrap", "HARBOR_ADMIN_PASSWORD"
     )
+    source_grant_key, source_private_key, source_key_id = source_signing_material()
     dns_address = command(
         "kubectl",
         "get",
@@ -567,6 +624,23 @@ def functional_cell() -> None:
         },
     )
     opaque_secret(
+        "lrail-control",
+        "lrail-source-gateway-s3",
+        {
+            "access-key": minio["source-access-key"],
+            "secret-key": minio["source-secret-key"],
+        },
+    )
+    opaque_secret(
+        "lrail-control",
+        "lrail-source-gateway-signing",
+        {
+            "grant-key": source_grant_key,
+            "private-key": source_private_key,
+            "key-id": source_key_id,
+        },
+    )
+    opaque_secret(
         "lrail-build-control",
         "lrail-harbor-admin",
         {"username": b"admin", "password": harbor_password},
@@ -610,6 +684,7 @@ def functional_cell() -> None:
         "lrail-control",
     )
     rollouts = (
+        ("deployment", "lrail-source-gateway", "lrail-control"),
         ("deployment", "lrail-build-egress", "lrail-build-control"),
         ("deployment", "lrail-build-registry-broker", "lrail-build-control"),
         ("deployment", "lrail-build-evidence-signer", "lrail-build-control"),

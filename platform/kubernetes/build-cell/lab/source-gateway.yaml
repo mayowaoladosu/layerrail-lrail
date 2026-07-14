@@ -1,0 +1,175 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: lrail-source-gateway
+  namespace: lrail-control
+  labels:
+    app.kubernetes.io/name: lrail-source-gateway
+    dev.lrail/lab: mb-functional-gvisor
+spec:
+  selector:
+    app.kubernetes.io/name: lrail-source-gateway
+  ports:
+    - name: http
+      port: 8080
+      targetPort: http
+      protocol: TCP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lrail-source-gateway
+  namespace: lrail-control
+  labels:
+    app.kubernetes.io/name: lrail-source-gateway
+    dev.lrail/lab: mb-functional-gvisor
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: lrail-source-gateway
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: lrail-source-gateway
+        dev.lrail/lab: mb-functional-gvisor
+    spec:
+      automountServiceAccountToken: false
+      enableServiceLinks: false
+      imagePullSecrets:
+        - name: lrail-build-images
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: gateway
+          image: ghcr.io/mayowaoladosu/layerrail-lrail/source-gateway@sha256:9c09376464f7a14d08c5bd60cb29cb2452cc70cef5cb8b676935b31ecf5a701e
+          imagePullPolicy: IfNotPresent
+          env:
+            - { name: LRAIL_SOURCE_LISTEN_ADDRESS, value: ":8080" }
+            - { name: LRAIL_SOURCE_S3_INTERNAL_ENDPOINT, value: "minio.lrail-storage.svc.cluster.local:9000" }
+            - { name: LRAIL_SOURCE_S3_PUBLIC_ENDPOINT, value: "localhost:59010" }
+            - { name: LRAIL_SOURCE_S3_INTERNAL_TLS, value: "true" }
+            - { name: LRAIL_SOURCE_S3_PUBLIC_TLS, value: "true" }
+            - name: LRAIL_SOURCE_S3_ACCESS_KEY
+              valueFrom:
+                secretKeyRef: { name: lrail-source-gateway-s3, key: access-key }
+            - name: LRAIL_SOURCE_S3_SECRET_KEY
+              valueFrom:
+                secretKeyRef: { name: lrail-source-gateway-s3, key: secret-key }
+            - { name: LRAIL_SOURCE_S3_BUCKET, value: lrail-source }
+            - { name: LRAIL_SOURCE_S3_REGION, value: us-east-1 }
+            - { name: LRAIL_SOURCE_SCRATCH_DIR, value: /scratch }
+            - name: LRAIL_SOURCE_GRANT_KEY
+              valueFrom:
+                secretKeyRef: { name: lrail-source-gateway-signing, key: grant-key }
+            - name: LRAIL_SOURCE_SIGNING_PRIVATE_KEY
+              valueFrom:
+                secretKeyRef: { name: lrail-source-gateway-signing, key: private-key }
+            - name: LRAIL_SOURCE_SIGNING_KEY_ID
+              valueFrom:
+                secretKeyRef: { name: lrail-source-gateway-signing, key: key-id }
+            - { name: LRAIL_SOURCE_MAX_FINALIZERS, value: "2" }
+            - { name: LRAIL_SOURCE_MAX_FETCHERS, value: "2" }
+            - { name: SSL_CERT_FILE, value: /etc/lrail/s3/ca.pem }
+          ports:
+            - { name: http, containerPort: 8080, protocol: TCP }
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          resources:
+            requests: { cpu: 100m, memory: 256Mi, ephemeral-storage: 64Mi }
+            limits: { cpu: "2", memory: 3Gi, ephemeral-storage: 256Mi }
+          readinessProbe:
+            httpGet: { path: /ready, port: http }
+            initialDelaySeconds: 2
+            periodSeconds: 3
+            timeoutSeconds: 2
+            failureThreshold: 20
+          livenessProbe:
+            httpGet: { path: /live, port: http }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+            timeoutSeconds: 2
+            failureThreshold: 6
+          volumeMounts:
+            - { name: scratch, mountPath: /scratch }
+            - { name: tmp, mountPath: /tmp }
+            - { name: s3-ca, mountPath: /etc/lrail/s3, readOnly: true }
+      volumes:
+        - name: scratch
+          emptyDir: { medium: Memory, sizeLimit: 2304Mi }
+        - name: tmp
+          emptyDir: { medium: Memory, sizeLimit: 16Mi }
+        - name: s3-ca
+          configMap: { name: lrail-s3-ca, defaultMode: 0444 }
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: source-gateway
+  namespace: lrail-control
+spec:
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: lrail-source-gateway
+  policyTypes: [Ingress, Egress]
+  ingress: []
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - { port: 53, protocol: UDP }
+        - { port: 53, protocol: TCP }
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: lrail-storage
+          podSelector:
+            matchLabels:
+              app.kubernetes.io/name: minio
+      ports:
+        - { port: 9000, protocol: TCP }
+---
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: source-gateway
+  namespace: lrail-control
+spec:
+  endpointSelector:
+    matchLabels:
+      app.kubernetes.io/name: lrail-source-gateway
+  ingress:
+    - fromEntities: [host, remote-node]
+      toPorts:
+        - ports:
+            - { port: "8080", protocol: TCP }
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s:k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - { port: "53", protocol: UDP }
+            - { port: "53", protocol: TCP }
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: lrail-storage
+            k8s:app.kubernetes.io/name: minio
+      toPorts:
+        - ports:
+            - { port: "9000", protocol: TCP }

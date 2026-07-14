@@ -43,8 +43,12 @@ Rails.application.configure do
   # Print deprecation notices to the Rails logger.
   config.active_support.deprecation = :log
 
-  # Raise an error on page load if there are pending migrations.
-  config.active_record.migration_error = :page_load
+  # Migration ownership stays separate from the least-privilege web role in the functional lab.
+  config.active_record.migration_error = ENV.fetch("LRAIL_CHECK_PENDING_MIGRATIONS", "true") == "false" ? false : :page_load
+
+  ENV.fetch("LRAIL_DEVELOPMENT_HOSTS", "").split(",").map(&:strip).reject(&:blank?).each do |host|
+    config.hosts << host
+  end
 
   # Highlight code that triggered database queries in logs.
   config.active_record.verbose_query_logs = true

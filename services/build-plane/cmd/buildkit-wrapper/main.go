@@ -59,9 +59,10 @@ func run() error {
 			return err
 		}
 	}
-	// Production keeps the build in a child PID namespace so it cannot observe
-	// the peer quota monitor. The functional gVisor overlay explicitly disables
-	// unsupported nesting; signed build commands remain non-root there.
+	// Production keeps the build in a child PID namespace so its namespace-local
+	// PIDs cannot address or signal the peer quota monitor. The functional gVisor
+	// overlay explicitly disables unsupported nesting; signed build commands
+	// remain non-root there.
 	usePIDNamespace, err := optionalStrictBool("LRAIL_ROOTLESS_PIDNS", true)
 	if err != nil {
 		return err

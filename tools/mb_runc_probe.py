@@ -77,7 +77,6 @@ CONFIG = {
         "uidMappings": [{"containerID": 10001, "hostID": 0, "size": 1}],
         "gidMappings": [{"containerID": 10001, "hostID": 0, "size": 1}],
         "namespaces": [
-            {"type": "pid"},
             {"type": "network"},
             {"type": "ipc"},
             {"type": "uts"},
@@ -175,7 +174,7 @@ def resource(worker: str) -> dict[str, object]:
                                 "cp /lib/ld-musl-x86_64.so.1 "
                                 "/work/bundle/rootfs/lib/ld-musl-x86_64.so.1; "
                                 "cp /probe/config.json /work/bundle/config.json; "
-                                "exec /usr/bin/rootlesskit --state-dir=/work/rootlesskit "
+                                "exec /usr/bin/rootlesskit --pidns --state-dir=/work/rootlesskit "
                                 "/probe/inner.sh"
                             ],
                             "env": [
@@ -293,6 +292,8 @@ def main() -> int:
                 {
                     "runtime": "kata-qemu",
                     "worker": worker,
+                    "rootlesskit_pid_namespace": True,
+                    "oci_pid_namespace": False,
                     "uid_gid": "10001:10001",
                     "uid_gid_maps": 2,
                     "cap_eff": "0",

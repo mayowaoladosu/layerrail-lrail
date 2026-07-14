@@ -88,7 +88,7 @@ RUN go mod init lrail.local/runc-runtime \
 	&& runc_dir="$(go env GOPATH)/pkg/mod/github.com/opencontainers/runc@v1.3.6" \
 	&& chmod -R u+w "${runc_dir}" \
 	&& (cd "${runc_dir}" && git apply /tmp/runc-single-id-root.patch) \
-	&& gofmt -w "${runc_dir}/libcontainer/configs/config_linux.go" "${runc_dir}/libcontainer/configs/config_linux_test.go" "${runc_dir}/libcontainer/container_linux.go" \
+	&& gofmt -w "${runc_dir}/libcontainer/configs/config_linux.go" "${runc_dir}/libcontainer/configs/config_linux_test.go" "${runc_dir}/libcontainer/container_linux.go" "${runc_dir}/libcontainer/init_linux.go" "${runc_dir}/libcontainer/process_linux.go" \
 	&& go test github.com/opencontainers/runc/libcontainer/configs \
 	&& CGO_ENABLED=1 GOOS=linux go build -trimpath -tags='apparmor seccomp netgo cgo static_build osusergo' -ldflags='-s -w -linkmode external -extldflags -static' -o /out/buildkit-runc github.com/opencontainers/runc
 

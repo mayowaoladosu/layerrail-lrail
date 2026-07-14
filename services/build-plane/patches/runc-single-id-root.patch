@@ -85,7 +85,7 @@ index 728e68b..2922683 100644
  #include <linux/limits.h>
  #include <linux/netlink.h>
  #include <linux/types.h>
-@@ -52,6 +54,42 @@ enum sync_t {
+@@ -52,6 +54,55 @@ enum sync_t {
  /* Stores the current stage of nsexec. */
  int current_stage = STAGE_SETUP;
  
@@ -125,10 +125,23 @@ index 728e68b..2922683 100644
 +		bail("failed to restore strict single-ID setup capabilities");
 +}
 +
++static pid_t lrail_procfs_pid(void)
++{
++	char path[64];
++	int pid, tid;
++	ssize_t length = readlink("/proc/thread-self", path, sizeof(path) - 1);
++	if (length <= 0 || (size_t) length >= sizeof(path))
++		bail("failed to translate strict single-ID process through procfs");
++	path[length] = '\0';
++	if (sscanf(path, "%d/task/%d", &pid, &tid) != 2 || pid <= 0 || pid != tid)
++		bail("strict single-ID procfs process identity is invalid");
++	return pid;
++}
++
  /* Assume the stack grows down, so arguments should be above it. */
  struct clone_t {
  	/*
-@@ -541,8 +579,12 @@ static nsset_t __join_namespaces(nsset_t allow, struct namespace_t *ns_list, siz
+@@ -541,8 +592,12 @@ static nsset_t __join_namespaces(nsset_t allow, struct namespace_t *ns_list, siz
  		 * <https://github.com/opencontainers/runc/issues/4466> for one example.
  		 */
  		if (type == CLONE_NEWUSER) {
@@ -142,7 +155,84 @@ index 728e68b..2922683 100644
  		}
  
  		close(ns->fd);
-@@ -1065,9 +1107,13 @@ void nsexec(void)
+@@ -828,4 +883,4 @@ void nsexec(void)
+ 	case STAGE_PARENT:{
+ 			int len;
+-			pid_t stage1_pid = -1, stage2_pid = -1;
++			pid_t stage1_pid = -1, stage2_pid = -1, stage2_procfs_pid = -1;
+ 			bool stage1_complete, stage2_complete;
+@@ -854,3 +909,4 @@ void nsexec(void)
+ 			while (!stage1_complete) {
+ 				enum sync_t s;
++				pid_t usermap_pid;
+ 
+@@ -861,3 +917,10 @@ void nsexec(void)
+ 				case SYNC_USERMAP_PLS:
+ 					write_log(DEBUG, "stage-1 requested userns mappings");
++					usermap_pid = stage1_pid;
++					if (lrail_single_id()) {
++						if (read(syncfd, &usermap_pid, sizeof(usermap_pid)) != sizeof(usermap_pid)) {
++							sane_kill(stage1_pid, SIGKILL);
++							bail("failed to sync strict single-ID procfs pid from stage-1");
++						}
++					}
+ 
+@@ -874,7 +937,7 @@ void nsexec(void)
+ 					if (config.is_rootless_euid && !config.is_setgroup)
+-						update_setgroups(stage1_pid, SETGROUPS_DENY);
++						update_setgroups(usermap_pid, SETGROUPS_DENY);
+ 
+ 					/* Set up mappings. */
+-					update_uidmap(config.uidmappath, stage1_pid, config.uidmap, config.uidmap_len);
+-					update_gidmap(config.gidmappath, stage1_pid, config.gidmap, config.gidmap_len);
++					update_uidmap(config.uidmappath, usermap_pid, config.uidmap, config.uidmap_len);
++					update_gidmap(config.gidmappath, usermap_pid, config.gidmap, config.gidmap_len);
+ 
+@@ -891,3 +954,11 @@ void nsexec(void)
+ 						bail("failed to sync with stage-1: read(stage2_pid)");
+ 					}
++					stage2_procfs_pid = stage2_pid;
++					if (lrail_single_id()) {
++						if (read(syncfd, &stage2_procfs_pid, sizeof(stage2_procfs_pid)) != sizeof(stage2_procfs_pid)) {
++							sane_kill(stage1_pid, SIGKILL);
++							sane_kill(stage2_pid, SIGKILL);
++							bail("failed to sync strict single-ID procfs stage-2 pid from stage-1");
++						}
++					}
+ 
+@@ -912,6 +983,11 @@ void nsexec(void)
+ 					write_log(DEBUG, "forward stage-1 (%d) and stage-2 (%d) pids to runc",
+ 						  stage1_pid, stage2_pid);
+-					len =
+-					    dprintf(pipenum, "{\"stage1_pid\":%d,\"stage2_pid\":%d}\n", stage1_pid,
+-						    stage2_pid);
++					if (lrail_single_id()) {
++						len = dprintf(pipenum,
++							      "{\"stage1_pid\":%d,\"stage2_pid\":%d,\"stage2_procfs_pid\":%d}\n",
++							      stage1_pid, stage2_pid, stage2_procfs_pid);
++					} else {
++						len = dprintf(pipenum, "{\"stage1_pid\":%d,\"stage2_pid\":%d}\n", stage1_pid,
++							      stage2_pid);
++					}
+ 					if (len < 0) {
+@@ -986,4 +1062,4 @@ void nsexec(void)
+ 	case STAGE_CHILD:{
+-			pid_t stage2_pid = -1;
++			pid_t stage2_pid = -1, stage2_procfs_pid = -1;
+ 			enum sync_t s;
+ 
+@@ -1049,5 +1112,10 @@ void nsexec(void)
+ 				write_log(DEBUG, "request stage-0 to map user namespace");
+ 				s = SYNC_USERMAP_PLS;
+ 				if (write(syncfd, &s, sizeof(s)) != sizeof(s))
+ 					bail("failed to sync with parent: write(SYNC_USERMAP_PLS)");
++				if (lrail_single_id()) {
++					pid_t usermap_pid = lrail_procfs_pid();
++					if (write(syncfd, &usermap_pid, sizeof(usermap_pid)) != sizeof(usermap_pid))
++						bail("failed to sync strict single-ID procfs pid to stage-0");
++				}
+ 
+@@ -1065,9 +1133,13 @@ void nsexec(void)
  						bail("failed to re-set process as non-dumpable");
  				}
  
@@ -158,7 +248,42 @@ index 728e68b..2922683 100644
  			}
  
  			/*
-@@ -1180,13 +1226,18 @@ void nsexec(void)
+@@ -1107,5 +1188,12 @@ void nsexec(void)
+ 			write_log(DEBUG, "spawn stage-2");
+ 			stage2_pid = clone_parent(&env, STAGE_INIT);
+ 			if (stage2_pid < 0)
+ 				bail("unable to spawn stage-2");
++			stage2_procfs_pid = stage2_pid;
++			if (lrail_single_id()) {
++				if (read(sync_grandchild_pipe[1], &stage2_procfs_pid, sizeof(stage2_procfs_pid)) != sizeof(stage2_procfs_pid)) {
++					sane_kill(stage2_pid, SIGKILL);
++					bail("failed to read strict single-ID procfs stage-2 pid");
++				}
++			}
+ 
+@@ -1119,5 +1207,11 @@ void nsexec(void)
+ 			if (write(syncfd, &stage2_pid, sizeof(stage2_pid)) != sizeof(stage2_pid)) {
+ 				sane_kill(stage2_pid, SIGKILL);
+ 				bail("failed to sync with parent: write(stage2_pid)");
+ 			}
++			if (lrail_single_id()) {
++				if (write(syncfd, &stage2_procfs_pid, sizeof(stage2_procfs_pid)) != sizeof(stage2_procfs_pid)) {
++					sane_kill(stage2_pid, SIGKILL);
++					bail("failed to sync strict single-ID procfs stage-2 pid to stage-0");
++				}
++			}
+ 
+@@ -1171,4 +1265,9 @@ void nsexec(void)
+ 			/* For debugging. */
+ 			prctl(PR_SET_NAME, (unsigned long)"runc:[2:INIT]", 0, 0, 0);
+ 			write_log(DEBUG, "~> nsexec stage-2");
++			if (lrail_single_id()) {
++				pid_t procfs_pid = lrail_procfs_pid();
++				if (write(syncfd, &procfs_pid, sizeof(procfs_pid)) != sizeof(procfs_pid))
++					bail("failed to sync strict single-ID procfs pid to stage-1");
++			}
+ 
+@@ -1180,13 +1252,18 @@ void nsexec(void)
  			if (setsid() < 0)
  				bail("setsid failed");
  
@@ -182,6 +307,53 @@ index 728e68b..2922683 100644
  				if (setgroups(0, NULL) < 0)
  					bail("setgroups failed");
  			}
+diff --git a/libcontainer/init_linux.go b/libcontainer/init_linux.go
+index 8e84be7..4356680 100644
+--- a/libcontainer/init_linux.go
++++ b/libcontainer/init_linux.go
+@@ -38,3 +38,4 @@ type pid struct {
+ 	Pid           int `json:"stage2_pid"`
+ 	PidFirstChild int `json:"stage1_pid"`
++	ProcfsPid     int `json:"stage2_procfs_pid,omitempty"`
+ }
+diff --git a/libcontainer/process_linux.go b/libcontainer/process_linux.go
+index fe736ee..a9aef1d 100644
+--- a/libcontainer/process_linux.go
++++ b/libcontainer/process_linux.go
+@@ -451,7 +451,7 @@ type initProcess struct {
+ // getChildPid receives the final child's pid over the provided pipe.
+-func (p *initProcess) getChildPid() (int, error) {
++func (p *initProcess) getChildPid() (int, int, error) {
+ 	var pid pid
+ 	if err := json.NewDecoder(p.comm.initSockParent).Decode(&pid); err != nil {
+ 		_ = p.cmd.Wait()
+-		return -1, err
++		return -1, -1, err
+ 	}
+@@ -465,4 +465,8 @@ func (p *initProcess) getChildPid() (int, error) {
+ 	_, _ = firstChildProcess.Wait()
+ 
+-	return pid.Pid, nil
++	procfsPid := pid.Pid
++	if pid.ProcfsPid > 0 {
++		procfsPid = pid.ProcfsPid
++	}
++	return pid.Pid, procfsPid, nil
+ }
+@@ -665,3 +669,3 @@ func (p *initProcess) start() (retErr error) {
+ 
+-	childPid, err := p.getChildPid()
++	childPid, procfsPid, err := p.getChildPid()
+ 	if err != nil {
+@@ -675,6 +679,6 @@ func (p *initProcess) start() (retErr error) {
+ 	// can potentially move them (e.g., via dup2()).  If we don't do this now,
+ 	// we won't know at checkpoint time which file descriptor to look up.
+-	fds, err := getPipeFds(childPid)
++	fds, err := getPipeFds(procfsPid)
+ 	if err != nil {
+-		return fmt.Errorf("error getting pipe fds for pid %d: %w", childPid, err)
++		return fmt.Errorf("error getting pipe fds for pid %d: %w", procfsPid, err)
+ 	}
 diff --git a/libcontainer/container_linux.go b/libcontainer/container_linux.go
 index 6f42280..574d61b 100644
 --- a/libcontainer/container_linux.go

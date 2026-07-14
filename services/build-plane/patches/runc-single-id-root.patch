@@ -68,10 +68,10 @@ index 4a8461f..8688c16 100644
 +	}
 +}
 diff --git a/libcontainer/nsenter/nsexec.c b/libcontainer/nsenter/nsexec.c
-index 247b18e..6a6111c 100644
+index 728e68b..7cd0c1b 100644
 --- a/libcontainer/nsenter/nsexec.c
 +++ b/libcontainer/nsenter/nsexec.c
-@@ -49,5 +49,18 @@ enum sync_t {
+@@ -52,6 +52,26 @@ enum sync_t {
  /* Stores the current stage of nsexec. */
  int current_stage = STAGE_SETUP;
  
@@ -83,43 +83,62 @@ index 247b18e..6a6111c 100644
 +	return value != NULL && strcmp(value, "true") == 0;
 +}
 +
-+static uid_t namespace_root_id(void)
++static void verify_lrail_single_id_identity(void)
 +{
-+	return lrail_single_id() ? LRAIL_SINGLE_ID : 0;
++	uid_t ruid, euid, suid;
++	gid_t rgid, egid, sgid;
++	if (getresuid(&ruid, &euid, &suid) < 0 ||
++	    getresgid(&rgid, &egid, &sgid) < 0)
++		bail("failed to inspect strict single-ID credentials");
++	if (ruid != LRAIL_SINGLE_ID || euid != LRAIL_SINGLE_ID || suid != LRAIL_SINGLE_ID ||
++	    rgid != LRAIL_SINGLE_ID || egid != LRAIL_SINGLE_ID || sgid != LRAIL_SINGLE_ID)
++		bail("strict single-ID credentials differ from the exact logical identity");
 +}
 +
  /* Assume the stack grows down, so arguments should be above it. */
  struct clone_t {
-@@ -541,7 +554,7 @@ static nsset_t __join_namespaces(nsset_t allow, struct namespace_t *ns_list, siz
+ 	/*
+@@ -541,7 +561,9 @@ static nsset_t __join_namespaces(nsset_t allow, struct namespace_t *ns_list, siz
  		 * <https://github.com/opencontainers/runc/issues/4466> for one example.
  		 */
  		if (type == CLONE_NEWUSER) {
 -			if (setresuid(0, 0, 0) < 0)
-+			if (setresuid(namespace_root_id(), namespace_root_id(), namespace_root_id()) < 0)
++			if (lrail_single_id())
++				verify_lrail_single_id_identity();
++			else if (setresuid(0, 0, 0) < 0)
  				bail("failed to become root in user namespace");
  		}
  
-@@ -1066,7 +1079,7 @@ void nsexec(void)
+@@ -1065,8 +1087,10 @@ void nsexec(void)
+ 						bail("failed to re-set process as non-dumpable");
  				}
  
- 				/* Become root in the namespace proper. */
+-				/* Become root in the namespace proper. */
 -				if (setresuid(0, 0, 0) < 0)
-+				if (setresuid(namespace_root_id(), namespace_root_id(), namespace_root_id()) < 0)
++				/* Retain setup capabilities with the already-mapped strict identity. */
++				if (lrail_single_id())
++					verify_lrail_single_id_identity();
++				else if (setresuid(0, 0, 0) < 0)
  					bail("failed to become root in user namespace");
  			}
  
-@@ -1180,8 +1193,8 @@ void nsexec(void)
+@@ -1180,13 +1204,17 @@ void nsexec(void)
  			if (setsid() < 0)
  				bail("setsid failed");
  
 -			if (setuid(0) < 0)
-+			if (setuid(namespace_root_id()) < 0)
- 				bail("setuid failed");
+-				bail("setuid failed");
++			if (lrail_single_id()) {
++				verify_lrail_single_id_identity();
++			} else {
++				if (setuid(0) < 0)
++					bail("setuid failed");
  
 -			if (setgid(0) < 0)
-+			if (setgid(namespace_root_id()) < 0)
- 				bail("setgid failed");
-@@ -1188,5 +1201,5 @@ void nsexec(void)
+-				bail("setgid failed");
++				if (setgid(0) < 0)
++					bail("setgid failed");
++			}
  
 -			if (!config.is_rootless_euid && config.is_setgroup) {
 +			if (!config.is_rootless_euid && config.is_setgroup && !lrail_single_id()) {

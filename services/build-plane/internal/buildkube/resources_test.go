@@ -192,7 +192,9 @@ func TestBuildResourcesEnforcesKataRestrictedWorkerAndNoAPIAuthority(t *testing.
 	for _, variable := range container.Env {
 		environment[variable.Name] = variable.Value
 	}
-	if environment["LRAIL_QUOTA_ROOT"] != "/var/lib/lrail-worker" || environment["LRAIL_ROOTLESS_PIDNS"] != "true" || environment["XDG_RUNTIME_DIR"] != "/var/lib/lrail-worker/run" || environment["TMPDIR"] != "/var/lib/lrail-worker/tmp" {
+	if environment["LRAIL_QUOTA_ROOT"] != "/var/lib/lrail-worker" || environment["LRAIL_ROOTLESS_PIDNS"] != "true" ||
+		environment["LRAIL_ROOTLESSKIT_SINGLE_ID"] != "true" || environment["XDG_RUNTIME_DIR"] != "/var/lib/lrail-worker/run" ||
+		environment["TMPDIR"] != "/var/lib/lrail-worker/tmp" {
 		t.Fatalf("worker writable paths escape quota root: %#v", environment)
 	}
 	if environment["HTTP_PROXY"] != llbcompiler.BuildEgressProxyURL || environment["HTTPS_PROXY"] != llbcompiler.BuildEgressProxyURL ||
@@ -245,7 +247,8 @@ func TestFunctionalGVisorRootlessBootstrapUsesOnlyRequiredSandboxCapabilities(t 
 	if security.AllowPrivilegeEscalation == nil || !*security.AllowPrivilegeEscalation ||
 		!slices.Equal(security.Capabilities.Drop, []corev1.Capability{"ALL"}) ||
 		!slices.Equal(security.Capabilities.Add, []corev1.Capability{"SETGID", "SETUID"}) ||
-		security.AppArmorProfile != nil || environment["LRAIL_ROOTLESS_PIDNS"] != "false" {
+		security.AppArmorProfile != nil || environment["LRAIL_ROOTLESS_PIDNS"] != "false" ||
+		environment["LRAIL_ROOTLESSKIT_SINGLE_ID"] != "false" {
 		t.Fatalf("functional rootless bootstrap context = %#v", security)
 	}
 	config.RuntimeClass = "kata-qemu"

@@ -1,0 +1,149 @@
+diff --git a/pkg/oci/mounts.go b/pkg/oci/mounts.go
+index 4c4b8da..5e38b0d 100644
+--- a/pkg/oci/mounts.go
++++ b/pkg/oci/mounts.go
+@@ -19,8 +19,14 @@
+ package oci
+ 
+ import (
++	"os"
++
+ 	"github.com/opencontainers/runtime-spec/specs-go"
+ )
+ 
+ func defaultMounts() []specs.Mount {
++	devptsGID := "gid=5"
++	if os.Getenv("LRAIL_ROOTLESSKIT_SINGLE_ID") == "true" {
++		devptsGID = "gid=10001"
++	}
+ 	return []specs.Mount{
+@@ -39,7 +44,7 @@ func defaultMounts() []specs.Mount {
+ 			Destination: "/dev/pts",
+ 			Type:        "devpts",
+ 			Source:      "devpts",
+-			Options:     []string{"nosuid", "noexec", "newinstance", "ptmxmode=0666", "mode=0620", "gid=5"},
++			Options:     []string{"nosuid", "noexec", "newinstance", "ptmxmode=0666", "mode=0620", devptsGID},
+ 		},
+ 		{
+ 			Destination: "/dev/shm",
+diff --git a/pkg/oci/mounts_lrail_test.go b/pkg/oci/mounts_lrail_test.go
+new file mode 100644
+index 0000000..e591559
+--- /dev/null
++++ b/pkg/oci/mounts_lrail_test.go
+@@ -0,0 +1,32 @@
++package oci
++
++import (
++	"slices"
++	"testing"
++)
++
++func TestDefaultMountsDevptsGID(t *testing.T) {
++	tests := []struct {
++		name     string
++		singleID string
++		expected string
++	}{
++		{name: "subordinate IDs", expected: "gid=5"},
++		{name: "single ID", singleID: "true", expected: "gid=10001"},
++	}
++	for _, test := range tests {
++		t.Run(test.name, func(t *testing.T) {
++			t.Setenv("LRAIL_ROOTLESSKIT_SINGLE_ID", test.singleID)
++			for _, mount := range defaultMounts() {
++				if mount.Destination != "/dev/pts" {
++					continue
++				}
++				if !slices.Contains(mount.Options, test.expected) {
++					t.Fatalf("devpts options = %#v", mount.Options)
++				}
++				return
++			}
++			t.Fatal("devpts mount is absent")
++		})
++	}
++}
+diff --git a/pkg/archive/tar.go b/pkg/archive/tar.go
+index d36a5ca..f61391c 100644
+--- a/pkg/archive/tar.go
++++ b/pkg/archive/tar.go
+@@ -562,6 +562,9 @@ func (cw *ChangeWriter) HandleChange(k fs.ChangeKind, p string, f os.FileInfo, er
+ 			AccessTime: whiteOutT,
+ 			ChangeTime: whiteOutT,
+ 		}
++		if err := remapLrailSingleIDHeader(hdr); err != nil {
++			return err
++		}
+ 		if err := cw.includeParents(hdr); err != nil {
+ 			return err
+ 		}
+@@ -590,5 +593,8 @@ func (cw *ChangeWriter) HandleChange(k fs.ChangeKind, p string, f os.FileInfo, er
+ 		if err != nil {
+ 			return err
+ 		}
++		if err := remapLrailSingleIDHeader(hdr); err != nil {
++			return err
++		}
+ 
+ 		hdr.Mode = int64(chmodTarEntry(os.FileMode(hdr.Mode)))
+@@ -694,6 +700,18 @@ func (cw *ChangeWriter) HandleChange(k fs.ChangeKind, p string, f os.FileInfo, er
+ 	return nil
+ }
+ 
++func remapLrailSingleIDHeader(hdr *tar.Header) error {
++	if os.Getenv("LRAIL_ROOTLESSKIT_SINGLE_ID") != "true" {
++		return nil
++	}
++	if hdr.Uid != 0 || hdr.Gid != 0 {
++		return fmt.Errorf("strict single-ID layer contains unexpected ownership %d:%d", hdr.Uid, hdr.Gid)
++	}
++	hdr.Uid = 10001
++	hdr.Gid = 10001
++	return nil
++}
++
+ // Close closes this writer.
+ func (cw *ChangeWriter) Close() error {
+ 	if err := cw.tw.Close(); err != nil {
+diff --git a/pkg/archive/tar_lrail_test.go b/pkg/archive/tar_lrail_test.go
+new file mode 100644
+index 0000000..46a98d9
+--- /dev/null
++++ b/pkg/archive/tar_lrail_test.go
+@@ -0,0 +1,35 @@
++package archive
++
++import (
++	"archive/tar"
++	"testing"
++)
++
++func TestRemapLrailSingleIDHeader(t *testing.T) {
++	t.Setenv("LRAIL_ROOTLESSKIT_SINGLE_ID", "true")
++	header := &tar.Header{Uid: 0, Gid: 0}
++	if err := remapLrailSingleIDHeader(header); err != nil {
++		t.Fatal(err)
++	}
++	if header.Uid != 10001 || header.Gid != 10001 {
++		t.Fatalf("header identity = %d:%d", header.Uid, header.Gid)
++	}
++}
++
++func TestRemapLrailSingleIDHeaderRejectsUnexpectedOwnership(t *testing.T) {
++	t.Setenv("LRAIL_ROOTLESSKIT_SINGLE_ID", "true")
++	if err := remapLrailSingleIDHeader(&tar.Header{Uid: 1, Gid: 0}); err == nil {
++		t.Fatal("expected unexpected ownership to fail")
++	}
++}
++
++func TestRemapLrailSingleIDHeaderLeavesDefaultModeUnchanged(t *testing.T) {
++	t.Setenv("LRAIL_ROOTLESSKIT_SINGLE_ID", "")
++	header := &tar.Header{Uid: 1, Gid: 2}
++	if err := remapLrailSingleIDHeader(header); err != nil {
++		t.Fatal(err)
++	}
++	if header.Uid != 1 || header.Gid != 2 {
++		t.Fatalf("header identity = %d:%d", header.Uid, header.Gid)
++	}
++}

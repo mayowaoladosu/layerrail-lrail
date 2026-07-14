@@ -1,0 +1,65 @@
+diff --git a/idtools.go b/idtools.go
+index d1c33d3..5b48614 100644
+--- a/idtools.go
++++ b/idtools.go
+@@ -78,18 +78,26 @@
+ // toHost takes an id mapping and a remapped ID, and translates the
+ // ID to the mapped host ID. If no map is provided, then the translation
+ // assumes a 1-to-1 mapping and returns the passed in id #
+ func toHost(contID int, idMap []IDMap) (int, error) {
+ 	if idMap == nil {
+ 		return contID, nil
+ 	}
++	if contID == 0 && isLrailSingleIDMap(idMap) {
++		return 0, nil
++	}
+ 	for _, m := range idMap {
+ 		if (int64(contID) >= m.ID) && (int64(contID) <= (m.ID + m.Count - 1)) {
+ 			hostID := int(m.ParentID + (int64(contID) - m.ID))
+ 			return hostID, nil
+ 		}
+ 	}
+ 	return -1, fmt.Errorf("container ID %d cannot be mapped to a host ID", contID)
+ }
++
++func isLrailSingleIDMap(idMap []IDMap) bool {
++	return os.Getenv("LRAIL_ROOTLESSKIT_SINGLE_ID") == "true" && len(idMap) == 1 &&
++		idMap[0] == (IDMap{ID: 10001, ParentID: 0, Count: 1})
++}
+ 
+ // IdentityMapping contains a mappings of UIDs and GIDs.
+ // The zero value represents an empty mapping.
+diff --git a/idtools_lrail_test.go b/idtools_lrail_test.go
+new file mode 100644
+index 0000000..0cc0953
+--- /dev/null
++++ b/idtools_lrail_test.go
+@@ -0,0 +1,28 @@
++package user
++
++import "testing"
++
++func TestLrailSingleIDMappingAliasesFilesystemRoot(t *testing.T) {
++	t.Setenv("LRAIL_ROOTLESSKIT_SINGLE_ID", "true")
++	mapping := IdentityMapping{
++		UIDMaps: []IDMap{{ID: 10001, ParentID: 0, Count: 1}},
++		GIDMaps: []IDMap{{ID: 10001, ParentID: 0, Count: 1}},
++	}
++	for _, ids := range [][2]int{{0, 0}, {10001, 10001}} {
++		uid, gid, err := mapping.ToHost(ids[0], ids[1])
++		if err != nil || uid != 0 || gid != 0 {
++			t.Fatalf("ToHost(%d, %d) = %d, %d, %v", ids[0], ids[1], uid, gid, err)
++		}
++	}
++	uid, gid, err := mapping.ToContainer(0, 0)
++	if err != nil || uid != 10001 || gid != 10001 {
++		t.Fatalf("ToContainer(0, 0) = %d, %d, %v", uid, gid, err)
++	}
++}
++
++func TestLrailSingleIDMappingRequiresExactShape(t *testing.T) {
++	t.Setenv("LRAIL_ROOTLESSKIT_SINGLE_ID", "true")
++	if _, err := toHost(0, []IDMap{{ID: 10002, ParentID: 0, Count: 1}}); err == nil {
++		t.Fatal("unexpected root alias for a different mapping")
++	}
++}

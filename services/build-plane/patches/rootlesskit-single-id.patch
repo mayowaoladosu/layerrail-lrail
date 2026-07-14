@@ -1,0 +1,121 @@
+diff --git a/pkg/parent/parent.go b/pkg/parent/parent.go
+index 18ae6d2..9eed9fa 100644
+--- a/pkg/parent/parent.go
++++ b/pkg/parent/parent.go
+@@ -176,8 +176,18 @@ func Parent(opt Opt) error {
+ 	cmd := exec.Command("/proc/self/exe", os.Args[1:]...)
+ 	cmd.SysProcAttr = &syscall.SysProcAttr{
+ 		Pdeathsig:  syscall.SIGKILL,
+ 		Cloneflags: syscall.CLONE_NEWUSER | syscall.CLONE_NEWNS,
+ 	}
++	singleIDMapping := os.Getenv("LRAIL_ROOTLESSKIT_SINGLE_ID") == "true"
++	if singleIDMapping {
++		uidMappings, gidMappings, err := singleIDMappings(os.Geteuid(), os.Getegid())
++		if err != nil {
++			return err
++		}
++		cmd.SysProcAttr.UidMappings = uidMappings
++		cmd.SysProcAttr.GidMappings = gidMappings
++		cmd.SysProcAttr.GidMappingsEnableSetgroups = false
++	}
+ 
+ 	if opt.NetworkDriver != nil {
+ 		if !opt.DetachNetNS {
+@@ -216,28 +226,30 @@ func Parent(opt Opt) error {
+ 		return fmt.Errorf("failed to start the child: %w", err)
+ 	}
+ 
+-	msgParentHello := &messages.Message{
+-		U: messages.U{
+-			ParentHello: &messages.ParentHello{},
+-		},
+-	}
+-	if err := messages.Send(pipeW, msgParentHello); err != nil {
+-		return err
+-	}
+-	if _, err := messages.WaitFor(pipe2R, messages.Name(messages.ChildHello{})); err != nil {
+-		return err
+-	}
++	if !singleIDMapping {
++		msgParentHello := &messages.Message{
++			U: messages.U{
++				ParentHello: &messages.ParentHello{},
++			},
++		}
++		if err := messages.Send(pipeW, msgParentHello); err != nil {
++			return err
++		}
++		if _, err := messages.WaitFor(pipe2R, messages.Name(messages.ChildHello{})); err != nil {
++			return err
++		}
+ 
+-	if err := setupUIDGIDMap(cmd.Process.Pid, opt.SubidSource); err != nil {
+-		return fmt.Errorf("failed to setup UID/GID map: %w", err)
+-	}
+-	msgParentInitIdmapCompleted := &messages.Message{
+-		U: messages.U{
+-			ParentInitIdmapCompleted: &messages.ParentInitIdmapCompleted{},
+-		},
+-	}
+-	if err := messages.Send(pipeW, msgParentInitIdmapCompleted); err != nil {
+-		return err
++		if err := setupUIDGIDMap(cmd.Process.Pid, opt.SubidSource); err != nil {
++			return fmt.Errorf("failed to setup UID/GID map: %w", err)
++		}
++		msgParentInitIdmapCompleted := &messages.Message{
++			U: messages.U{
++				ParentInitIdmapCompleted: &messages.ParentInitIdmapCompleted{},
++			},
++		}
++		if err := messages.Send(pipeW, msgParentInitIdmapCompleted); err != nil {
++			return err
++		}
+ 	}
+ 	if _, err := messages.WaitFor(pipe2R, messages.Name(messages.ChildInitUserNSCompleted{})); err != nil {
+ 		return err
+@@ -432,6 +444,15 @@ func newugidmapArgsFromSubIDRanges(u *user.User, subuidRanges, subgidRanges []idt
+ 	return uidMap, gidMap, nil
+ }
+ 
++func singleIDMappings(uid, gid int) ([]syscall.SysProcIDMap, []syscall.SysProcIDMap, error) {
++	if uid != 1000 || gid != 1000 {
++		return nil, nil, errors.New("single-ID mapping requires uid and gid 1000")
++	}
++	uidMappings := []syscall.SysProcIDMap{{ContainerID: 0, HostID: uid, Size: 1}}
++	gidMappings := []syscall.SysProcIDMap{{ContainerID: 0, HostID: gid, Size: 1}}
++	return uidMappings, gidMappings, nil
++}
++
+ func setupUIDGIDMap(pid int, subidSource SubidSource) error {
+ 	uArgs, gArgs, err := newugidmapArgs(subidSource)
+ 	if err != nil {
+diff --git a/pkg/parent/parent_test.go b/pkg/parent/parent_test.go
+index f1c16d6..374c636 100644
+--- a/pkg/parent/parent_test.go
++++ b/pkg/parent/parent_test.go
+@@ -3,6 +3,7 @@ package parent
+ import (
+ 	"os"
+ 	"os/user"
++	"syscall"
+ 	"testing"
+ 
+ 	"github.com/rootless-containers/rootlesskit/v3/pkg/parent/idtools"
+@@ -52,3 +53,17 @@ func TestNewugidmapArgsFromSubIDRanges(t *testing.T) {
+ 	assert.DeepEqual(t, expectedU, newuidmapArgs)
+ 	assert.DeepEqual(t, expectedG, newgidmapArgs)
+ }
++
++func TestSingleIDMappings(t *testing.T) {
++	uids, gids, err := singleIDMappings(1000, 1000)
++	assert.NilError(t, err)
++	assert.DeepEqual(t, uids, []syscall.SysProcIDMap{{ContainerID: 0, HostID: 1000, Size: 1}})
++	assert.DeepEqual(t, gids, []syscall.SysProcIDMap{{ContainerID: 0, HostID: 1000, Size: 1}})
++}
++
++func TestSingleIDMappingsRejectsRoot(t *testing.T) {
++	_, _, err := singleIDMappings(1000, 1001)
++	if err == nil {
++		t.Fatal("expected root mapping to be rejected")
++	}
++}

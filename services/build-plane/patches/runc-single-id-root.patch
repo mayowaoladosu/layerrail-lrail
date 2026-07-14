@@ -1,0 +1,145 @@
+diff --git a/libcontainer/configs/config_linux.go b/libcontainer/configs/config_linux.go
+index 65cbcad..f80b50a 100644
+--- a/libcontainer/configs/config_linux.go
++++ b/libcontainer/configs/config_linux.go
+@@ -4,4 +4,5 @@ import (
+ 	"errors"
+ 	"fmt"
+ 	"math"
++	"os"
+ )
+@@ -51,8 +52,16 @@ func (c Config) HostUID(containerId int) (int, error) {
+ 	return containerId, nil
+ }
+ 
++func IsLrailSingleIDMap(mappings []IDMap) bool {
++	return os.Getenv("LRAIL_ROOTLESSKIT_SINGLE_ID") == "true" && len(mappings) == 1 &&
++		mappings[0] == (IDMap{ContainerID: 10001, HostID: 0, Size: 1})
++}
++
+ // HostRootUID gets the root uid for the process on host which could be non-zero
+ // when user namespaces are enabled.
+ func (c Config) HostRootUID() (int, error) {
++	if c.Namespaces.Contains(NEWUSER) && IsLrailSingleIDMap(c.UIDMappings) {
++		return 0, nil
++	}
+ 	return c.HostUID(0)
+ }
+@@ -81,5 +90,8 @@ func (c Config) HostGID(containerId int) (int, error) {
+ // HostRootGID gets the root gid for the process on host which could be non-zero
+ // when user namespaces are enabled.
+ func (c Config) HostRootGID() (int, error) {
++	if c.Namespaces.Contains(NEWUSER) && IsLrailSingleIDMap(c.GIDMappings) {
++		return 0, nil
++	}
+ 	return c.HostGID(0)
+ }
+diff --git a/libcontainer/configs/config_linux_test.go b/libcontainer/configs/config_linux_test.go
+index 4a8461f..8688c16 100644
+--- a/libcontainer/configs/config_linux_test.go
++++ b/libcontainer/configs/config_linux_test.go
+@@ -78,3 +78,28 @@ func TestHostRootGIDWithUSERNS(t *testing.T) {
+ 		t.Fatalf("expected gid 1000 with no USERNS but received %d", uid)
+ 	}
+ }
++
++func TestHostRootIDsWithLrailSingleIDMapping(t *testing.T) {
++	t.Setenv("LRAIL_ROOTLESSKIT_SINGLE_ID", "true")
++	config := &Config{
++		Namespaces: Namespaces{{Type: NEWUSER}},
++		UIDMappings: []IDMap{{ContainerID: 10001, HostID: 0, Size: 1}},
++		GIDMappings: []IDMap{{ContainerID: 10001, HostID: 0, Size: 1}},
++	}
++	uid, uidErr := config.HostRootUID()
++	gid, gidErr := config.HostRootGID()
++	if uidErr != nil || gidErr != nil || uid != 0 || gid != 0 {
++		t.Fatalf("host root IDs = %d, %d, %v, %v", uid, gid, uidErr, gidErr)
++	}
++}
++
++func TestHostRootIDsRequireExactLrailSingleIDMapping(t *testing.T) {
++	t.Setenv("LRAIL_ROOTLESSKIT_SINGLE_ID", "true")
++	config := &Config{
++		Namespaces: Namespaces{{Type: NEWUSER}},
++		UIDMappings: []IDMap{{ContainerID: 10002, HostID: 0, Size: 1}},
++	}
++	if _, err := config.HostRootUID(); err == nil {
++		t.Fatal("unexpected root alias for a different mapping")
++	}
++}
+diff --git a/libcontainer/nsenter/nsexec.c b/libcontainer/nsenter/nsexec.c
+index 247b18e..6a6111c 100644
+--- a/libcontainer/nsenter/nsexec.c
++++ b/libcontainer/nsenter/nsexec.c
+@@ -49,5 +49,18 @@ enum sync_t {
+ /* Stores the current stage of nsexec. */
+ int current_stage = STAGE_SETUP;
+ 
++#define LRAIL_SINGLE_ID 10001
++
++static bool lrail_single_id(void)
++{
++	const char *value = getenv("LRAIL_ROOTLESSKIT_SINGLE_ID");
++	return value != NULL && strcmp(value, "true") == 0;
++}
++
++static uid_t namespace_root_id(void)
++{
++	return lrail_single_id() ? LRAIL_SINGLE_ID : 0;
++}
++
+ /* Assume the stack grows down, so arguments should be above it. */
+ struct clone_t {
+@@ -541,7 +554,7 @@ static nsset_t __join_namespaces(nsset_t allow, struct namespace_t *ns_list, siz
+ 		 * <https://github.com/opencontainers/runc/issues/4466> for one example.
+ 		 */
+ 		if (type == CLONE_NEWUSER) {
+-			if (setresuid(0, 0, 0) < 0)
++			if (setresuid(namespace_root_id(), namespace_root_id(), namespace_root_id()) < 0)
+ 				bail("failed to become root in user namespace");
+ 		}
+ 
+@@ -1066,7 +1079,7 @@ void nsexec(void)
+ 				}
+ 
+ 				/* Become root in the namespace proper. */
+-				if (setresuid(0, 0, 0) < 0)
++				if (setresuid(namespace_root_id(), namespace_root_id(), namespace_root_id()) < 0)
+ 					bail("failed to become root in user namespace");
+ 			}
+ 
+@@ -1180,8 +1193,8 @@ void nsexec(void)
+ 			if (setsid() < 0)
+ 				bail("setsid failed");
+ 
+-			if (setuid(0) < 0)
++			if (setuid(namespace_root_id()) < 0)
+ 				bail("setuid failed");
+ 
+-			if (setgid(0) < 0)
++			if (setgid(namespace_root_id()) < 0)
+ 				bail("setgid failed");
+@@ -1188,5 +1201,5 @@ void nsexec(void)
+ 
+-			if (!config.is_rootless_euid && config.is_setgroup) {
++			if (!config.is_rootless_euid && config.is_setgroup && !lrail_single_id()) {
+ 				if (setgroups(0, NULL) < 0)
+ 					bail("setgroups failed");
+ 			}
+diff --git a/libcontainer/container_linux.go b/libcontainer/container_linux.go
+index 6f42280..574d61b 100644
+--- a/libcontainer/container_linux.go
++++ b/libcontainer/container_linux.go
+@@ -524,6 +524,12 @@ func (c *Container) newParentProcess(p *Process) (parentProcess, error) {
+ 		cmd.SysProcAttr = &unix.SysProcAttr{}
+ 	}
+ 	cmd.Env = append(cmd.Env, "GOMAXPROCS="+os.Getenv("GOMAXPROCS"))
++	if os.Getenv("LRAIL_ROOTLESSKIT_SINGLE_ID") == "true" {
++		if !configs.IsLrailSingleIDMap(c.config.UIDMappings) || !configs.IsLrailSingleIDMap(c.config.GIDMappings) {
++			return nil, errors.New("strict single-ID mode requires the exact logical uid and gid maps")
++		}
++		cmd.Env = append(cmd.Env, "LRAIL_ROOTLESSKIT_SINGLE_ID=true")
++	}
+ 	cmd.ExtraFiles = append(cmd.ExtraFiles, p.ExtraFiles...)
+ 	if p.ConsoleSocket != nil {
+ 		cmd.ExtraFiles = append(cmd.ExtraFiles, p.ConsoleSocket)

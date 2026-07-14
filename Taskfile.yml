@@ -163,6 +163,7 @@ tasks:
     env:
       LRAIL_BUILDKIT_PROXY_INTEGRATION: "1"
       LRAIL_BUILD_WORKER_IMAGE: "{{.BUILD_CELL_WORKER_IMAGE}}"
+      LRAIL_ROOTLESSKIT_SINGLE_ID: "true"
     cmds:
       - go test ./services/build-plane/integration -run TestRealWorkerRoutesNetworkedSolveThroughPolicyProxy -count=1 -v
 

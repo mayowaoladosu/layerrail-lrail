@@ -9,25 +9,61 @@ RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags='-s -w' -o /out/lrail-b
 
 
 FROM golang:1.26.5-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2 AS buildkit-build
+RUN apk add --no-cache git
 WORKDIR /src
+COPY services/build-plane/patches/containerd-single-id-devpts.patch /tmp/containerd-single-id-devpts.patch
+COPY services/build-plane/patches/buildkit-single-id-remap.patch /tmp/buildkit-single-id-remap.patch
+COPY services/build-plane/patches/moby-user-single-id.patch /tmp/moby-user-single-id.patch
 RUN go mod init lrail.local/buildkit-runtime \
 	&& go get github.com/moby/buildkit/cmd/buildkitd@v0.31.1 \
 	&& go get github.com/containerd/containerd/v2@v2.2.5 golang.org/x/crypto@v0.54.0 golang.org/x/net@v0.57.0 \
+	&& go get -t github.com/containerd/containerd/v2/pkg/oci@v2.2.5 \
+	&& go get -t github.com/containerd/containerd/v2/pkg/archive@v2.2.5 \
+	&& go get -t github.com/moby/sys/user@v0.4.0 \
+	&& buildkit_dir="$(go env GOPATH)/pkg/mod/github.com/moby/buildkit@v0.31.1" \
+	&& containerd_dir="$(go env GOPATH)/pkg/mod/github.com/containerd/containerd/v2@v2.2.5" \
+	&& moby_user_dir="$(go env GOPATH)/pkg/mod/github.com/moby/sys/user@v0.4.0" \
+	&& chmod -R u+w "${buildkit_dir}" "${containerd_dir}" "${moby_user_dir}" \
+	&& (cd "${buildkit_dir}" && git apply /tmp/buildkit-single-id-remap.patch) \
+	&& (cd "${containerd_dir}" && git apply /tmp/containerd-single-id-devpts.patch) \
+	&& (cd "${moby_user_dir}" && git apply /tmp/moby-user-single-id.patch) \
+	&& gofmt -w "${buildkit_dir}/cmd/buildkitd/main_test.go" "${buildkit_dir}/cmd/buildkitd/util_linux.go" \
+	&& gofmt -w "${containerd_dir}/pkg/oci/mounts.go" "${containerd_dir}/pkg/oci/mounts_lrail_test.go" \
+	&& gofmt -w "${containerd_dir}/pkg/archive/tar.go" "${containerd_dir}/pkg/archive/tar_lrail_test.go" \
+	&& gofmt -w "${moby_user_dir}/idtools.go" "${moby_user_dir}/idtools_lrail_test.go" \
+	&& go test github.com/moby/buildkit/cmd/buildkitd \
+	&& go test github.com/containerd/containerd/v2/pkg/oci \
+	&& go test github.com/containerd/containerd/v2/pkg/archive \
+	&& go test github.com/moby/sys/user \
 	&& CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags='-s -w' -o /out/buildkitd github.com/moby/buildkit/cmd/buildkitd
 
 FROM golang:1.26.5-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2 AS rootlesskit-build
+RUN apk add --no-cache git
 WORKDIR /src
-RUN go mod init lrail.local/rootlesskit-runtime \
-	&& go get github.com/rootless-containers/rootlesskit/v3/cmd/rootlesskit@v3.0.2 \
+COPY services/build-plane/patches/rootlesskit-single-id.patch /tmp/rootlesskit-single-id.patch
+RUN go mod download github.com/rootless-containers/rootlesskit/v3@v3.0.2 \
+	&& cp -R "$(go env GOPATH)/pkg/mod/github.com/rootless-containers/rootlesskit/v3@v3.0.2" /src/rootlesskit \
+	&& chmod -R u+w /src/rootlesskit \
+	&& (cd /src/rootlesskit && git apply /tmp/rootlesskit-single-id.patch) \
+	&& cd /src/rootlesskit \
 	&& go get golang.org/x/crypto@v0.54.0 golang.org/x/net@v0.57.0 \
+	&& gofmt -w pkg/parent/parent.go pkg/parent/parent_test.go \
+	&& go test ./pkg/parent \
 	&& CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags='-s -w' -o /out/rootlesskit github.com/rootless-containers/rootlesskit/v3/cmd/rootlesskit
 
 FROM golang:1.26.5-alpine@sha256:0178a641fbb4858c5f1b48e34bdaabe0350a330a1b1149aabd498d0699ff5fb2 AS runc-build
-RUN apk add --no-cache gcc musl-dev pkgconf libseccomp-dev libseccomp-static
+RUN apk add --no-cache gcc git musl-dev pkgconf libseccomp-dev libseccomp-static
 WORKDIR /src
+COPY services/build-plane/patches/runc-single-id-root.patch /tmp/runc-single-id-root.patch
 RUN go mod init lrail.local/runc-runtime \
 	&& go get github.com/opencontainers/runc@v1.3.6 \
 	&& go get golang.org/x/net@v0.57.0 \
+	&& go get -t github.com/opencontainers/runc/libcontainer/configs@v1.3.6 \
+	&& runc_dir="$(go env GOPATH)/pkg/mod/github.com/opencontainers/runc@v1.3.6" \
+	&& chmod -R u+w "${runc_dir}" \
+	&& (cd "${runc_dir}" && git apply /tmp/runc-single-id-root.patch) \
+	&& gofmt -w "${runc_dir}/libcontainer/configs/config_linux.go" "${runc_dir}/libcontainer/configs/config_linux_test.go" "${runc_dir}/libcontainer/container_linux.go" \
+	&& go test github.com/opencontainers/runc/libcontainer/configs \
 	&& CGO_ENABLED=1 GOOS=linux go build -trimpath -tags='apparmor seccomp netgo cgo static_build osusergo' -ldflags='-s -w -linkmode external -extldflags -static' -o /out/buildkit-runc github.com/opencontainers/runc
 
 FROM moby/buildkit:v0.31.1-rootless@sha256:946cf909534b789c9b84af75e6d4f8cb23c3b9cb387daec5ba0f4878a3e4647c

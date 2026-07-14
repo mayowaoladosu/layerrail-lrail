@@ -1,0 +1,70 @@
+diff --git a/cmd/buildkitd/main_test.go b/cmd/buildkitd/main_test.go
+index 4e39cef..c3ca944 100644
+--- a/cmd/buildkitd/main_test.go
++++ b/cmd/buildkitd/main_test.go
+@@ -5,6 +5,7 @@ import (
+ 	"testing"
+ 
+ 	"github.com/moby/buildkit/cmd/buildkitd/config"
++	"github.com/moby/sys/user"
+ 	"github.com/stretchr/testify/require"
+ 	"github.com/urfave/cli/v3"
+ )
+@@ -30,6 +30,27 @@ func TestApplyMainFlagsProxyNetworkOverridesConfig(t *testing.T) {
+ 	require.False(t, cfg.ProxyNetwork)
+ }
+ 
++func TestParseIdentityMappingSingleID(t *testing.T) {
++	t.Setenv("LRAIL_ROOTLESSKIT_SINGLE_ID", "true")
++	mapping, err := parseIdentityMapping("")
++	require.NoError(t, err)
++	require.Equal(t, []user.IDMap{{ID: 10001, ParentID: 0, Count: 1}}, mapping.UIDMaps)
++	require.Equal(t, []user.IDMap{{ID: 10001, ParentID: 0, Count: 1}}, mapping.GIDMaps)
++}
++
++func TestParseIdentityMappingSingleIDRejectsOtherRemap(t *testing.T) {
++	t.Setenv("LRAIL_ROOTLESSKIT_SINGLE_ID", "true")
++	_, err := parseIdentityMapping("user")
++	require.Error(t, err)
++}
++
++func TestParseIdentityMappingDefaultIsUnchanged(t *testing.T) {
++	t.Setenv("LRAIL_ROOTLESSKIT_SINGLE_ID", "")
++	mapping, err := parseIdentityMapping("")
++	require.NoError(t, err)
++	require.Nil(t, mapping)
++}
++
+ func runApplyMainFlags(t *testing.T, args []string, cfg *config.Config) error {
+ 	t.Helper()
+ 
+diff --git a/cmd/buildkitd/util_linux.go b/cmd/buildkitd/util_linux.go
+index 251b3ad..4e2c831 100644
+--- a/cmd/buildkitd/util_linux.go
++++ b/cmd/buildkitd/util_linux.go
+@@ -1,14 +1,25 @@
+ package main
+ 
+ import (
++	"os"
+ 	"strings"
+ 
+ 	"github.com/moby/buildkit/util/bklog"
+ 	"github.com/moby/sys/user"
+ 	"github.com/pkg/errors"
+ )
+ 
+ func parseIdentityMapping(str string) (*user.IdentityMapping, error) {
++	if os.Getenv("LRAIL_ROOTLESSKIT_SINGLE_ID") == "true" {
++		if str != "" {
++			return nil, errors.New("single-ID rootless mode conflicts with configured user remapping")
++		}
++		mapping := user.IDMap{ID: 10001, ParentID: 0, Count: 1}
++		return &user.IdentityMapping{
++			UIDMaps: []user.IDMap{mapping},
++			GIDMaps: []user.IDMap{mapping},
++		}, nil
++	}
+ 	if str == "" {
+ 		return nil, nil
+ 	}

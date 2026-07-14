@@ -1,6 +1,9 @@
 package integration
 
 import (
+	"archive/tar"
+	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -8,6 +11,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/json"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -29,6 +33,7 @@ import (
 	"github.com/mayowaoladosu/layerrail-lrail/services/build-plane/internal/llbcompiler"
 	"github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/client/llb"
+	"github.com/moby/buildkit/exporter/containerimage/exptypes"
 	"github.com/moby/buildkit/solver/pb"
 	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"golang.org/x/net/dns/dnsmessage"
@@ -126,30 +131,38 @@ func TestRealWorkerRoutesNetworkedSolveThroughPolicyProxy(t *testing.T) {
 	arguments := []string{
 		"run", "-d", "--name", egressIntegrationWorker, "--privileged",
 		"--security-opt", "seccomp=unconfined", "--security-opt", "apparmor=unconfined",
+	}
+	if os.Getenv("LRAIL_ROOTLESSKIT_SINGLE_ID") == "true" {
+		arguments = append(arguments, "--security-opt", "no-new-privileges", "--cap-drop", "ALL", "--read-only")
+	}
+	arguments = append(arguments,
 		"-p", "127.0.0.1:12348:1234",
 		"--tmpfs", "/var/lib/lrail-worker:rw,size=1073741824,uid=1000,gid=1000",
 		"--tmpfs", "/tmp:rw,size=67108864,uid=1000,gid=1000",
-		"-v", credentialRoot + ":/run/lrail-egress:ro",
+		"-v", credentialRoot+":/run/lrail-egress:ro",
 		"-e", "LRAIL_QUOTA_ROOT=/var/lib/lrail-worker",
 		"-e", "LRAIL_SCRATCH_BYTES=1073741824", "-e", "LRAIL_SCRATCH_INODES=100000",
+		"-e", "LRAIL_ROOTLESSKIT_SINGLE_ID="+os.Getenv("LRAIL_ROOTLESSKIT_SINGLE_ID"),
+		"-e", "BUILDKIT_DEBUG_EXEC_OUTPUT=1",
 		"-e", "XDG_RUNTIME_DIR=/var/lib/lrail-worker/run", "-e", "TMPDIR=/var/lib/lrail-worker/tmp",
-		"-e", "HTTP_PROXY=" + llbcompiler.BuildEgressProxyURL, "-e", "HTTPS_PROXY=" + llbcompiler.BuildEgressProxyURL,
+		"-e", "HTTP_PROXY="+llbcompiler.BuildEgressProxyURL, "-e", "HTTPS_PROXY="+llbcompiler.BuildEgressProxyURL,
 		"-e", "NO_PROXY=127.0.0.1,localhost",
-		"-e", "LRAIL_EGRESS_PROXY_ADDRESS=" + net.JoinHostPort(hostAddress.String(), strconv.Itoa(proxyPort)),
+		"-e", "LRAIL_EGRESS_PROXY_ADDRESS="+net.JoinHostPort(hostAddress.String(), strconv.Itoa(proxyPort)),
 		"-e", "LRAIL_EGRESS_PROXY_SERVER_NAME=proxy.integration.test",
 		"-e", "LRAIL_EGRESS_CLIENT_CERT=/run/lrail-egress/client.pem",
 		"-e", "LRAIL_EGRESS_CLIENT_KEY=/run/lrail-egress/client-key.pem",
 		"-e", "LRAIL_EGRESS_SERVER_CA=/run/lrail-egress/ca.pem",
 		workerImage, "--addr", "tcp://0.0.0.0:1234", "--oci-worker-no-process-sandbox",
 		"--root", "/var/lib/lrail-worker/buildkit",
-	}
+	)
 	if output, err := exec.CommandContext(ctx, "docker", arguments...).CombinedOutput(); err != nil {
 		t.Fatalf("docker run worker: %v: %s", err, output)
 	}
 	buildkit := waitIntegrationBuildKit(t, ctx, "tcp://127.0.0.1:12348")
 	defer buildkit.Close()
 
-	probe := compileEgressProbe(t, targetPort)
+	strictSingleID := os.Getenv("LRAIL_ROOTLESSKIT_SINGLE_ID") == "true"
+	probe := compileEgressProbe(t, targetPort, strictSingleID)
 	state := llb.Scratch().File(llb.Mkdir("/tmp", 0o1777)).File(llb.Mkfile("/probe", 0o755, probe)).File(llb.Mkfile("/target-ca.pem", 0o444, rootPEM))
 	state = state.Run(
 		llb.Args([]string{"/probe"}), llb.Network(pb.NetMode_UNSET),
@@ -164,8 +177,12 @@ func TestRealWorkerRoutesNetworkedSolveThroughPolicyProxy(t *testing.T) {
 	exportRoot := t.TempDir()
 	statuses := make(chan *client.SolveStatus)
 	statusDone := make(chan struct{})
+	var buildLogs strings.Builder
 	go func() {
-		for range statuses {
+		for status := range statuses {
+			for _, log := range status.Logs {
+				buildLogs.Write(log.Data)
+			}
 		}
 		close(statusDone)
 	}()
@@ -175,10 +192,19 @@ func TestRealWorkerRoutesNetworkedSolveThroughPolicyProxy(t *testing.T) {
 	<-statusDone
 	if err != nil {
 		logs, _ := exec.Command("docker", "logs", egressIntegrationWorker).CombinedOutput()
-		t.Fatalf("networked solve: %v\nworker logs:\n%s", err, logs)
+		runcLogs, _ := exec.Command("docker", "exec", egressIntegrationWorker, "cat", "/var/lib/lrail-worker/buildkit/runc-overlayfs/executor/runc-log.json").CombinedOutput()
+		t.Fatalf("networked solve: %v\nbuild logs:\n%s\nworker logs:\n%s\nrunc logs:\n%s", err, buildLogs.String(), logs, runcLogs)
+	}
+	if strictSingleID {
+		assertOCIExportOwnership(t, ctx, buildkit)
 	}
 	proof, err := os.ReadFile(filepath.Join(exportRoot, "proof.txt"))
-	if err != nil || string(proof) != "policy-egress-ok|metadata=blocked|undeclared=blocked" {
+	expectedProof := "policy-egress-ok|uid=10001|gid=10001"
+	if strictSingleID {
+		expectedProof += "|capeff=0|nnp=1"
+	}
+	expectedProof += "|metadata=blocked|undeclared=blocked"
+	if err != nil || string(proof) != expectedProof {
 		t.Fatalf("proof=%q error=%v", proof, err)
 	}
 	events := audit.snapshot()
@@ -186,6 +212,87 @@ func TestRealWorkerRoutesNetworkedSolveThroughPolicyProxy(t *testing.T) {
 		!containsAudit(events, "", "denied", "ip_not_mapped") ||
 		!containsAudit(events, "undeclared.integration.test", "denied", "domain_not_allowed") {
 		t.Fatalf("egress audit=%#v", events)
+	}
+}
+
+func assertOCIExportOwnership(t *testing.T, ctx context.Context, buildkit *client.Client) {
+	t.Helper()
+	state := llb.Scratch().File(llb.Mkfile("/owned", 0o644, []byte("owned"), llb.WithUIDGID(10001, 10001)))
+	definition, err := state.Marshal(ctx, llb.Platform(ocispecs.Platform{OS: "linux", Architecture: "amd64"}))
+	if err != nil {
+		t.Fatalf("marshal ownership fixture: %v", err)
+	}
+	artifactPath := filepath.Join(t.TempDir(), "artifact.oci.tar")
+	statuses := make(chan *client.SolveStatus)
+	done := make(chan struct{})
+	go func() {
+		for range statuses {
+		}
+		close(done)
+	}()
+	_, err = buildkit.Solve(ctx, definition, client.SolveOpt{Exports: []client.ExportEntry{{
+		Type:  client.ExporterOCI,
+		Attrs: map[string]string{exptypes.ExporterImageConfigKey: `{"architecture":"amd64","config":{},"os":"linux","rootfs":{"type":"layers","diff_ids":[]}}`},
+		Output: func(_ map[string]string) (io.WriteCloser, error) {
+			return os.OpenFile(artifactPath, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+		},
+	}}}, statuses)
+	<-done
+	if err != nil {
+		t.Fatalf("OCI ownership export: %v", err)
+	}
+	archive, err := os.Open(artifactPath)
+	if err != nil {
+		t.Fatalf("open OCI ownership export: %v", err)
+	}
+	defer archive.Close()
+	entries := readTarEntries(t, tar.NewReader(archive))
+	var index ocispecs.Index
+	if err := json.Unmarshal(entries["index.json"], &index); err != nil || len(index.Manifests) != 1 {
+		t.Fatalf("OCI index manifests=%d error=%v", len(index.Manifests), err)
+	}
+	var manifest ocispecs.Manifest
+	manifestPath := "blobs/sha256/" + index.Manifests[0].Digest.Encoded()
+	if err := json.Unmarshal(entries[manifestPath], &manifest); err != nil || len(manifest.Layers) == 0 {
+		t.Fatalf("OCI manifest layers=%d error=%v", len(manifest.Layers), err)
+	}
+	layerPath := "blobs/sha256/" + manifest.Layers[0].Digest.Encoded()
+	layer, err := gzip.NewReader(bytes.NewReader(entries[layerPath]))
+	if err != nil {
+		t.Fatalf("open OCI ownership layer: %v", err)
+	}
+	defer layer.Close()
+	layerTar := tar.NewReader(layer)
+	for {
+		header, nextErr := layerTar.Next()
+		if nextErr != nil {
+			t.Fatalf("OCI ownership layer lacks owned file: %v", nextErr)
+		}
+		if strings.TrimPrefix(header.Name, "./") == "owned" {
+			if header.Uid != 10001 || header.Gid != 10001 {
+				t.Fatalf("OCI owned file identity = %d:%d", header.Uid, header.Gid)
+			}
+			return
+		}
+	}
+}
+
+func readTarEntries(t *testing.T, reader *tar.Reader) map[string][]byte {
+	t.Helper()
+	entries := map[string][]byte{}
+	for {
+		header, err := reader.Next()
+		if errors.Is(err, io.EOF) {
+			return entries
+		}
+		if err != nil {
+			t.Fatalf("read OCI archive: %v", err)
+		}
+		contents, err := io.ReadAll(reader)
+		if err != nil {
+			t.Fatalf("read OCI entry %s: %v", header.Name, err)
+		}
+		entries[header.Name] = contents
 	}
 }
 
@@ -254,7 +361,7 @@ func waitIntegrationBuildKit(t *testing.T, ctx context.Context, address string) 
 	return nil
 }
 
-func compileEgressProbe(t *testing.T, targetPort int) []byte {
+func compileEgressProbe(t *testing.T, targetPort int, strictSingleID bool) []byte {
 	t.Helper()
 	root := t.TempDir()
 	source := fmt.Sprintf(`package main
@@ -265,9 +372,13 @@ import (
  "io"
  "net/http"
  "os"
+	"strings"
  "time"
 )
 func main() {
+	status, err := os.ReadFile("/proc/self/status"); if err != nil { panic(err) }
+	strictSingleID := %t
+	if os.Geteuid() != 10001 || os.Getegid() != 10001 || (strictSingleID && (!strings.Contains(string(status), "CapEff:\t0000000000000000") || !strings.Contains(string(status), "NoNewPrivs:\t1"))) { panic(fmt.Sprintf("unsafe process identity: %%d:%%d", os.Geteuid(), os.Getegid())) }
 	if err := os.Mkdir("/tmp/go-build-private", 0700); err != nil { panic(err) }
 	if err := os.WriteFile("/tmp/go-build-private/work", []byte("private"), 0600); err != nil { panic(err) }
 	time.Sleep(1500*time.Millisecond)
@@ -279,9 +390,11 @@ func main() {
  body, err := io.ReadAll(response.Body); response.Body.Close(); if err != nil || response.StatusCode != 200 { panic(fmt.Sprintf("target: %%v %%d", err, response.StatusCode)) }
  if response, err = client.Get("https://169.254.169.254/"); err == nil { response.Body.Close(); panic("metadata reachable") }
  if response, err = client.Get("https://undeclared.integration.test:%d/"); err == nil { response.Body.Close(); panic("undeclared reachable") }
- if err := os.WriteFile("/tmp/proof.txt", append(body, []byte("|metadata=blocked|undeclared=blocked")...), 0644); err != nil { panic(err) }
+	identity := "|uid=10001|gid=10001"
+	if strictSingleID { identity += "|capeff=0|nnp=1" }
+ if err := os.WriteFile("/tmp/proof.txt", append(body, []byte(identity+"|metadata=blocked|undeclared=blocked")...), 0644); err != nil { panic(err) }
 }
-`, targetPort, targetPort)
+`, strictSingleID, targetPort, targetPort)
 	sourcePath := filepath.Join(root, "main.go")
 	outputPath := filepath.Join(root, "probe")
 	if err := os.WriteFile(sourcePath, []byte(source), 0o600); err != nil {

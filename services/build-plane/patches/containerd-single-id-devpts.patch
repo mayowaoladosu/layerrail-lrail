@@ -68,6 +68,19 @@ diff --git a/pkg/archive/tar.go b/pkg/archive/tar.go
 index d36a5ca..f61391c 100644
 --- a/pkg/archive/tar.go
 +++ b/pkg/archive/tar.go
+@@ -393,7 +393,11 @@ func createTarFile(ctx context.Context, path, extractDir string, hdr *tar.Header
+ 	}
+ 
+ 	if !noSameOwner {
+-		if err := os.Lchown(path, hdr.Uid, hdr.Gid); err != nil {
++		uid, gid, err := lrailSingleIDChown(hdr.Uid, hdr.Gid)
++		if err != nil {
++			return err
++		}
++		if err := os.Lchown(path, uid, gid); err != nil {
+ 			err = fmt.Errorf("failed to Lchown %q for UID %d, GID %d: %w", path, hdr.Uid, hdr.Gid, err)
+ 			if errors.Is(err, syscall.EINVAL) && userns.RunningInUserNS() {
+ 				err = fmt.Errorf("%w (Hint: try increasing the number of subordinate IDs in /etc/subuid and /etc/subgid)", err)
 @@ -562,6 +562,9 @@ func (cw *ChangeWriter) HandleChange(k fs.ChangeKind, p string, f os.FileInfo, er
  			AccessTime: whiteOutT,
  			ChangeTime: whiteOutT,
@@ -87,10 +100,20 @@ index d36a5ca..f61391c 100644
 +		}
  
  		hdr.Mode = int64(chmodTarEntry(os.FileMode(hdr.Mode)))
-@@ -694,6 +700,18 @@ func (cw *ChangeWriter) HandleChange(k fs.ChangeKind, p string, f os.FileInfo, er
+@@ -694,6 +704,28 @@ func (cw *ChangeWriter) HandleChange(k fs.ChangeKind, p string, f os.FileInfo, er
  	return nil
  }
  
++func lrailSingleIDChown(uid, gid int) (int, int, error) {
++	if os.Getenv("LRAIL_ROOTLESSKIT_SINGLE_ID") != "true" {
++		return uid, gid, nil
++	}
++	if uid < 0 || gid < 0 {
++		return 0, 0, fmt.Errorf("strict single-ID layer contains invalid ownership %d:%d", uid, gid)
++	}
++	return 0, 0, nil
++}
++
 +func remapLrailSingleIDHeader(hdr *tar.Header) error {
 +	if os.Getenv("LRAIL_ROOTLESSKIT_SINGLE_ID") != "true" {
 +		return nil
@@ -111,7 +134,7 @@ new file mode 100644
 index 0000000..46a98d9
 --- /dev/null
 +++ b/pkg/archive/tar_lrail_test.go
-@@ -0,0 +1,35 @@
+@@ -0,0 +1,60 @@
 +package archive
 +
 +import (
@@ -127,6 +150,31 @@ index 0000000..46a98d9
 +	}
 +	if header.Uid != 10001 || header.Gid != 10001 {
 +		t.Fatalf("header identity = %d:%d", header.Uid, header.Gid)
++	}
++}
++
++func TestLrailSingleIDChownFlattensImageOwnership(t *testing.T) {
++	t.Setenv("LRAIL_ROOTLESSKIT_SINGLE_ID", "true")
++	for _, ids := range [][2]int{{0, 0}, {0, 42}, {10001, 10001}, {65534, 65534}} {
++		uid, gid, err := lrailSingleIDChown(ids[0], ids[1])
++		if err != nil || uid != 0 || gid != 0 {
++			t.Fatalf("lrailSingleIDChown(%d, %d) = %d, %d, %v", ids[0], ids[1], uid, gid, err)
++		}
++	}
++}
++
++func TestLrailSingleIDChownRejectsNegativeOwnership(t *testing.T) {
++	t.Setenv("LRAIL_ROOTLESSKIT_SINGLE_ID", "true")
++	if _, _, err := lrailSingleIDChown(-1, 0); err == nil {
++		t.Fatal("negative ownership unexpectedly flattened")
++	}
++}
++
++func TestLrailSingleIDChownLeavesDefaultModeUnchanged(t *testing.T) {
++	t.Setenv("LRAIL_ROOTLESSKIT_SINGLE_ID", "")
++	uid, gid, err := lrailSingleIDChown(12, 42)
++	if err != nil || uid != 12 || gid != 42 {
++		t.Fatalf("lrailSingleIDChown(12, 42) = %d, %d, %v", uid, gid, err)
 +	}
 +}
 +

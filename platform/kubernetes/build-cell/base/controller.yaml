@@ -87,7 +87,7 @@ spec:
             - {name: tmp, mountPath: /tmp}
       containers:
         - name: controller
-          image: ghcr.io/mayowaoladosu/layerrail-lrail/buildcell-controller@sha256:11c147bd4b6933f8120e67cf56660a3ebf457fc1aa80d4d079e43119af244241
+          image: ghcr.io/mayowaoladosu/layerrail-lrail/buildcell-controller@sha256:45d71781fb4e14eb3d046f89e25bc02f054c2ad1ed4c3784253ce951780b03bf
           imagePullPolicy: IfNotPresent
           securityContext:
             runAsNonRoot: true
@@ -155,7 +155,7 @@ spec:
             - name: LRAIL_BUILD_RUNTIME_CLASS
               value: kata-qemu
             - name: LRAIL_BUILD_WORKER_IMAGE
-              value: ghcr.io/mayowaoladosu/layerrail-lrail/buildkit-worker@sha256:8b27d6592950a589b455d0c2ca82fd8555aac3b5d40c631812dc721eebcc987e
+              value: ghcr.io/mayowaoladosu/layerrail-lrail/buildkit-worker@sha256:a2e3c0f4a24cabdc4091ae54101ec839f2aa8f1a6741519210873600d250ec13
             - {name: LRAIL_BUILD_IMAGE_PULL_SECRET, value: lrail-build-images}
             - name: LRAIL_BUILD_SECCOMP_PROFILE
               value: RuntimeDefault

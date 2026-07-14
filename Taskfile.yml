@@ -15,6 +15,7 @@ vars:
   BUILD_CELL_CONTROLLER_IMAGE: lrail-buildcell-controller:wp040-final
   BUILD_BROKER_IMAGE: lrail-build-broker:mb
   BUILD_CELL_WORKER_IMAGE: lrail-buildkit-worker:wp040-final
+  BUILD_GO_BASE_IMAGE: lrail-go-base:1.26.5-alpine-flat-v1
   BUILD_CELL_RESIDUE_IMAGE: lrail-residue-agent:wp040-final
   BUILD_CELL_EGRESS_IMAGE: lrail-build-egress-proxy:wp040-final
   BUILD_REGISTRY_BROKER_IMAGE: lrail-registry-broker:wp040-final
@@ -169,6 +170,11 @@ tasks:
       - docker build --pull=false --provenance=false -f services/build-plane/Dockerfile.registry-broker -t "{{.BUILD_REGISTRY_BROKER_IMAGE}}" .
       - docker build --pull=false --provenance=false -f services/build-plane/Dockerfile.evidence-signer -t "{{.BUILD_EVIDENCE_SIGNER_IMAGE}}" .
       - docker build --pull=false --provenance=false -f services/build-plane/Dockerfile.residue-agent -t "{{.BUILD_CELL_RESIDUE_IMAGE}}" .
+
+  build-go-base:image:
+    desc: Flatten the exact pinned Go toolchain into one immutable native-snapshot layer
+    cmds:
+      - docker build --pull=false --provenance=false -f services/build-plane/Dockerfile.go-base -t "{{.BUILD_GO_BASE_IMAGE}}" .
 
   build-trivy-db-updater:image:
     internal: true

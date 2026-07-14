@@ -154,7 +154,7 @@ func safeTLSMaterial() TLSMaterial {
 func TestBuildResourcesEnforcesKataRestrictedWorkerAndNoAPIAuthority(t *testing.T) {
 	t.Parallel()
 	assignment := kubeAssignment(t, []llbcompiler.NetworkCapability{})
-	request := buildcontrol.AllocationRequest{Assignment: assignment, Attempt: 1, LeaseID: "lease-test", ExpiresAt: kubeNow.Add(30 * time.Minute), Network: []llbcompiler.NetworkCapability{}, Caches: []llbcompiler.CacheCapability{}}
+	request := buildcontrol.AllocationRequest{Assignment: assignment, Attempt: 1, LeaseID: "lease-test", Network: []llbcompiler.NetworkCapability{}, Caches: []llbcompiler.CacheCapability{}}
 	resources, err := BuildResources(safeConfig(), request, safeTLSMaterial(), kubeNow)
 	if err != nil {
 		t.Fatalf("BuildResources: %v", err)
@@ -234,7 +234,7 @@ func TestFunctionalGVisorRootlessBootstrapUsesOnlyRequiredSandboxCapabilities(t 
 	config.NodeSelector = map[string]string{"lrail.dev/pool": "build", "lrail.dev/gvisor": "true"}
 	resources, err := BuildResources(config, buildcontrol.AllocationRequest{
 		Assignment: kubeAssignment(t, []llbcompiler.NetworkCapability{}), Attempt: 1,
-		LeaseID: "lease-functional", ExpiresAt: kubeNow.Add(30 * time.Minute),
+		LeaseID: "lease-functional",
 	}, safeTLSMaterial(), kubeNow)
 	if err != nil {
 		t.Fatalf("BuildResources: %v", err)
@@ -261,7 +261,7 @@ func TestBuildResourcesRealizesPrivateCapabilityAndBlocksAmbientPrivateRanges(t 
 	t.Parallel()
 	network := []llbcompiler.NetworkCapability{{NodeID: "n2", Profile: "private", GatewayID: "private-gateway", Hosts: []string{}}}
 	assignment := kubeAssignment(t, network)
-	request := buildcontrol.AllocationRequest{Assignment: assignment, Attempt: 1, LeaseID: "lease-test", ExpiresAt: kubeNow.Add(30 * time.Minute), Network: network, Caches: []llbcompiler.CacheCapability{}}
+	request := buildcontrol.AllocationRequest{Assignment: assignment, Attempt: 1, LeaseID: "lease-test", Network: network, Caches: []llbcompiler.CacheCapability{}}
 	resources, err := BuildResources(safeConfig(), request, safeTLSMaterial(), kubeNow)
 	if err != nil {
 		t.Fatalf("BuildResources: %v", err)
@@ -283,7 +283,7 @@ func TestBuildResourcesRealizesPrivateCapabilityAndBlocksAmbientPrivateRanges(t 
 func TestBuildResourcesRejectsUnsafePrivateEndpointMappings(t *testing.T) {
 	t.Parallel()
 	assignment := kubeAssignment(t, []llbcompiler.NetworkCapability{})
-	request := buildcontrol.AllocationRequest{Assignment: assignment, Attempt: 1, LeaseID: "lease-test", ExpiresAt: kubeNow.Add(30 * time.Minute), Network: []llbcompiler.NetworkCapability{}, Caches: []llbcompiler.CacheCapability{}}
+	request := buildcontrol.AllocationRequest{Assignment: assignment, Attempt: 1, LeaseID: "lease-test", Network: []llbcompiler.NetworkCapability{}, Caches: []llbcompiler.CacheCapability{}}
 	for name, endpoint := range map[string]PrivateEndpoint{
 		"metadata":    {CIDRs: []string{"169.254.169.254/32"}, Ports: []int32{443}},
 		"public":      {CIDRs: []string{"8.8.8.8/32"}, Ports: []int32{443}},
@@ -303,7 +303,7 @@ func TestBuildResourcesRejectsUnsafePrivateEndpointMappings(t *testing.T) {
 func TestBuildResourcesRejectsBroadDNSAndInvalidRegistryExceptions(t *testing.T) {
 	t.Parallel()
 	assignment := kubeAssignment(t, []llbcompiler.NetworkCapability{})
-	request := buildcontrol.AllocationRequest{Assignment: assignment, Attempt: 1, LeaseID: "lease-test", ExpiresAt: kubeNow.Add(30 * time.Minute), Network: []llbcompiler.NetworkCapability{}, Caches: []llbcompiler.CacheCapability{}}
+	request := buildcontrol.AllocationRequest{Assignment: assignment, Attempt: 1, LeaseID: "lease-test", Network: []llbcompiler.NetworkCapability{}, Caches: []llbcompiler.CacheCapability{}}
 	for name, mutate := range map[string]func(*Config){
 		"broad DNS":  func(config *Config) { config.ClusterDNSCIDR = "10.0.0.0/8" },
 		"public DNS": func(config *Config) { config.ClusterDNSCIDR = "8.8.8.8/32" },
@@ -324,7 +324,7 @@ func TestBuildResourcesRejectsBroadDNSAndInvalidRegistryExceptions(t *testing.T)
 func TestBuildResourcesRejectsUnpinnedImageAndCapabilityMismatch(t *testing.T) {
 	t.Parallel()
 	assignment := kubeAssignment(t, []llbcompiler.NetworkCapability{})
-	request := buildcontrol.AllocationRequest{Assignment: assignment, Attempt: 1, LeaseID: "lease-test", ExpiresAt: kubeNow.Add(30 * time.Minute), Network: []llbcompiler.NetworkCapability{}, Caches: []llbcompiler.CacheCapability{}}
+	request := buildcontrol.AllocationRequest{Assignment: assignment, Attempt: 1, LeaseID: "lease-test", Network: []llbcompiler.NetworkCapability{}, Caches: []llbcompiler.CacheCapability{}}
 	config := safeConfig()
 	config.WorkerImage = "moby/buildkit:latest"
 	if _, err := BuildResources(config, request, safeTLSMaterial(), kubeNow); err == nil {

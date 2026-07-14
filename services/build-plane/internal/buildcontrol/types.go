@@ -101,7 +101,6 @@ type AllocationRequest struct {
 	Assignment buildcell.ResolvedAssignment
 	Attempt    uint32
 	LeaseID    string
-	ExpiresAt  time.Time
 	Network    []llbcompiler.NetworkCapability
 	Caches     []llbcompiler.CacheCapability
 }

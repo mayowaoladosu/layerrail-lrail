@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/distribution/reference"
+	"github.com/mayowaoladosu/layerrail-lrail/services/build-plane/internal/buildcell"
 	"github.com/mayowaoladosu/layerrail-lrail/services/build-plane/internal/buildcontrol"
 	"github.com/mayowaoladosu/layerrail-lrail/services/build-plane/internal/buildegress"
 	"github.com/mayowaoladosu/layerrail-lrail/services/build-plane/internal/llbcompiler"
@@ -96,10 +97,14 @@ func BuildResources(config Config, request buildcontrol.AllocationRequest, tlsMa
 	if err != nil {
 		return Resources{}, err
 	}
-	if err := request.Assignment.Validate(); err != nil || request.Attempt == 0 || request.LeaseID == "" || !request.ExpiresAt.After(now) ||
+	if err := request.Assignment.Validate(); err != nil || request.Attempt == 0 || request.LeaseID == "" ||
 		len(tlsMaterial.CA) == 0 || len(tlsMaterial.ServerCert) == 0 || len(tlsMaterial.ServerKey) == 0 || len(tlsMaterial.EgressClientCert) == 0 ||
 		len(tlsMaterial.EgressClientKey) == 0 || len(tlsMaterial.EgressServerCA) == 0 {
 		return Resources{}, errors.New("worker allocation request is invalid")
+	}
+	deadline, err := signedAssignmentDeadline(request.Assignment, now)
+	if err != nil {
+		return Resources{}, err
 	}
 	if !equalNetwork(request.Network, request.Assignment.Verified.Payload.Lock.Network) || !equalCaches(request.Caches, request.Assignment.Verified.Payload.Lock.Caches) {
 		return Resources{}, errors.New("worker allocation capabilities do not match the signed lock")
@@ -144,7 +149,7 @@ func BuildResources(config Config, request buildcontrol.AllocationRequest, tlsMa
 	if err != nil {
 		return Resources{}, err
 	}
-	job, err := buildJob(config, name, labels, annotations, request, now)
+	job, err := buildJob(config, name, labels, annotations, request, now, deadline)
 	if err != nil {
 		return Resources{}, err
 	}
@@ -214,8 +219,8 @@ func normalizeConfig(config Config) (Config, error) {
 	return config, nil
 }
 
-func buildJob(config Config, name string, labels, annotations map[string]string, request buildcontrol.AllocationRequest, now time.Time) (*batchv1.Job, error) {
-	remaining := request.ExpiresAt.Sub(now)
+func buildJob(config Config, name string, labels, annotations map[string]string, request buildcontrol.AllocationRequest, now, deadline time.Time) (*batchv1.Job, error) {
+	remaining := deadline.Sub(now)
 	if remaining > config.ActiveDeadline {
 		remaining = config.ActiveDeadline
 	}
@@ -320,6 +325,14 @@ func buildJob(config Config, name string, labels, annotations map[string]string,
 			},
 		},
 	}, nil
+}
+
+func signedAssignmentDeadline(assignment buildcell.ResolvedAssignment, now time.Time) (time.Time, error) {
+	deadline, err := time.Parse(time.RFC3339, assignment.Verified.Payload.ExpiresAt)
+	if err != nil || !deadline.After(now.UTC()) {
+		return time.Time{}, errors.New("signed worker assignment deadline has elapsed or is invalid")
+	}
+	return deadline.UTC(), nil
 }
 
 func buildNetworkPolicy(config Config, name string, labels map[string]string) *networkingv1.NetworkPolicy {

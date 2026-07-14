@@ -107,7 +107,7 @@ func cleanResidueReport() buildworker.CleanupReport {
 func allocatorFixture(t *testing.T, connector *connectorRecorder, residue *residueRecorder, quarantine *quarantineRecorder) (*Allocator, *kubernetesfake.Clientset, buildcontrol.AllocationRequest, string) {
 	t.Helper()
 	assignment := kubeAssignment(t, []llbcompiler.NetworkCapability{})
-	request := buildcontrol.AllocationRequest{Assignment: assignment, Attempt: 1, LeaseID: "lease-test", ExpiresAt: kubeNow.Add(30 * time.Minute), Network: []llbcompiler.NetworkCapability{}, Caches: []llbcompiler.CacheCapability{}}
+	request := buildcontrol.AllocationRequest{Assignment: assignment, Attempt: 1, LeaseID: "lease-test", Network: []llbcompiler.NetworkCapability{}, Caches: []llbcompiler.CacheCapability{}}
 	name := resourceName(kubeBuildID, 1)
 	labels := map[string]string{
 		"app.kubernetes.io/name": "lrail-build-worker", "app.kubernetes.io/component": "buildkit",
@@ -144,8 +144,13 @@ func TestAllocatorCreatesConnectsAndCleansDisposableWorker(t *testing.T) {
 	if worker.Identity() != "fake-pod-uid" || connector.tls == nil || connector.tls.MinVersion != tls.VersionTLS13 || !strings.Contains(connector.endpoint, name+".lrail-build.svc.cluster.local:1234") {
 		t.Fatalf("worker=%q endpoint=%q tls=%#v", worker.Identity(), connector.endpoint, connector.tls)
 	}
-	if _, err := client.BatchV1().Jobs("lrail-build").Get(context.Background(), name, metav1.GetOptions{}); err != nil {
+	job, err := client.BatchV1().Jobs("lrail-build").Get(context.Background(), name, metav1.GetOptions{})
+	if err != nil {
 		t.Fatalf("worker Job absent: %v", err)
+	}
+	issuer := allocator.issuer.(*certificateIssuerStub)
+	if !issuer.request.ExpiresAt.Equal(kubeNow.Add(time.Hour)) || job.Spec.ActiveDeadlineSeconds == nil || *job.Spec.ActiveDeadlineSeconds != int64(time.Hour/time.Second) {
+		t.Fatalf("worker certificate/deadline was not bounded by the signed assignment: request=%#v job=%#v", issuer.request, job.Spec.ActiveDeadlineSeconds)
 	}
 	if _, err := client.RbacV1().Roles("lrail-build").Get(context.Background(), name, metav1.GetOptions{}); !apierrors.IsNotFound(err) {
 		t.Fatalf("worker unexpectedly received a Role: %v", err)

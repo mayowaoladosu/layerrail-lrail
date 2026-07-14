@@ -84,15 +84,19 @@ func (allocator *Allocator) Allocate(ctx context.Context, request buildcontrol.A
 	name := resourceName(request.Assignment.Verified.Payload.BuildID, request.Attempt)
 	endpoint := fmt.Sprintf("%s.%s.svc.cluster.local", name, allocator.config.Namespace)
 	now := allocator.clock().UTC()
+	deadline, err := signedAssignmentDeadline(request.Assignment, now)
+	if err != nil {
+		return nil, buildcontrol.WrapWorkerAllocationError(buildcontrol.AllocationResourcePrepare, err)
+	}
 	egressPolicy, err := buildegress.NewPolicy(
 		request.Assignment.Verified.Payload.BuildID, request.Assignment.Verified.Payload.OrganizationID, name,
-		request.Assignment.Verified.PayloadDigest, request.Assignment.Verified.Payload.Generation, now.Add(-time.Minute), request.ExpiresAt,
+		request.Assignment.Verified.PayloadDigest, request.Assignment.Verified.Payload.Generation, now.Add(-time.Minute), deadline,
 		request.Assignment.Verified.Payload.Lock, allocator.config.AllowedPrivateEndpoints,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("construct worker egress policy: %w", err)
 	}
-	issued, err := allocator.issuer.Issue(ctx, CertificateRequest{WorkerName: name, DNSName: endpoint, ExpiresAt: request.ExpiresAt, Egress: egressPolicy})
+	issued, err := allocator.issuer.Issue(ctx, CertificateRequest{WorkerName: name, DNSName: endpoint, ExpiresAt: deadline, Egress: egressPolicy})
 	if err != nil || issued.ClientConfig == nil {
 		return nil, buildcontrol.WrapWorkerAllocationError(buildcontrol.AllocationCertificateIssue, errors.New("issue worker certificates"))
 	}

@@ -296,7 +296,7 @@ func (controller *Controller) runAttempt(ctx context.Context, cancellation <-cha
 		return failedResult(assignment.Verified, startedAt, controller.clock().UTC(), attempt, "assignment_expired"), false, nil
 	}
 	worker, err := controller.workers.Allocate(ctx, AllocationRequest{
-		Assignment: assignment, Attempt: attempt, LeaseID: lease.ID, ExpiresAt: lease.ExpiresAt,
+		Assignment: assignment, Attempt: attempt, LeaseID: lease.ID,
 		Network: append([]llbcompiler.NetworkCapability(nil), lease.Network...), Caches: append([]llbcompiler.CacheCapability(nil), lease.Caches...),
 	})
 	if err != nil {

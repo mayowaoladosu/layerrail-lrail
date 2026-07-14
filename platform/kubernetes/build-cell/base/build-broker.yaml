@@ -63,7 +63,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: broker
-          image: ghcr.io/mayowaoladosu/layerrail-lrail/build-broker@sha256:57d530c731cfefabcf65bb28f9dca9e48f4096330406d959ab43effc1ae45826
+          image: ghcr.io/mayowaoladosu/layerrail-lrail/build-broker@sha256:a664a9b6f5733d8472c5fd32f84f3d9a16b6288361483a1c95ddc04879de7040
           imagePullPolicy: IfNotPresent
           securityContext:
             runAsNonRoot: true

@@ -106,17 +106,18 @@ func TestAgentQuarantinesEveryUnprovenCleanup(t *testing.T) {
 	tests := map[string]struct {
 		runtime *fakeRuntimeCleaner
 		mounts  *fakeMountCleaner
+		reason  string
 	}{
-		"runtime failure": {runtime: &fakeRuntimeCleaner{cleanupErr: errors.New("fake CRI failure")}, mounts: &fakeMountCleaner{}},
-		"network residue": {runtime: &fakeRuntimeCleaner{residue: []buildworker.Residue{{Kind: "network_sandbox", Target: "fake"}}}, mounts: &fakeMountCleaner{}},
-		"mount residue":   {runtime: &fakeRuntimeCleaner{}, mounts: &fakeMountCleaner{residue: []buildworker.Residue{{Kind: "mount", Target: "fake"}}}},
+		"runtime failure": {runtime: &fakeRuntimeCleaner{cleanupErr: errors.New("fake CRI failure")}, mounts: &fakeMountCleaner{}, reason: "runtime cleanup"},
+		"network residue": {runtime: &fakeRuntimeCleaner{residue: []buildworker.Residue{{Kind: "network_sandbox", Target: "fake"}}}, mounts: &fakeMountCleaner{}, reason: "residue remained"},
+		"mount residue":   {runtime: &fakeRuntimeCleaner{}, mounts: &fakeMountCleaner{residue: []buildworker.Residue{{Kind: "mount", Target: "fake"}}}, reason: "residue remained"},
 	}
 	for name, testCase := range tests {
 		testCase := testCase
 		t.Run(name, func(t *testing.T) {
 			agent, _, _ := residueAgentFixture(t, testCase.runtime, testCase.mounts)
 			report := agent.Cleanup(context.Background(), validResidueRequest())
-			if report.Status != buildworker.CleanupQuarantined || report.QuarantineReason == "" {
+			if report.Status != buildworker.CleanupQuarantined || !strings.Contains(report.QuarantineReason, testCase.reason) {
 				t.Fatalf("report = %#v", report)
 			}
 		})

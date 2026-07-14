@@ -97,10 +97,41 @@ func (agent *Agent) Cleanup(ctx context.Context, request Request) buildworker.Cl
 	allErrors := errors.Join(runtimeErr, mountErr, podErr, cgroupErr, runtimeInspectErr, mountInspectErr, cgroupInspectErr)
 	if allErrors != nil || len(report.Residue) > 0 {
 		report.Status = buildworker.CleanupQuarantined
-		report.QuarantineReason = "node residue cleanup or verification failed"
+		report.QuarantineReason = cleanupFailureReason(
+			runtimeErr, mountErr, podErr, cgroupErr,
+			runtimeInspectErr, mountInspectErr, cgroupInspectErr,
+			len(report.Residue) > 0,
+		)
 	}
 	sort.Strings(report.RemovedPaths)
 	return report
+}
+
+func cleanupFailureReason(runtimeErr, mountErr, podErr, cgroupErr, runtimeInspectErr, mountInspectErr, cgroupInspectErr error, residue bool) string {
+	failures := []string{}
+	for _, failure := range []struct {
+		name string
+		err  error
+	}{
+		{name: "runtime cleanup", err: runtimeErr},
+		{name: "mount cleanup", err: mountErr},
+		{name: "pod-root cleanup", err: podErr},
+		{name: "cgroup cleanup", err: cgroupErr},
+		{name: "runtime inspection", err: runtimeInspectErr},
+		{name: "mount inspection", err: mountInspectErr},
+		{name: "cgroup inspection", err: cgroupInspectErr},
+	} {
+		if failure.err != nil {
+			failures = append(failures, failure.name)
+		}
+	}
+	if residue {
+		failures = append(failures, "residue remained")
+	}
+	if len(failures) == 0 {
+		return "node residue cleanup or verification failed"
+	}
+	return "node residue cleanup or verification failed: " + strings.Join(failures, ", ")
 }
 
 func validateRequest(request Request, nodeName string) error {

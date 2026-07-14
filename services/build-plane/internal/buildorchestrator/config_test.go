@@ -22,7 +22,7 @@ func TestCommittedMBBuildPolicyAndBaseCatalogConform(t *testing.T) {
 		t.Fatalf("NewDefinitionCompiler: %v", err)
 	}
 	material := compiler.Catalog.Entries[0].Material
-	if material.ResolutionDigest != "sha256:878ac21cc8952e37c3b26240541e3bed468c6704a09e5b59aa90695da26b0d02" {
+	if material.ResolutionDigest != "sha256:461aadf2be0c3f76155bcdf155b4a63a5b9151ede0703cb755f69998d0ffd303" {
 		t.Fatalf("resolution digest = %s", compiler.Catalog.Entries[0].Material.ResolutionDigest)
 	}
 	if material.Registry != "ghcr.io" || material.Classification != "curated" || len(material.Platforms) != 1 || material.Platforms[0] != "linux/amd64" {

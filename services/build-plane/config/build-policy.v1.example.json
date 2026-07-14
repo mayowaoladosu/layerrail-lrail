@@ -1,10 +1,10 @@
 {
   "api_version": "lrail.build-policy/v1",
   "id": "pol_019b01da-7e31-7000-8000-000000000001",
-  "revision": "1.1.0",
+  "revision": "1.2.0",
   "base": {
     "allowed_registries": ["ghcr.io"],
-    "curated_digests": ["sha256:340fbc9e8e18e34f5ebc4ca8088189584f32e74f096ec2175930c5d207c191a9"],
+    "curated_digests": ["sha256:49a144510e2bad61830ab293c171d3352ee1ad52659a11e81c802ee7b538d927"],
     "allow_customer_bases": false,
     "allowed_signature_identities": ["layerrail-unverified:ghcr.io/mayowaoladosu/layerrail-lrail/go-base"],
     "require_sbom": false,

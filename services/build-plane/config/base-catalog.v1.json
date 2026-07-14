@@ -1,17 +1,17 @@
 {
-  "version": "1.1.0",
+  "version": "1.2.0",
   "entries": [
     {
       "language": "go",
       "material": {
-        "requested_ref": "ghcr.io/mayowaoladosu/layerrail-lrail/go-base@sha256:340fbc9e8e18e34f5ebc4ca8088189584f32e74f096ec2175930c5d207c191a9",
-        "resolved_ref": "ghcr.io/mayowaoladosu/layerrail-lrail/go-base@sha256:340fbc9e8e18e34f5ebc4ca8088189584f32e74f096ec2175930c5d207c191a9",
-        "digest": "sha256:340fbc9e8e18e34f5ebc4ca8088189584f32e74f096ec2175930c5d207c191a9",
+        "requested_ref": "ghcr.io/mayowaoladosu/layerrail-lrail/go-base@sha256:49a144510e2bad61830ab293c171d3352ee1ad52659a11e81c802ee7b538d927",
+        "resolved_ref": "ghcr.io/mayowaoladosu/layerrail-lrail/go-base@sha256:49a144510e2bad61830ab293c171d3352ee1ad52659a11e81c802ee7b538d927",
+        "digest": "sha256:49a144510e2bad61830ab293c171d3352ee1ad52659a11e81c802ee7b538d927",
         "registry": "ghcr.io",
         "classification": "curated",
         "platforms": ["linux/amd64"],
         "signature_identity": "layerrail-unverified:ghcr.io/mayowaoladosu/layerrail-lrail/go-base",
-        "resolution_digest": "sha256:878ac21cc8952e37c3b26240541e3bed468c6704a09e5b59aa90695da26b0d02"
+        "resolution_digest": "sha256:461aadf2be0c3f76155bcdf155b4a63a5b9151ede0703cb755f69998d0ffd303"
       }
     }
   ]

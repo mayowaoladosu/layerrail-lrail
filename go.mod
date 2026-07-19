@@ -6,10 +6,10 @@ require (
 	github.com/distribution/reference v0.6.0
 	github.com/gofrs/flock v0.13.0
 	github.com/minio/minio-go/v7 v7.2.1
-	github.com/moby/buildkit v0.31.1
+	github.com/moby/buildkit v0.31.2
 	github.com/opencontainers/go-digest v1.0.0
 	github.com/opencontainers/image-spec v1.1.1
-	github.com/tonistiigi/fsutil v0.0.0-20260609091201-0257b3308df4
+	github.com/tonistiigi/fsutil v0.0.0-20260716115106-30cd4fc5d911
 	go.etcd.io/bbolt v1.5.0
 	go.starlark.net v0.0.0-20260708150628-5395d018f003
 	golang.org/x/net v0.57.0

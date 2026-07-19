@@ -13,7 +13,7 @@ lrail-detector = "lrail_detector.cli:main"
 
 [dependency-groups]
 dev = [
-  "hypothesis==6.156.6",
+  "hypothesis==6.157.0",
   "jsonschema==4.25.1",
   "mypy==2.2.0",
   "pip-audit==2.9.0",

@@ -16,7 +16,7 @@ dev = [
   "hypothesis==6.156.6",
   "jsonschema==4.25.1",
   "mypy==2.2.0",
-  "pip-audit==2.9.0",
+  "pip-audit==2.10.1",
   "pytest==9.1.1",
   "pytest-cov==7.1.0",
   "ruff==0.15.21",

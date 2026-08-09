@@ -35,7 +35,7 @@ GEM
     google-protobuf (4.35.1-x86_64-linux-musl)
       bigdecimal
       rake (~> 13.3)
-    json (2.21.0)
+    json (2.21.2)
     language_server-protocol (3.17.0.6)
     lint_roller (1.1.0)
     logger (1.7.0)
